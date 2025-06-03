@@ -1,11 +1,16 @@
 import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
 
+// Version constants
+val scalaTestV = "3.2.18"
+val circeV = "0.14.6"
+val tapirV = "1.11.33"
+
 lazy val commonSettings = commonSmlBuildSettings ++ Seq(
-  organization := "com.chimp",
+  organization := "com.softwaremill",
   scalaVersion := "3.3.6"
 )
 
-val scalaTest = "org.scalatest" %% "scalatest" % "3.2.18" % Test
+val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
 lazy val rootProject = (project in file("."))
   .settings(commonSettings: _*)
@@ -17,6 +22,12 @@ lazy val core: Project = (project in file("core"))
   .settings(
     name := "core",
     libraryDependencies ++= Seq(
-      scalaTest
+      scalaTest,
+      "io.circe" %% "circe-core" % circeV,
+      "io.circe" %% "circe-generic" % circeV,
+      "io.circe" %% "circe-parser" % circeV,
+      "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
+      "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
+      "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV
     )
   )
