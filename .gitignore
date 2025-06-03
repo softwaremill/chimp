@@ -3,6 +3,7 @@ target/
 project/target/
 project/project/
 project/.bloop/
+project/metals.sbt
 .bloop/
 .metals/
 .scala-build/
