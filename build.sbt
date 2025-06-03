@@ -1,11 +1,22 @@
-ThisBuild / scalaVersion := "3.3.1"
-ThisBuild / organization := "com.chimp"
+import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
 
-lazy val root = (project in file("."))
+lazy val commonSettings = commonSmlBuildSettings ++ Seq(
+  organization := "com.chimp",
+  scalaVersion := "3.3.1"
+)
+
+val scalaTest = "org.scalatest" %% "scalatest" % "3.2.18" % Test
+
+lazy val rootProject = (project in file("."))
+  .settings(commonSettings: _*)
+  .settings(publishArtifact := false, name := "root")
+  .aggregate(core)
+
+lazy val core: Project = (project in file("core"))
+  .settings(commonSettings: _*)
   .settings(
-    name := "chimp",
-    version := "0.1.0-SNAPSHOT",
+    name := "core",
     libraryDependencies ++= Seq(
-      "org.scalameta" %% "munit" % "0.7.29" % Test
+      scalaTest
     )
   )
