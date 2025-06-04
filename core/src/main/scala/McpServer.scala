@@ -1,11 +1,14 @@
 package mcp.server
 
-import sttp.tapir.endpoint
-import sttp.tapir.json.circe.{jsonBody, schemaForCirceJson}
+import sttp.tapir.*
+import sttp.tapir.json.circe.*
 import sttp.tapir.server.netty.sync.NettySyncServer
+import sttp.tapir.stringBody
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
 import mcp.model.*
+import scala.concurrent.duration.*
+import io.circe._
 
 object McpServer:
   // Sample tool: calculate_sum
@@ -25,40 +28,35 @@ object McpServer:
 
   val tools = List(calculateSumTool)
 
-  // JSON-RPC 2.0 request/response models
-  final case class JsonRpcRequest(jsonrpc: String, method: String, params: Option[Json], id: Option[Json]) derives Decoder
-  final case class JsonRpcResponse(jsonrpc: String = "2.0", result: Option[Json] = None, error: Option[Json] = None, id: Option[Json])
-      derives Encoder
-
   def handleJsonRpc(request: Json): Json = {
-    val response: JsonRpcResponse = request.as[JsonRpcRequest] match {
+    val response: JSONRPCMessage = request.as[JSONRPCMessage] match {
       case Left(err) =>
-        JsonRpcResponse(
-          error = Some(
-            Json.obj(
-              "code" -> Json.fromInt(-32700),
-              "message" -> Json.fromString("Parse error: " + err.getMessage)
-            )
-          ),
-          id = None
+        JSONRPCMessage.Error(
+          id = RequestId("null"),
+          error = JSONRPCErrorObject(
+            code = JSONRPCErrorCodes.ParseError,
+            message = s"Parse error: ${err.getMessage}"
+          )
         )
-      case Right(rpcReq) =>
-        rpcReq.method match {
+      case Right(JSONRPCMessage.Request(_, method, params: Option[io.circe.Json], id)) =>
+        method match {
           case "tools/list" =>
-            val result = ListToolsResponse(tools).asJson
-            JsonRpcResponse(result = Some(result), id = rpcReq.id)
+            val result = ListToolsResponse(tools)
+            JSONRPCMessage.Response(id = id, result = result.asJson)
           case "tools/call" =>
-            val toolName = for {
-              params <- rpcReq.params
-              name <- params.hcursor.downField("name").as[String].toOption
-            } yield name
-            val arguments = for {
-              params <- rpcReq.params
-              args <- params.hcursor.downField("arguments").focus
-            } yield args
-            toolName match {
+            val (toolNameOpt, argumentsOpt) = {
+              var name: Option[String] = None
+              var args: Option[io.circe.Json] = None
+              params.foreach { p =>
+                val cursor = p.asInstanceOf[io.circe.Json].hcursor
+                name = cursor.downField("name").as[String].toOption
+                args = cursor.downField("arguments").focus
+              }
+              (name, args)
+            }
+            toolNameOpt match {
               case Some("calculate_sum") =>
-                val (a, b): (Option[Double], Option[Double]) = arguments match {
+                val (a, b): (Option[Double], Option[Double]) = argumentsOpt match {
                   case Some(arg) =>
                     (
                       arg.hcursor.downField("a").as[Double].toOption,
@@ -69,69 +67,98 @@ object McpServer:
                 (a, b) match {
                   case (Some(x), Some(y)) =>
                     val sum = x + y
-                    val result = Json.arr(
-                      Json.obj(
-                        "type" -> Json.fromString("text"),
-                        "text" -> Json.fromString(sum.toString)
-                      )
+                    val result = ToolCallResult(
+                      content = List(ToolContent.Text(text = sum.toString)),
+                      isError = false
                     )
-                    JsonRpcResponse(result = Some(Json.obj("content" -> result)), id = rpcReq.id)
+                    JSONRPCMessage.Response(id = id, result = result.asJson)
                   case _ =>
-                    JsonRpcResponse(
-                      error = Some(
-                        Json.obj(
-                          "code" -> Json.fromInt(-32602),
-                          "message" -> Json.fromString("Invalid params for calculate_sum")
-                        )
-                      ),
-                      id = rpcReq.id
+                    JSONRPCMessage.Error(
+                      id = id,
+                      error = JSONRPCErrorObject(
+                        code = JSONRPCErrorCodes.InvalidParams,
+                        message = "Invalid params for calculate_sum"
+                      )
                     )
                 }
               case Some(other) =>
-                JsonRpcResponse(
-                  error = Some(
-                    Json.obj(
-                      "code" -> Json.fromInt(-32601),
-                      "message" -> Json.fromString(s"Unknown tool: $other")
-                    )
-                  ),
-                  id = rpcReq.id
+                JSONRPCMessage.Error(
+                  id = id,
+                  error = JSONRPCErrorObject(
+                    code = JSONRPCErrorCodes.MethodNotFound,
+                    message = s"Unknown tool: $other"
+                  )
                 )
               case None =>
-                JsonRpcResponse(
-                  error = Some(
-                    Json.obj(
-                      "code" -> Json.fromInt(-32602),
-                      "message" -> Json.fromString("Missing tool name")
-                    )
-                  ),
-                  id = rpcReq.id
+                JSONRPCMessage.Error(
+                  id = id,
+                  error = JSONRPCErrorObject(
+                    code = JSONRPCErrorCodes.InvalidParams,
+                    message = "Missing tool name"
+                  )
                 )
             }
+          case "initialize" =>
+            val capabilities = ServerCapabilities(
+              tools = Some(ServerToolsCapability(listChanged = Some(true)))
+            )
+            val result = InitializeResult(
+              protocolVersion = "2.0",
+              capabilities = capabilities,
+              serverInfo = Implementation(name = "MCP", version = "1.0")
+            )
+            JSONRPCMessage.Response(id = id, result = result.asJson)
           case other =>
-            JsonRpcResponse(
-              error = Some(
-                Json.obj(
-                  "code" -> Json.fromInt(-32601),
-                  "message" -> Json.fromString(s"Unknown method: $other")
-                )
-              ),
-              id = rpcReq.id
+            JSONRPCMessage.Error(
+              id = id,
+              error = JSONRPCErrorObject(
+                code = JSONRPCErrorCodes.MethodNotFound,
+                message = s"Unknown method: $other"
+              )
             )
         }
+      case Right(_) =>
+        JSONRPCMessage.Error(
+          id = RequestId("null"),
+          error = JSONRPCErrorObject(
+            code = JSONRPCErrorCodes.InvalidRequest,
+            message = "Invalid request type"
+          )
+        )
     }
     response.asJson
   }
 
   def main(args: Array[String]): Unit =
+    // Regular JSON-RPC endpoint
     val jsonRpcEndpoint = endpoint.post
+      .in("jsonrpc")
       .in(jsonBody[Json])
       .out(jsonBody[Json])
 
-    val serverEndpoint = jsonRpcEndpoint.handleSuccess(handleJsonRpc)
+    val serverEndpoint = jsonRpcEndpoint.handleSuccess { json =>
+      println("BBB")
+      val r = handleJsonRpc(json).deepDropNullValues
+      println(r)
+      println(r.noSpaces)
+      r
+    }
+
+    // Streaming endpoint for tool updates
+    val streamEndpoint = endpoint.get
+      .in("jsonrpc")
+      .out(stringBody)
+
+    val streamServerEndpoint = streamEndpoint.handleSuccess { _ =>
+      println("AAA")
+      // Create a stream of tool updates
+      val toolsJson = tools.asJson.noSpaces
+      s"data: $toolsJson\n\n"
+    }
 
     println("Starting MCP server on http://localhost:8080 ...")
     NettySyncServer()
       .port(8080)
       .addEndpoint(serverEndpoint)
+      .addEndpoint(streamServerEndpoint)
       .startAndWait()
