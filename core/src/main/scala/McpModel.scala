@@ -3,6 +3,9 @@
 package mcp.model
 
 import io.circe.{Codec, Decoder, Encoder, Json}
+import io.circe.syntax._
+import io.circe.DecodingFailure
+import io.circe.HCursor
 
 // --- JSON-RPC base types ---
 // Use newtype wrappers for union types to avoid ambiguous implicits
@@ -240,7 +243,7 @@ final case class ListToolsResponse(
 ) derives Codec
 
 // Tool result content types
-enum ToolContent derives Codec:
+enum ToolContent:
   case Text(
       `type`: String = "text",
       text: String
@@ -259,6 +262,55 @@ enum ToolContent derives Codec:
       `type`: String = "resource",
       resource: Resource
   )
+
+object ToolContent {
+  import io.circe.{DecodingFailure, HCursor}
+  given Encoder[ToolContent] = Encoder.instance {
+    case ToolContent.Text(_, text) =>
+      Json.obj(
+        "type" -> Json.fromString("text"),
+        "text" -> Json.fromString(text)
+      )
+    case ToolContent.Image(_, data, mimeType) =>
+      Json.obj(
+        "type" -> Json.fromString("image"),
+        "data" -> Json.fromString(data),
+        "mimeType" -> Json.fromString(mimeType)
+      )
+    case ToolContent.Audio(_, data, mimeType) =>
+      Json.obj(
+        "type" -> Json.fromString("audio"),
+        "data" -> Json.fromString(data),
+        "mimeType" -> Json.fromString(mimeType)
+      )
+    case ToolContent.ResourceContent(_, resource) =>
+      Json.obj(
+        "type" -> Json.fromString("resource"),
+        "resource" -> resource.asJson
+      )
+  }
+
+  given Decoder[ToolContent] = Decoder.instance { (c: HCursor) =>
+    c.downField("type").as[String].flatMap {
+      case "text" =>
+        c.downField("text").as[String].map(ToolContent.Text("text", _))
+      case "image" =>
+        for {
+          data <- c.downField("data").as[String]
+          mimeType <- c.downField("mimeType").as[String]
+        } yield ToolContent.Image("image", data, mimeType)
+      case "audio" =>
+        for {
+          data <- c.downField("data").as[String]
+          mimeType <- c.downField("mimeType").as[String]
+        } yield ToolContent.Audio("audio", data, mimeType)
+      case "resource" =>
+        c.downField("resource").as[Resource].map(ToolContent.ResourceContent("resource", _))
+      case other =>
+        Left(DecodingFailure(s"Unknown ToolContent type: $other", c.history))
+    }
+  }
+}
 
 final case class Resource(
     uri: String,
