@@ -4,27 +4,29 @@ package mcp.model
 
 import io.circe.{Codec, Decoder, Encoder, Json}
 import io.circe.syntax._
-import io.circe.DecodingFailure
-import io.circe.HCursor
 
 // --- JSON-RPC base types ---
 // Use newtype wrappers for union types to avoid ambiguous implicits
-final case class RequestId(value: String | Int)
+opaque type RequestId = String | Int
 object RequestId {
+  def apply(value: String | Int): RequestId = value
+  def unapply(id: RequestId): Option[String | Int] = Some(id)
   given encoder: Encoder[RequestId] = Encoder.instance {
-    case RequestId(s: String) => Json.fromString(s)
-    case RequestId(i: Int)    => Json.fromInt(i)
+    case s: String => Json.fromString(s)
+    case i: Int    => Json.fromInt(i)
   }
   given decoder: Decoder[RequestId] = Decoder.instance { c =>
     c.as[String].map(RequestId(_)).orElse(c.as[Int].map(RequestId(_)))
   }
   given codec: Codec[RequestId] = Codec.from(decoder, encoder)
 }
-final case class ProgressToken(value: String | Int)
+opaque type ProgressToken = String | Int
 object ProgressToken {
+  def apply(value: String | Int): ProgressToken = value
+  def unapply(token: ProgressToken): Option[String | Int] = Some(token)
   given encoder: Encoder[ProgressToken] = Encoder.instance {
-    case ProgressToken(s: String) => Json.fromString(s)
-    case ProgressToken(i: Int)    => Json.fromInt(i)
+    case s: String => Json.fromString(s)
+    case i: Int    => Json.fromInt(i)
   }
   given decoder: Decoder[ProgressToken] = Decoder.instance { c =>
     c.as[String].map(ProgressToken(_)).orElse(c.as[Int].map(ProgressToken(_)))
@@ -128,12 +130,22 @@ final case class JSONRPCErrorObject(
     data: Option[Json] = None
 ) derives Codec
 
-object JSONRPCErrorCodes {
-  val ParseError = -32700
-  val InvalidRequest = -32600
-  val MethodNotFound = -32601
-  val InvalidParams = -32602
-  val InternalError = -32603
+enum JSONRPCErrorCodes(val code: Int) {
+  case ParseError extends JSONRPCErrorCodes(-32700)
+  case InvalidRequest extends JSONRPCErrorCodes(-32600)
+  case MethodNotFound extends JSONRPCErrorCodes(-32601)
+  case InvalidParams extends JSONRPCErrorCodes(-32602)
+  case InternalError extends JSONRPCErrorCodes(-32603)
+
+  // Optionally, a method to get enum from code
+  def fromCode(code: Int): Option[JSONRPCErrorCodes] = code match {
+    case -32700 => Some(ParseError)
+    case -32600 => Some(InvalidRequest)
+    case -32601 => Some(MethodNotFound)
+    case -32602 => Some(InvalidParams)
+    case -32603 => Some(InternalError)
+    case _      => None
+  }
 }
 
 // --- Capabilities ---

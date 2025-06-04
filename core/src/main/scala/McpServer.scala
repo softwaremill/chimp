@@ -3,11 +3,9 @@ package mcp.server
 import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.netty.sync.NettySyncServer
-import sttp.tapir.stringBody
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
 import mcp.model.*
-import scala.concurrent.duration.*
 import io.circe._
 
 object McpServer:
@@ -34,7 +32,7 @@ object McpServer:
         JSONRPCMessage.Error(
           id = RequestId("null"),
           error = JSONRPCErrorObject(
-            code = JSONRPCErrorCodes.ParseError,
+            code = JSONRPCErrorCodes.ParseError.code,
             message = s"Parse error: ${err.getMessage}"
           )
         )
@@ -76,7 +74,7 @@ object McpServer:
                     JSONRPCMessage.Error(
                       id = id,
                       error = JSONRPCErrorObject(
-                        code = JSONRPCErrorCodes.InvalidParams,
+                        code = JSONRPCErrorCodes.InvalidParams.code,
                         message = "Invalid params for calculate_sum"
                       )
                     )
@@ -85,7 +83,7 @@ object McpServer:
                 JSONRPCMessage.Error(
                   id = id,
                   error = JSONRPCErrorObject(
-                    code = JSONRPCErrorCodes.MethodNotFound,
+                    code = JSONRPCErrorCodes.MethodNotFound.code,
                     message = s"Unknown tool: $other"
                   )
                 )
@@ -93,7 +91,7 @@ object McpServer:
                 JSONRPCMessage.Error(
                   id = id,
                   error = JSONRPCErrorObject(
-                    code = JSONRPCErrorCodes.InvalidParams,
+                    code = JSONRPCErrorCodes.InvalidParams.code,
                     message = "Missing tool name"
                   )
                 )
@@ -103,7 +101,7 @@ object McpServer:
               tools = Some(ServerToolsCapability(listChanged = Some(true)))
             )
             val result = InitializeResult(
-              protocolVersion = "2.0",
+              protocolVersion = "2025-03-26",
               capabilities = capabilities,
               serverInfo = Implementation(name = "MCP", version = "1.0")
             )
@@ -112,7 +110,7 @@ object McpServer:
             JSONRPCMessage.Error(
               id = id,
               error = JSONRPCErrorObject(
-                code = JSONRPCErrorCodes.MethodNotFound,
+                code = JSONRPCErrorCodes.MethodNotFound.code,
                 message = s"Unknown method: $other"
               )
             )
@@ -121,7 +119,7 @@ object McpServer:
         JSONRPCMessage.Error(
           id = RequestId("null"),
           error = JSONRPCErrorObject(
-            code = JSONRPCErrorCodes.InvalidRequest,
+            code = JSONRPCErrorCodes.InvalidRequest.code,
             message = "Invalid request type"
           )
         )
@@ -137,9 +135,9 @@ object McpServer:
       .out(jsonBody[Json])
 
     val serverEndpoint = jsonRpcEndpoint.handleSuccess { json =>
-      println("BBB")
+      println("Request: " + json)
       val r = handleJsonRpc(json).deepDropNullValues
-      println(r)
+      println("Response: " + r)
       println(r.noSpaces)
       r
     }
@@ -150,7 +148,6 @@ object McpServer:
       .out(stringBody)
 
     val streamServerEndpoint = streamEndpoint.handleSuccess { _ =>
-      println("AAA")
       // Create a stream of tool updates
       val toolsJson = tools.asJson.noSpaces
       s"data: $toolsJson\n\n"
