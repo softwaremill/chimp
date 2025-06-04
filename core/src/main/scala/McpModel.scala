@@ -32,13 +32,92 @@ object ProgressToken {
 type Cursor = String
 
 // Note: JSONRPCMessage is a protocol sum type; custom codecs are needed for serialization.
-enum JSONRPCMessage derives Codec:
+enum JSONRPCMessage:
   case Request(jsonrpc: String = "2.0", method: String, params: Option[Json] = None, id: RequestId)
   case Notification(jsonrpc: String = "2.0", method: String, params: Option[Json] = None)
   case Response(jsonrpc: String = "2.0", id: RequestId, result: Json)
   case Error(jsonrpc: String = "2.0", id: RequestId, error: JSONRPCErrorObject)
   case BatchRequest(requests: List[JSONRPCMessage])
   case BatchResponse(responses: List[JSONRPCMessage])
+
+object JSONRPCMessage {
+  import io.circe._
+  import io.circe.syntax._
+
+  given Decoder[JSONRPCMessage] = Decoder.instance { c =>
+    val jsonrpc = c.downField("jsonrpc").as[String].getOrElse("2.0")
+    val methodOpt = c.downField("method").as[String].toOption
+    val idOpt = c.downField("id").as[RequestId].toOption
+    val paramsOpt = c.downField("params").focus
+    val resultOpt = c.downField("result").focus
+    val errorOpt = c.downField("error").as[JSONRPCErrorObject].toOption
+    val isBatchRequest = c.keys.exists(_.exists(_ == "requests"))
+    val isBatchResponse = c.keys.exists(_.exists(_ == "responses"))
+
+    (methodOpt, idOpt, paramsOpt, resultOpt, errorOpt, isBatchRequest, isBatchResponse) match {
+      case (Some(method), Some(id), _, None, None, false, false) =>
+        // Request (with or without params)
+        Right(JSONRPCMessage.Request(jsonrpc, method, paramsOpt, id))
+      case (Some(method), None, _, None, None, false, false) =>
+        // Notification (with or without params)
+        Right(JSONRPCMessage.Notification(jsonrpc, method, paramsOpt))
+      case (None, Some(id), None, Some(result), None, false, false) =>
+        // Response
+        Right(JSONRPCMessage.Response(jsonrpc, id, result))
+      case (None, Some(id), None, None, Some(error), false, false) =>
+        // Error
+        Right(JSONRPCMessage.Error(jsonrpc, id, error))
+      case (None, None, None, None, None, true, false) =>
+        // BatchRequest
+        c.downField("requests").as[List[JSONRPCMessage]].map(JSONRPCMessage.BatchRequest(_))
+      case (None, None, None, None, None, false, true) =>
+        // BatchResponse
+        c.downField("responses").as[List[JSONRPCMessage]].map(JSONRPCMessage.BatchResponse(_))
+      case _ =>
+        Left(DecodingFailure("type JSONRPCMessage could not be decoded from JSON", c.history))
+    }
+  }
+
+  given Encoder[JSONRPCMessage] = Encoder.instance {
+    case JSONRPCMessage.Request(jsonrpc, method, params, id) =>
+      Json
+        .obj(
+          "jsonrpc" -> Json.fromString(jsonrpc),
+          "method" -> Json.fromString(method),
+          "params" -> params.getOrElse(Json.Null),
+          "id" -> id.asJson
+        )
+        .dropNullValues
+    case JSONRPCMessage.Notification(jsonrpc, method, params) =>
+      Json
+        .obj(
+          "jsonrpc" -> Json.fromString(jsonrpc),
+          "method" -> Json.fromString(method),
+          "params" -> params.getOrElse(Json.Null)
+        )
+        .dropNullValues
+    case JSONRPCMessage.Response(jsonrpc, id, result) =>
+      Json.obj(
+        "jsonrpc" -> Json.fromString(jsonrpc),
+        "id" -> id.asJson,
+        "result" -> result
+      )
+    case JSONRPCMessage.Error(jsonrpc, id, error) =>
+      Json.obj(
+        "jsonrpc" -> Json.fromString(jsonrpc),
+        "id" -> id.asJson,
+        "error" -> error.asJson
+      )
+    case JSONRPCMessage.BatchRequest(requests) =>
+      Json.obj(
+        "requests" -> requests.asJson
+      )
+    case JSONRPCMessage.BatchResponse(responses) =>
+      Json.obj(
+        "responses" -> responses.asJson
+      )
+  }
+}
 
 final case class JSONRPCErrorObject(
     code: Int,
