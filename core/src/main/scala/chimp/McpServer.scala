@@ -1,12 +1,11 @@
-package mcp.server
+package chimp
 
 import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
-import mcp.model.*
-import io.circe._
+import io.circe.*
 
 object McpServer:
   // Sample tool: calculate_sum
