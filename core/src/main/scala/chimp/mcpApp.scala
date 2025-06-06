@@ -1,9 +1,10 @@
 package chimp
 
 import sttp.tapir.Schema
-import sttp.tapir.generic.auto._
+import sttp.tapir.json.circe.*
+import io.circe.Codec
 
-case class Input(a: Int, b: Int)
+case class Input(a: Int, b: Int) derives Codec, Schema
 
 @main def mcpApp(): Unit =
   val t = tool("adder")
