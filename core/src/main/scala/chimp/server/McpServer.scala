@@ -21,8 +21,9 @@ import org.slf4j.LoggerFactory
   *   The server version (for protocol reporting).
   */
 class McpServer(tools: List[ServerTool[?]], name: String = "Chimp MCP server", version: String = "1.0.0"):
-  /** SLF4J logger for this class. */
   private val logger = LoggerFactory.getLogger(classOf[McpServer])
+  private val ProtocolVersion = "2025-03-26"
+  private val toolsByName = tools.map(t => t.name -> t).toMap
 
   /** Converts a ServerTool to its protocol definition. */
   private def toolToDefinition(tool: ServerTool[?]): ToolDefinition =
@@ -40,73 +41,53 @@ class McpServer(tools: List[ServerTool[?]], name: String = "Chimp MCP server", v
 
   private def protocolError(id: RequestId, code: Int, message: String): JSONRPCMessage.Error =
     logger.debug(s"Protocol error (id=$id, code=$code): $message")
-    JSONRPCMessage.Error(
-      id = id,
-      error = JSONRPCErrorObject(
-        code = code,
-        message = message
-      )
-    )
+    JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message))
 
   private def handleInitialize(id: RequestId): JSONRPCMessage.Response =
-    val capabilities = ServerCapabilities(
-      tools = Some(ServerToolsCapability(listChanged = Some(false)))
-    )
-    val result = InitializeResult(
-      protocolVersion = "2025-03-26",
-      capabilities = capabilities,
-      serverInfo = Implementation(name, version)
-    )
+    val capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false))))
+    val result =
+      InitializeResult(protocolVersion = ProtocolVersion, capabilities = capabilities, serverInfo = Implementation(name, version))
     JSONRPCMessage.Response(id = id, result = result.asJson)
 
+  /** Handles the 'tools/list' JSON-RPC method, returning the list of available tools. */
   private def handleToolsList(id: RequestId): JSONRPCMessage.Response =
-    val result = ListToolsResponse(toolDefs)
-    JSONRPCMessage.Response(id = id, result = result.asJson)
+    JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefs).asJson)
 
   /** Handles the 'tools/call' JSON-RPC method. Attempts to decode the tool name and arguments, then dispatches to the tool logic. Provides
     * detailed error messages for decode failures.
     */
   private def handleToolsCall(params: Option[io.circe.Json], id: RequestId): JSONRPCMessage =
-    val (toolNameOpt, argumentsOpt) = {
-      var name: Option[String] = None
-      var args: Option[io.circe.Json] = None
-      params.foreach { p =>
-        val cursor = p.asInstanceOf[io.circe.Json].hcursor
-        name = cursor.downField("name").as[String].toOption
-        args = cursor.downField("arguments").focus
-      }
-      (name, args)
-    }
-    toolNameOpt match
-      case Some(toolName) =>
-        tools.find(_.name == toolName) match
+    // Extract tool name and arguments in a functional, idiomatic way
+    val toolNameOpt = params.flatMap(_.hcursor.downField("name").as[String].toOption)
+    val argumentsOpt = params.flatMap(_.hcursor.downField("arguments").focus)
+    (toolNameOpt, argumentsOpt) match
+      case (Some(toolName), Some(args)) =>
+        toolsByName.get(toolName) match
           case Some(tool) =>
-            argumentsOpt match
-              case Some(args) =>
-                // this is not optimal, but otherwise we wouldn't be able to reuse tapir's decoding logic
-                // (as we need to decode only part of the input)
-                def inputSnippet = args.noSpaces.take(200) // for error reporting
-                tool.inputCodec.decode(args.noSpaces) match
-                  case sttp.tapir.DecodeResult.Value(decodedInput) =>
-                    handleDecodedInput(tool, decodedInput, id)
-                  case sttp.tapir.DecodeResult.Error(_, decodingError) =>
-                    protocolError(
-                      id,
-                      JSONRPCErrorCodes.InvalidParams.code,
-                      s"Invalid arguments: ${decodingError.getMessage}. Input: $inputSnippet"
-                    )
-                  case sttp.tapir.DecodeResult.Missing =>
-                    protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Missing arguments for tool: $toolName. Input: $inputSnippet")
-                  case other =>
-                    logger.debug(s"Unknown decode failure for tool: $toolName, $other. Input: $inputSnippet")
-                    protocolError(
-                      id,
-                      JSONRPCErrorCodes.InvalidParams.code,
-                      s"Unknown decode failure for tool: $toolName. Input: $inputSnippet"
-                    )
-              case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Missing arguments for tool: $toolName")
+            def inputSnippet = args.noSpaces.take(200) // for error reporting
+            // Use Tapir's decode logic for argument decoding
+            tool.inputCodec.decode(args.noSpaces) match
+              case sttp.tapir.DecodeResult.Value(decodedInput) => handleDecodedInput(tool, decodedInput, id)
+              case sttp.tapir.DecodeResult.Error(_, decodingError) =>
+                protocolError(
+                  id,
+                  JSONRPCErrorCodes.InvalidParams.code,
+                  s"Invalid arguments: ${decodingError.getMessage}. Input: $inputSnippet"
+                )
+              case sttp.tapir.DecodeResult.Missing =>
+                protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Missing arguments for tool: $toolName. Input: $inputSnippet")
+              case other =>
+                logger.debug(s"Unknown decode failure for tool: $toolName, $other. Input: $inputSnippet")
+                protocolError(
+                  id,
+                  JSONRPCErrorCodes.InvalidParams.code,
+                  s"Unknown decode failure for tool: $toolName. Input: $inputSnippet"
+                )
           case None => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $toolName")
-      case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name")
+      case (Some(toolName), None) =>
+        protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Missing arguments for tool: $toolName")
+      case (None, _) =>
+        protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name")
 
   /** Handles a successfully decoded tool input, dispatching to the tool's logic. */
   private def handleDecodedInput[T](tool: ServerTool[T], decodedInput: T, id: RequestId): JSONRPCMessage =
@@ -124,8 +105,7 @@ class McpServer(tools: List[ServerTool[?]], name: String = "Chimp MCP server", v
         )
         JSONRPCMessage.Response(id = id, result = callResult.asJson)
 
-  /** Handles a JSON-RPC request, dispatching to the appropriate handler. Logs requests and responses.
-    */
+  /** Handles a JSON-RPC request, dispatching to the appropriate handler. Logs requests and responses. */
   def handleJsonRpc(request: Json): Json =
     logger.debug(s"Request: $request")
     val response: JSONRPCMessage = request.as[JSONRPCMessage] match
