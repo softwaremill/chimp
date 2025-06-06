@@ -20,6 +20,7 @@ case class PartialTool(
   def withAnnotations(ann: ToolAnnotations): PartialTool = copy(annotations = Some(ann))
   def input[I: JsonCodec]: Tool[I] = Tool[I](name, description, summon[JsonCodec[I]], annotations)
 
+/** Creates a new MCP tool description with the given name. */
 def tool(name: String): PartialTool = PartialTool(name)
 
 //
@@ -37,6 +38,7 @@ case class Tool[I](
 
 //
 
+/** A tool that can be executed by the MCP server. */
 case class ServerTool[I](
     name: String,
     description: Option[String],
