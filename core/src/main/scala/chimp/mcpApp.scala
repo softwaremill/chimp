@@ -1,17 +1,25 @@
 package chimp
 
-import sttp.tapir.Schema
+import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import io.circe.Codec
+import sttp.tapir.server.netty.sync.NettySyncServer
 
 case class Input(a: Int, b: Int) derives Codec, Schema
 
 @main def mcpApp(): Unit =
-  val t = tool("adder")
+  val adderTool = tool("adder")
     .description("Adds two numbers")
     .withAnnotations(ToolAnnotations(idempotentHint = Some(true)))
     .input[Input]
 
   def logic(i: Input): Either[String, String] = Right(s"The result is ${i.a + i.b}")
 
-  val st = t.handle(logic)
+  val adderServerTool = adderTool.handle(logic)
+
+  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool)).prependSecurityIn("jsonrpc")
+
+  NettySyncServer()
+    .port(8080)
+    .addEndpoint(mcpServerEndpoint)
+    .startAndWait()
