@@ -7,24 +7,23 @@ import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
 import io.circe.*
 import chimp.mcp.*
+import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
+import sttp.apispec.circe.*
+import chimp.Tool
 
-object McpServer:
-  // Sample tool: calculate_sum
-  val calculateSumTool = ToolDefinition(
-    name = "calculate_sum",
-    description = Some("Add two numbers together"),
-    inputSchema = Json.obj(
-      "type" -> Json.fromString("object"),
-      "properties" -> Json.obj(
-        "a" -> Json.obj("type" -> Json.fromString("number")),
-        "b" -> Json.obj("type" -> Json.fromString("number"))
-      ),
-      "required" -> Json.arr(Json.fromString("a"), Json.fromString("b"))
-    ),
-    annotations = Some(ToolAnnotations(title = Some("Calculate Sum"), readOnlyHint = Some(true)))
-  )
+class McpServer(tools: List[Tool[?]]):
+  private def toolToDefinition(tool: Tool[?]): ToolDefinition =
+    val jsonSchema = TapirSchemaToJsonSchema(tool.inputSchema, markOptionsAsNullable = true)
+    val json = jsonSchema.asJson
+    ToolDefinition(
+      name = tool.name,
+      description = tool.description,
+      inputSchema = json,
+      annotations = tool.annotations
+        .map(a => ToolAnnotations(a.title, a.readOnlyHint, a.destructiveHint, a.idempotentHint, a.openWorldHint))
+    )
 
-  val tools = List(calculateSumTool)
+  private val toolDefs: List[ToolDefinition] = tools.map(toolToDefinition)
 
   def handleJsonRpc(request: Json): Json = {
     val response: JSONRPCMessage = request.as[JSONRPCMessage] match {
@@ -39,7 +38,7 @@ object McpServer:
       case Right(JSONRPCMessage.Request(_, method, params: Option[io.circe.Json], id)) =>
         method match {
           case "tools/list" =>
-            val result = ListToolsResponse(tools)
+            val result = ListToolsResponse(toolDefs)
             JSONRPCMessage.Response(id = id, result = result.asJson)
           case "tools/call" =>
             val (toolNameOpt, argumentsOpt) = {
@@ -127,8 +126,12 @@ object McpServer:
     response.asJson
   }
 
+object McpServer:
+  def apply(tools: List[Tool[?]]): McpServer = new McpServer(tools)
+
   def main(args: Array[String]): Unit =
-    // Regular JSON-RPC endpoint
+    // Example: pass an empty list or construct your tools elsewhere
+    val server = McpServer(List())
     val jsonRpcEndpoint = endpoint.post
       .in("jsonrpc")
       .in(jsonBody[Json])
@@ -136,7 +139,7 @@ object McpServer:
 
     val serverEndpoint = jsonRpcEndpoint.handleSuccess { json =>
       println("Request: " + json)
-      val r = handleJsonRpc(json).deepDropNullValues
+      val r = server.handleJsonRpc(json).deepDropNullValues
       println("Response: " + r)
       r
     }

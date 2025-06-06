@@ -1,4 +1,4 @@
-package chimp
+package chimp.mcp
 
 import io.circe.Json
 import io.circe.parser.*
@@ -6,11 +6,11 @@ import io.circe.syntax.*
 import io.circe.{Decoder, Encoder}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import JSONRPCMessage.{given Decoder[JSONRPCMessage], given Encoder[JSONRPCMessage]}
+import chimp.mcp.JSONRPCMessage.{given Decoder[JSONRPCMessage], given Encoder[JSONRPCMessage]}
 
-class McpModelSpec extends AnyFlatSpec with Matchers {
+class ModelSpec extends AnyFlatSpec with Matchers {
   import JSONRPCMessage.*
-  import JSONRPCErrorCodes.*
+  import chimp.mcp.JSONRPCErrorCodes.*
 
   // Helper function to parse JSON strings
   private def parseJson(str: String): Json = parse(str).getOrElse(throw new RuntimeException("Invalid JSON"))

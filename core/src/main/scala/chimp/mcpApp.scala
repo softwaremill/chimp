@@ -6,9 +6,9 @@ import sttp.tapir.generic.auto._
 case class Input(a: Int, b: Int)
 
 @main def mcpApp(): Unit =
-  val t = tool
+  val t = tool("adder")
     .description("Adds two numbers")
-    .withAnnotations(ToolAnnotations(title = Some("Adder")))
+    .withAnnotations(ToolAnnotations(idempotentHint = Some(true)))
     .input[Input]
 
   def logic(i: Input): Either[String, String] = Right(s"The result is ${i.a + i.b}")

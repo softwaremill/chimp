@@ -4,7 +4,6 @@ import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
 val scalaTestV = "3.2.18"
 val circeV = "0.14.6"
 val tapirV = "1.11.33"
-val logbackV = "1.4.14"
 
 lazy val commonSettings = commonSmlBuildSettings ++ Seq(
   organization := "com.softwaremill",
@@ -30,6 +29,8 @@ lazy val core: Project = (project in file("core"))
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
-      "ch.qos.logback" % "logback-classic" % logbackV
+      "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
+      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.9",
+      "ch.qos.logback" % "logback-classic" % "1.4.14"
     )
   )
