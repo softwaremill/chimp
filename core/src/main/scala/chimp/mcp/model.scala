@@ -1,6 +1,6 @@
 // Combined MCP 2025-03-26 protocol and tool data model.
 // NOTE: RequestId and ProgressToken use newtype wrappers for spec accuracy and to avoid ambiguous implicits.
-package chimp
+package chimp.mcp
 
 import io.circe.{Codec, Decoder, Encoder, Json}
 import io.circe.syntax._

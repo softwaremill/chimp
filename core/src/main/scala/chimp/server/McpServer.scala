@@ -1,4 +1,4 @@
-package chimp
+package chimp.server
 
 import sttp.tapir.*
 import sttp.tapir.json.circe.*
@@ -6,6 +6,7 @@ import sttp.tapir.server.netty.sync.NettySyncServer
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.syntax.*
 import io.circe.*
+import chimp.mcp.*
 
 object McpServer:
   // Sample tool: calculate_sum
@@ -137,24 +138,11 @@ object McpServer:
       println("Request: " + json)
       val r = handleJsonRpc(json).deepDropNullValues
       println("Response: " + r)
-      println(r.noSpaces)
       r
-    }
-
-    // Streaming endpoint for tool updates
-    val streamEndpoint = endpoint.get
-      .in("jsonrpc")
-      .out(stringBody)
-
-    val streamServerEndpoint = streamEndpoint.handleSuccess { _ =>
-      // Create a stream of tool updates
-      val toolsJson = tools.asJson.noSpaces
-      s"data: $toolsJson\n\n"
     }
 
     println("Starting MCP server on http://localhost:8080 ...")
     NettySyncServer()
       .port(8080)
       .addEndpoint(serverEndpoint)
-      .addEndpoint(streamServerEndpoint)
       .startAndWait()
