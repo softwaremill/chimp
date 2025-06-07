@@ -17,39 +17,34 @@ Add the dependency to your `build.sbt`:
 libraryDependencies += "com.softwaremill.chimp" %% "core" % "0.1.0"
 ```
 
-### Example: Defining and Running an MCP Server
+### Example: the simplest MCP server
+
+Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example:
 
 ```scala
+//> using dep com.softwaremill.chimp::core:0.1.0
+
 import chimp.*
 import sttp.tapir.server.netty.sync.NettySyncServer
-import io.circe.Codec
 
-// Define the input type for your tool
-def case class Input(a: Int, b: Int) derives Codec, Schema
+// define the input type for your tool
+case class AdderInput(a: Int, b: Int) derives io.circe.Codec, sttp.tapir.Schema
 
 @main def mcpApp(): Unit =
-  // Define a tool with a name, description, and input type
-  val adderTool = tool("adder")
-    .description("Adds two numbers")
-    .withAnnotations(ToolAnnotations(idempotentHint = Some(true)))
-    .input[Input]
+  // describe the tool providing the name, description, and input type
+  val adderTool = tool("adder").description("Adds two numbers").input[AdderInput]
 
-  // Provide the logic for the tool
-  def logic(i: Input): Either[String, String] =
-    Right(s"The result is ${i.a + i.b}")
+  // combine the tool description with the server-side logic
+  val adderServerTool = adderTool.handle(i => Right(s"The result is ${i.a + i.b}"))
 
-  // Combine the tool with its logic
-  val adderServerTool = adderTool.handle(logic)
+  // create the MCP server endpoint; it will be available at http://localhost:8080/mcp  
+  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool)).prependSecurityIn("mcp")
 
-  // Create the MCP server endpoint
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool)).prependSecurityIn("jsonrpc")
-
-  // Start the server on port 8080
-  NettySyncServer()
-    .port(8080)
-    .addEndpoint(mcpServerEndpoint)
-    .startAndWait()
+  // start the server on port 8080
+  NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 ```
+
+### Example: an MCP server exposing two tools
 
 ---
 
