@@ -1,20 +1,28 @@
 import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
+import com.softwaremill.Publish.{ossPublishSettings, updateDocs}
+import com.softwaremill.UpdateVersionInDocs
 
 // Version constants
 val scalaTestV = "3.2.18"
 val circeV = "0.14.6"
 val tapirV = "1.11.33"
 
-lazy val commonSettings = commonSmlBuildSettings ++ Seq(
+lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   organization := "com.softwaremill",
-  scalaVersion := "3.3.6"
+  scalaVersion := "3.3.6",
+  updateDocs := Def.taskDyn {
+    val files = UpdateVersionInDocs(sLog.value, organization.value, version.value)
+    Def.task {
+      files
+    }
+  }.value
 )
 
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
 lazy val rootProject = (project in file("."))
   .settings(commonSettings: _*)
-  .settings(publishArtifact := false, name := "root")
+  .settings(publishArtifact := false, name := "chimp")
   .aggregate(core)
 
 lazy val core: Project = (project in file("core"))
