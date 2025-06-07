@@ -1,7 +1,6 @@
 package chimp
 
 import sttp.tapir.*
-import sttp.tapir.json.circe.*
 import io.circe.Codec
 import sttp.tapir.server.netty.sync.NettySyncServer
 

@@ -26,7 +26,7 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
 
   /** Converts a ServerTool to its protocol definition. */
   private def toolToDefinition(tool: ServerTool[?, F]): ToolDefinition =
-    val jsonSchema = TapirSchemaToJsonSchema(tool.inputCodec.schema, markOptionsAsNullable = true)
+    val jsonSchema = TapirSchemaToJsonSchema(tool.inputSchema, markOptionsAsNullable = true)
     val json = jsonSchema.asJson
     ToolDefinition(
       name = tool.name,
@@ -64,23 +64,14 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
         toolsByName.get(toolName) match
           case Some(tool) =>
             def inputSnippet = args.noSpaces.take(200) // for error reporting
-            // Use Tapir's decode logic for argument decoding
-            tool.inputCodec.decode(args.noSpaces) match
-              case sttp.tapir.DecodeResult.Value(decodedInput) => handleDecodedInput(tool, decodedInput, id)
-              case sttp.tapir.DecodeResult.Error(_, decodingError) =>
+            // Use Circe's Decoder for argument decoding
+            tool.inputDecoder.decodeJson(args) match
+              case Right(decodedInput) => handleDecodedInput(tool, decodedInput, id)
+              case Left(decodingError) =>
                 protocolError(
                   id,
                   JSONRPCErrorCodes.InvalidParams.code,
                   s"Invalid arguments: ${decodingError.getMessage}. Input: $inputSnippet"
-                ).unit
-              case sttp.tapir.DecodeResult.Missing =>
-                protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Missing arguments for tool: $toolName. Input: $inputSnippet").unit
-              case other =>
-                logger.debug(s"Unknown decode failure for tool: $toolName, $other. Input: $inputSnippet")
-                protocolError(
-                  id,
-                  JSONRPCErrorCodes.InvalidParams.code,
-                  s"Unknown decode failure for tool: $toolName. Input: $inputSnippet"
                 ).unit
           case None => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $toolName").unit
       case (Some(toolName), None) =>

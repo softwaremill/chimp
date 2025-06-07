@@ -11,7 +11,6 @@ import sttp.monad.IdentityMonad
 import sttp.monad.MonadError
 import sttp.shared.Identity
 import sttp.tapir.Schema
-import sttp.tapir.json.circe.*
 
 class McpHandlerSpec extends AnyFlatSpec with Matchers:
   import JSONRPCMessage.*
