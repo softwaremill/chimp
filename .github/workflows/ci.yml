@@ -34,5 +34,5 @@ jobs:
   auto-merge:
     # only for PRs by softwaremill-ci
     if: github.event.pull_request.user.login == 'softwaremill-ci'
-    needs: [ build, mima, label ]
+    needs: [ build, label ]
     uses: softwaremill/github-actions-workflows/.github/workflows/auto-merge.yml@main
