@@ -23,7 +23,7 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val rootProject = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core)
+  .aggregate(core, examples)
 
 lazy val core: Project = (project in file("core"))
   .settings(commonSettings: _*)
@@ -43,3 +43,11 @@ lazy val core: Project = (project in file("core"))
       "org.slf4j" % "slf4j-api" % "2.0.13"
     )
   )
+
+lazy val examples = (project in file("examples"))
+  .settings(commonSettings: _*)
+  .settings(
+    publishArtifact := false,
+    name := "examples"
+  )
+  .dependsOn(core)
