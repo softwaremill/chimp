@@ -16,8 +16,9 @@ def mcpEndpoint(tools: List[ServerTool[?]]): ServerEndpoint[Any, Identity] =
   endpoint.post
     .in(jsonBody[Json])
     .out(jsonBody[Json])
-    .handleSuccess { json =>
-      mcpEndpoint.handleJsonRpc(json).deepDropNullValues.tap { response =>
-        logger.debug(s"For request: $json, returning response: $response")
-      }
-    }
+    .handleSuccess: json =>
+      mcpEndpoint
+        .handleJsonRpc(json)
+        .deepDropNullValues
+        .tap: response =>
+          logger.debug(s"For request: $json, returning response: $response")
