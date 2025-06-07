@@ -119,5 +119,6 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
           case other        => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other").unit
       case Right(_) => protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type").unit
     responseF.map: response =>
-      logger.debug(s"Response: $response")
-      response.asJson
+      val responseJson = response.asJson
+      logger.debug(s"Response: $responseJson")
+      responseJson
