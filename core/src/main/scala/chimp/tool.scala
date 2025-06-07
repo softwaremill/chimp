@@ -1,6 +1,7 @@
 package chimp
 
 import sttp.tapir.Codec.JsonCodec
+import sttp.shared.Identity
 
 case class ToolAnnotations(
     title: Option[String] = None,
@@ -32,17 +33,27 @@ case class Tool[I](
     inputCodec: JsonCodec[I],
     annotations: Option[ToolAnnotations]
 ):
-  /** Given the input, returns either a tool execution error (`Left`), or a successful textual result (`Right`). */
-  def handle(logic: I => Either[String, String]): ServerTool[I] =
+  /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
+    * should return either a tool execution error (`Left`), or a successful textual result (`Right`), using the F-effect.
+    */
+  def serverLogic[F[_]](logic: I => F[Either[String, String]]): ServerTool[I, F] =
+    ServerTool(name, description, inputCodec, annotations, logic)
+
+  /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
+    * should return either a tool execution error (`Left`), or a successful textual result (`Right`).
+    *
+    * Same as [[serverLogic]], but using the identity "effect".
+    */
+  def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
     ServerTool(name, description, inputCodec, annotations, logic)
 
 //
 
 /** A tool that can be executed by the MCP server. */
-case class ServerTool[I](
+case class ServerTool[I, F[_]](
     name: String,
     description: Option[String],
     inputCodec: JsonCodec[I],
     annotations: Option[ToolAnnotations],
-    logic: I => Either[String, String]
+    logic: I => F[Either[String, String]]
 )

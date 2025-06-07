@@ -7,6 +7,9 @@ import io.circe.parser.*
 import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import sttp.monad.IdentityMonad
+import sttp.monad.MonadError
+import sttp.shared.Identity
 import sttp.tapir.Schema
 import sttp.tapir.json.circe.*
 
@@ -37,6 +40,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
   val handler = McpHandler(List(echoTool, addTool, errorTool))
 
   def parseJson(str: String): Json = parse(str).getOrElse(throw new RuntimeException("Invalid JSON"))
+
+  given MonadError[Identity] = IdentityMonad
 
   "McpHandler" should "respond to initialize" in:
     // Given
