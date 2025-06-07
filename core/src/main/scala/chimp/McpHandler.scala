@@ -117,6 +117,32 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
           case "tools/call" => handleToolsCall(params, id)
           case "initialize" => handleInitialize(id).unit
           case other        => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other").unit
+      case Right(JSONRPCMessage.BatchRequest(requests)) =>
+        // For each sub-request, process as a single request using flatMap/fold (no .sequence)
+        def processBatch(reqs: List[JSONRPCMessage], acc: List[JSONRPCMessage]): F[List[JSONRPCMessage]] =
+          reqs match
+            case Nil => acc.reverse.unit
+            case head :: tail =>
+              head match
+                case JSONRPCMessage.Notification(_, _, _) =>
+                  processBatch(tail, acc) // skip notifications
+                case _ =>
+                  handleJsonRpc(head.asJson).flatMap { respJson =>
+                    val msg = respJson
+                      .as[JSONRPCMessage]
+                      .getOrElse(
+                        protocolError(RequestId("null"), JSONRPCErrorCodes.InternalError.code, "Failed to decode sub-response")
+                      )
+                    processBatch(tail, msg :: acc)
+                  }
+        processBatch(requests, Nil).map { responses =>
+          // Per JSON-RPC spec, notifications (no id) should not be included in the response
+          val filtered = responses.collect {
+            case r @ JSONRPCMessage.Response(_, id, _) => r
+            case e @ JSONRPCMessage.Error(_, id, _)    => e
+          }
+          JSONRPCMessage.BatchResponse(filtered)
+        }
       case Right(_) => protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type").unit
     responseF.map: response =>
       val responseJson = response.asJson

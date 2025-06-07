@@ -215,3 +215,86 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         error.code shouldBe MethodNotFound.code
         error.message should include("Unknown method")
       case _ => fail("Expected Error")
+
+  it should "handle batch requests with mixed results" in:
+    // Given
+    val req1 = Request(
+      method = "tools/call",
+      params = Some(
+        Json.obj(
+          "name" -> Json.fromString("echo"),
+          "arguments" -> Json.obj("message" -> Json.fromString("hi"))
+        )
+      ),
+      id = RequestId("b1")
+    )
+    val req2 = Request(
+      method = "tools/call",
+      params = Some(
+        Json.obj(
+          "name" -> Json.fromString("add"),
+          "arguments" -> Json.obj("a" -> Json.fromInt(1), "b" -> Json.fromInt(2))
+        )
+      ),
+      id = RequestId("b2")
+    )
+    val req3 = Request(
+      method = "tools/call",
+      params = Some(
+        Json.obj(
+          "name" -> Json.fromString("fail"),
+          "arguments" -> Json.obj("message" -> Json.fromString("fail"))
+        )
+      ),
+      id = RequestId("b3")
+    )
+    val req4 = Request(
+      method = "tools/call",
+      params = Some(
+        Json.obj(
+          "name" -> Json.fromString("unknown"),
+          "arguments" -> Json.obj("foo" -> Json.fromString("bar"))
+        )
+      ),
+      id = RequestId("b4")
+    )
+    val notification = Notification(method = "tools/list", params = None)
+    val batch = BatchRequest(List(req1, req2, req3, req4, notification))
+    val json = batch.asJson
+    // When
+    val respJson = handler.handleJsonRpc(json)
+    val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode batch response"))
+    // Then
+    resp match
+      case BatchResponse(responses) =>
+        // Should not include notification response
+        responses.map {
+          case Response(_, id, result) if id == RequestId("b1") =>
+            val r = result.as[ToolCallResult].getOrElse(fail("Failed to decode result"))
+            r.isError shouldBe false
+            r.content.head shouldBe ToolContent.Text("text", "hi")
+          case Response(_, id, result) if id == RequestId("b2") =>
+            val r = result.as[ToolCallResult].getOrElse(fail("Failed to decode result"))
+            r.isError shouldBe false
+            r.content.head shouldBe ToolContent.Text("text", "3")
+          case Response(_, id, result) if id == RequestId("b3") =>
+            val r = result.as[ToolCallResult].getOrElse(fail("Failed to decode result"))
+            r.isError shouldBe true
+            r.content.head shouldBe ToolContent.Text("text", "Intentional failure")
+          case Error(_, id, error) if id == RequestId("b4") =>
+            error.code shouldBe MethodNotFound.code
+            error.message should include("Unknown tool")
+          case other => fail(s"Unexpected response: $other")
+        }
+        responses.exists {
+          case Response(_, id, _) if id == RequestId("b1") => true
+          case Response(_, id, _) if id == RequestId("b2") => true
+          case Response(_, id, _) if id == RequestId("b3") => true
+          case Error(_, id, _) if id == RequestId("b4")    => true
+          case _                                           => false
+        } shouldBe true
+        responses.exists {
+          case Notification(_, _, _) => true
+          case _                     => false
+        } shouldBe false
+      case _ => fail("Expected BatchResponse")
