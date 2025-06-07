@@ -14,7 +14,7 @@ Integrates with any Scala stack, using any of the HTTP server implementations su
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "core" % "0.0.1"
+libraryDependencies += "com.softwaremill.chimp" %% "core" % "0.0.2"
 ```
 
 ### Example: Defining and Running an MCP Server
