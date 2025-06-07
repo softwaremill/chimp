@@ -40,7 +40,7 @@ case class AdderInput(a: Int, b: Int) derives io.circe.Codec, sttp.tapir.Schema
   // create the MCP server endpoint; it will be available at http://localhost:8080/mcp  
   val mcpServerEndpoint = mcpEndpoint(List(adderServerTool)).prependSecurityIn("mcp")
 
-  // start the server on port 8080
+  // start the server
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 ```
 
