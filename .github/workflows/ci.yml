@@ -1,0 +1,49 @@
+name: CI
+on:
+  pull_request:
+    branches: ['**']
+  push:
+    branches: ['**']
+    tags: [v*]
+jobs:
+  build:
+    uses: softwaremill/github-actions-workflows/.github/workflows/build-scala.yml@main
+    # run on 1) push, 2) external PRs, 3) softwaremill-ci PRs
+    # do not run on internal, non-steward PRs since those will be run by push to branch
+    if: |
+      github.event_name == 'push' || 
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      github.event.pull_request.user.login == 'softwaremill-ci'
+    with:
+      java-opts: '-Xmx4G'
+
+  mima:
+    uses: softwaremill/github-actions-workflows/.github/workflows/mima.yml@main
+    # run on 1) push, 2) external PRs, 3) softwaremill-ci PRs
+    # do not run on internal, non-steward PRs since those will be run by push to branch
+    if: |
+      github.event_name == 'push' || 
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      github.event.pull_request.user.login == 'softwaremill-ci'
+    with:
+      java-opts: "-Xmx4G"
+
+  publish:
+    uses: softwaremill/github-actions-workflows/.github/workflows/publish-release.yml@main
+    needs: [build]
+    if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v'))
+    secrets: inherit
+    with:
+      java-opts: "-Xmx4G"
+      sttp-native: 1
+
+  label:
+    # only for PRs by softwaremill-ci
+    if: github.event.pull_request.user.login == 'softwaremill-ci'
+    uses: softwaremill/github-actions-workflows/.github/workflows/label.yml@main
+
+  auto-merge:
+    # only for PRs by softwaremill-ci
+    if: github.event.pull_request.user.login == 'softwaremill-ci'
+    needs: [ build, mima, label ]
+    uses: softwaremill/github-actions-workflows/.github/workflows/auto-merge.yml@main

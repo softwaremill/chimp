@@ -1,0 +1,15 @@
+name: 'Test Report'
+on:
+  workflow_run:
+    workflows: ['CI']
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+
+jobs:
+  test-report:
+    uses: softwaremill/github-actions-workflows/.github/workflows/test-report.yml@main
