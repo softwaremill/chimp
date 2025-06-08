@@ -4,7 +4,7 @@ import com.softwaremill.UpdateVersionInDocs
 
 // Version constants
 val scalaTestV = "3.2.18"
-val circeV = "0.14.6"
+val circeV = "0.14.13"
 val tapirV = "1.11.33"
 
 lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
