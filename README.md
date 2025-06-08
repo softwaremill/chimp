@@ -25,10 +25,11 @@ Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable
 //> using dep com.softwaremill.chimp::core:0.1.0
 
 import chimp.*
+import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
 // define the input type for your tool
-case class AdderInput(a: Int, b: Int) derives io.circe.Codec, sttp.tapir.Schema
+case class AdderInput(a: Int, b: Int) derives io.circe.Codec, Schema
 
 @main def mcpApp(): Unit =
   // describe the tool providing the name, description, and input type
