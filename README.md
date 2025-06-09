@@ -45,8 +45,6 @@ case class AdderInput(a: Int, b: Int) derives io.circe.Codec, Schema
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 ```
 
-### Example: an MCP server exposing two tools
-
 ---
 
 ## MCP Protocol
