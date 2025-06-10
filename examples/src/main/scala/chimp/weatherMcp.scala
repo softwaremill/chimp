@@ -1,6 +1,6 @@
 package chimp
 
-//> using dep com.softwaremill.chimp::core:0.1.1
+//> using dep com.softwaremill.chimp::core:0.1.2
 //> using dep com.softwaremill.sttp.client4::core:4.0.8
 
 import chimp.*

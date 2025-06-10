@@ -1,6 +1,6 @@
 package chimp
 
-//> using dep com.softwaremill.chimp::core:0.1.1
+//> using dep com.softwaremill.chimp::core:0.1.2
 
 import sttp.tapir.*
 import io.circe.Codec
