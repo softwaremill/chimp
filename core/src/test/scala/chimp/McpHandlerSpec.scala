@@ -267,7 +267,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     resp match
       case BatchResponse(responses) =>
         // Should not include notification response
-        responses.map {
+        responses.foreach {
           case Response(_, id, result) if id == RequestId("b1") =>
             val r = result.as[ToolCallResult].getOrElse(fail("Failed to decode result"))
             r.isError shouldBe false
