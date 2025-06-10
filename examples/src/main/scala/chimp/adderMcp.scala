@@ -1,5 +1,7 @@
 package chimp
 
+//> using dep com.softwaremill.chimp::core:0.1.1
+
 import sttp.tapir.*
 import io.circe.Codec
 import sttp.tapir.server.netty.sync.NettySyncServer
@@ -16,7 +18,7 @@ case class Input(a: Int, b: Int) derives Codec, Schema
 
   val adderServerTool = adderTool.handle(logic)
 
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool)).prependSecurityIn("jsonrpc")
+  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
 
   NettySyncServer()
     .port(8080)

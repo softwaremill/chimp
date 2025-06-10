@@ -48,6 +48,9 @@ lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)
   .settings(
     publishArtifact := false,
-    name := "examples"
+    name := "examples",
+    libraryDependencies ++= Seq(
+      "com.softwaremill.sttp.client4" %% "core" % "4.0.8"
+    )
   )
   .dependsOn(core)

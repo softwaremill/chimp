@@ -39,11 +39,15 @@ case class AdderInput(a: Int, b: Int) derives io.circe.Codec, Schema
   val adderServerTool = adderTool.handle(i => Right(s"The result is ${i.a + i.b}"))
 
   // create the MCP server endpoint; it will be available at http://localhost:8080/mcp  
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool)).prependSecurityIn("mcp")
+  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
 
   // start the server
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 ```
+
+### More examples
+
+Are available [here](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/chimp).
 
 ---
 
