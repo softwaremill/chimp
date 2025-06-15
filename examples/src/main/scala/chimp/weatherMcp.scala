@@ -2,6 +2,8 @@ package chimp
 
 //> using dep com.softwaremill.chimp::core:0.1.2
 //> using dep com.softwaremill.sttp.client4::core:4.0.8
+//> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.33
+//> using dep ch.qos.logback::logback-classic:1.5.18
 
 import chimp.*
 import io.circe.Codec

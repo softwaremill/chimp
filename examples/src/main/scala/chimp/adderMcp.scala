@@ -1,6 +1,7 @@
 package chimp
 
 //> using dep com.softwaremill.chimp::core:0.1.2
+//> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.33
 
 import sttp.tapir.*
 import io.circe.Codec
