@@ -38,10 +38,8 @@ lazy val core: Project = (project in file("core"))
       "io.circe" %% "circe-parser" % circeV,
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
-      "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
       "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.9",
-      "ch.qos.logback" % "logback-classic" % "1.5.18",
       "org.slf4j" % "slf4j-api" % "2.0.17"
     )
   )
@@ -52,7 +50,9 @@ lazy val examples = (project in file("examples"))
     publishArtifact := false,
     name := "examples",
     libraryDependencies ++= Seq(
-      "com.softwaremill.sttp.client4" %% "core" % "4.0.8"
+      "com.softwaremill.sttp.client4" %% "core" % "4.0.8",
+      "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
+      "ch.qos.logback" % "logback-classic" % "1.5.18"
     )
   )
   .dependsOn(core)
