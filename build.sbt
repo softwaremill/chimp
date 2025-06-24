@@ -50,7 +50,7 @@ lazy val examples = (project in file("examples"))
     publishArtifact := false,
     name := "examples",
     libraryDependencies ++= Seq(
-      "com.softwaremill.sttp.client4" %% "core" % "4.0.8",
+      "com.softwaremill.sttp.client4" %% "core" % "4.0.9",
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
       "ch.qos.logback" % "logback-classic" % "1.5.18"
     )
