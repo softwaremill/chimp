@@ -48,12 +48,11 @@ case class Tool[I](
     *
     * Same as [[serverLogic]], but using the identity "effect".
     */
-  def handleWithAuth(logic: (I, Option[String]) => Either[String, String]): ServerTool[I, Identity] =
+  def handleWithHeader(logic: (I, Option[String]) => Either[String, String]): ServerTool[I, Identity] =
     ServerTool(name, description, inputSchema, inputDecoder, annotations, (i, t) => logic(i, t))
 
-  //for backward-compatibility
   def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
-    handleWithAuth((i, _) => logic(i))
+    handleWithHeader((i, _) => logic(i))
     
 //
 

@@ -41,7 +41,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
   val headerEchoTool = tool("headerEcho")
     .description("Echoes the header value if present.")
     .input[HeaderEchoInput]
-    .handleWithAuth { (in, headerValueOpt) =>
+    .handleWithHeader { (in, headerValueOpt) =>
       headerValueOpt match {
         case Some(headerValue) => Right(s"header value: $headerValue")
         case None        => Right("no header")
