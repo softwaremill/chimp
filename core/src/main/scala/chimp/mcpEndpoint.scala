@@ -16,24 +16,40 @@ private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   *   The list of tools to expose.
   * @param path
   *   The path components at which to expose the MCP server.
+  * @param headerName
+  *   The optional name of the header to read. If None, no header is read.
   *
   * @tparam F
   *   The effect type. Might be `Identity` for a endpoints with synchronous logic.
   */
-def mcpEndpoint[F[_]](tools: List[ServerTool[?, F]], path: List[String]): ServerEndpoint[Any, F] =
+def mcpEndpoint[F[_]](tools: List[ServerTool[?, F]], path: List[String], headerName: Option[String] = None): ServerEndpoint[Any, F] =
   val mcpHandler = new McpHandler(tools)
-  val e = infallibleEndpoint.post
+  val base = infallibleEndpoint.post
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
     .in(jsonBody[Json])
     .out(jsonBody[Json])
 
-  ServerEndpoint.public(
-    e,
-    me =>
-      json =>
-        given MonadError[F] = me
-        mcpHandler
-          .handleJsonRpc(json)
-          .map: responseJson =>
-            Right(responseJson.deepDropNullValues)
-  )
+  headerName match {
+    case Some(name) =>
+      val endpoint = base.prependIn(header[Option[String]](name))
+      ServerEndpoint.public(
+        endpoint,
+        me => { (input: (Option[String], Json)) =>
+          val (headerValue, json) = input
+          given MonadError[F] = me
+          mcpHandler
+            .handleJsonRpc(json, headerValue)
+            .map(responseJson => Right(responseJson.deepDropNullValues))
+        }
+      )
+    case None =>
+      ServerEndpoint.public(
+        base,
+        me => { (json: Json) =>
+          given MonadError[F] = me
+          mcpHandler
+            .handleJsonRpc(json, None)
+            .map(responseJson => Right(responseJson.deepDropNullValues))
+        }
+      )
+  }
