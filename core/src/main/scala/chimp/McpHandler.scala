@@ -5,10 +5,10 @@ import io.circe.*
 import io.circe.syntax.*
 import org.slf4j.LoggerFactory
 import sttp.apispec.circe.*
-import sttp.tapir.*
-import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
+import sttp.tapir.*
+import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
 
 /** The MCP server handles JSON-RPC requests for tool listing, invocation, and initialization.
   *
@@ -55,7 +55,9 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
   /** Handles the 'tools/call' JSON-RPC method. Attempts to decode the tool name and arguments, then dispatches to the tool logic. Provides
     * detailed error messages for decode failures.
     */
-  private def handleToolsCall(params: Option[io.circe.Json], id: RequestId, headerValue: Option[String])(using MonadError[F]): F[JSONRPCMessage] =
+  private def handleToolsCall(params: Option[io.circe.Json], id: RequestId, headerValue: Option[String])(using
+      MonadError[F]
+  ): F[JSONRPCMessage] =
     val toolNameOpt = params.flatMap(_.hcursor.downField("name").as[String].toOption)
     val argumentsOpt = params.flatMap(_.hcursor.downField("arguments").focus)
     (toolNameOpt, argumentsOpt) match
@@ -78,7 +80,9 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
   /** Handles a successfully decoded tool input, dispatching to the tool's logic. */
-  private def handleDecodedInput[T](tool: ServerTool[T, F], decodedInput: T, id: RequestId, headerValue: Option[String])(using MonadError[F]): F[JSONRPCMessage] =
+  private def handleDecodedInput[T](tool: ServerTool[T, F], decodedInput: T, id: RequestId, headerValue: Option[String])(using
+      MonadError[F]
+  ): F[JSONRPCMessage] =
     tool
       .logic(decodedInput, headerValue)
       .map:

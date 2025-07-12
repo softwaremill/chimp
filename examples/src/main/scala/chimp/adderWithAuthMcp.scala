@@ -7,7 +7,6 @@ package chimp
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
-
 @main def mcpAuthApp(): Unit =
   val adderTool = tool("adder")
     .description("Adds two numbers")

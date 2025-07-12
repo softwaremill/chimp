@@ -53,8 +53,6 @@ case class Tool[I](
 
   def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
     handleWithHeader((i, _) => logic(i))
-    
-//
 
 /** A tool that can be executed by the MCP server. */
 case class ServerTool[I, F[_]](
