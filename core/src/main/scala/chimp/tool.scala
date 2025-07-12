@@ -40,7 +40,7 @@ case class Tool[I](
   /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
     * should return either a tool execution error (`Left`), or a successful textual result (`Right`), using the F-effect.
     */
-  def serverLogic[F[_]](logic: I => F[Either[String, String]]): ServerTool[I, F] =
+  def serverLogic[F[_]](logic: (I, Option[String]) => F[Either[String, String]]): ServerTool[I, F] =
     ServerTool(name, description, inputSchema, inputDecoder, annotations, logic)
 
   /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
@@ -48,10 +48,11 @@ case class Tool[I](
     *
     * Same as [[serverLogic]], but using the identity "effect".
     */
-  def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
-    ServerTool(name, description, inputSchema, inputDecoder, annotations, logic)
+  def handleWithHeader(logic: (I, Option[String]) => Either[String, String]): ServerTool[I, Identity] =
+    ServerTool(name, description, inputSchema, inputDecoder, annotations, (i, t) => logic(i, t))
 
-//
+  def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
+    handleWithHeader((i, _) => logic(i))
 
 /** A tool that can be executed by the MCP server. */
 case class ServerTool[I, F[_]](
@@ -60,5 +61,5 @@ case class ServerTool[I, F[_]](
     inputSchema: Schema[I],
     inputDecoder: Decoder[I],
     annotations: Option[ToolAnnotations],
-    logic: I => F[Either[String, String]]
+    logic: (I, Option[String]) => F[Either[String, String]]
 )

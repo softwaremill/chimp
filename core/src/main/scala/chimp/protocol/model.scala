@@ -2,8 +2,8 @@
 // NOTE: RequestId and ProgressToken use newtype wrappers for spec accuracy and to avoid ambiguous implicits.
 package chimp.protocol
 
+import io.circe.syntax.*
 import io.circe.{Codec, Decoder, Encoder, Json}
-import io.circe.syntax._
 
 // --- JSON-RPC base types ---
 // Use newtype wrappers for union types to avoid ambiguous implicits
@@ -46,8 +46,8 @@ enum JSONRPCMessage:
   case BatchResponse(responses: List[JSONRPCMessage])
 
 object JSONRPCMessage {
-  import io.circe._
-  import io.circe.syntax._
+  import io.circe.*
+  import io.circe.syntax.*
 
   given Decoder[JSONRPCMessage] = Decoder.instance { c =>
     val jsonrpc = c.downField("jsonrpc").as[String].getOrElse("2.0")
