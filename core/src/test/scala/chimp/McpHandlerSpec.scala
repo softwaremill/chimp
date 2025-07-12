@@ -7,8 +7,7 @@ import io.circe.parser.*
 import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
-import sttp.monad.IdentityMonad
-import sttp.monad.MonadError
+import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
 import sttp.tapir.Schema
 
@@ -44,7 +43,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     .handleWithHeader { (in, headerValueOpt) =>
       headerValueOpt match {
         case Some(headerValue) => Right(s"header value: $headerValue")
-        case None        => Right("no header")
+        case None              => Right("no header")
       }
     }
 
