@@ -1,7 +1,7 @@
 package chimp
 
 import chimp.protocol.*
-import chimp.protocol.JSONRPCMessage.given
+import chimp.protocol.JSONRPCMessage.{Notification, given}
 import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
@@ -109,6 +109,18 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.isError shouldBe false
         resultObj.content.head shouldBe ToolContent.Text("text", "5")
       case _ => fail("Expected Response")
+
+  it should "accept notifications" in:
+    // Given
+    val req: JSONRPCMessage = Notification(method = "notifications/initialized")
+    val json = req.asJson
+    // When
+    val respJson = handler.handleJsonRpc(json)
+    val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
+    // Then
+    resp match
+      case Notification(_, methodName, _) => methodName shouldBe "notifications/initialized"
+      case _                              => fail("Expected Notification")
 
   it should "return an error for unknown tool" in:
     // Given

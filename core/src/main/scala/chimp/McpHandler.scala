@@ -134,6 +134,7 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
           }
           JSONRPCMessage.BatchResponse(filtered)
         }
+      case Right(notification: JSONRPCMessage.Notification) => notification.unit
       case Right(_) => protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type").unit
     responseF.map: response =>
       val responseJson = response.asJson
