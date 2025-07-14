@@ -17,8 +17,6 @@ private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   *   The list of tools to expose.
   * @param path
   *   The path components at which to expose the MCP server.
-  * @param headerName
-  *   The optional name of the header to read. If None, no header is read.
   *
   * @tparam F
   *   The effect type. Might be `Identity` for a endpoints with synchronous logic.
@@ -26,14 +24,14 @@ private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
 def mcpEndpoint[F[_]](tools: List[ServerTool[?, F]], path: List[String]): ServerEndpoint[Any, F] =
   val mcpHandler = new McpHandler(tools)
 
-  val base = infallibleEndpoint.post
+  val e = infallibleEndpoint.post
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
     .in(extractFromRequest(_.headers))
     .in(jsonBody[Json])
     .out(jsonBody[Json])
 
   ServerEndpoint.public(
-    base,
+    e,
     me => { (input: (Seq[Header], Json)) =>
       val (headers, json) = input
       given MonadError[F] = me

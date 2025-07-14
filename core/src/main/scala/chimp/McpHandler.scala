@@ -59,12 +59,14 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
   private def handleToolsCall(params: Option[io.circe.Json], id: RequestId, headers: Seq[Header])(using
       MonadError[F]
   ): F[JSONRPCMessage] =
+    // Extract tool name and arguments in a functional, idiomatic way
     val toolNameOpt = params.flatMap(_.hcursor.downField("name").as[String].toOption)
     val argumentsOpt = params.flatMap(_.hcursor.downField("arguments").focus)
     (toolNameOpt, argumentsOpt) match
       case (Some(toolName), Some(args)) =>
         toolsByName.get(toolName) match
           case Some(tool) =>
+            // Use Circe's Decoder for argument decoding
             def inputSnippet = args.noSpaces.take(200)
             tool.inputDecoder.decodeJson(args) match
               case Right(decodedInput) => handleDecodedInput(tool, decodedInput, id, headers)
@@ -130,6 +132,7 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
                     processBatch(tail, msg :: acc)
                   }
         processBatch(requests, Nil).map { responses =>
+          // Per JSON-RPC spec, notifications (no id) should not be included in the response
           val filtered = responses.collect {
             case r @ JSONRPCMessage.Response(_, id, _) => r
             case e @ JSONRPCMessage.Error(_, id, _)    => e
