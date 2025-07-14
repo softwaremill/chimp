@@ -5,6 +5,7 @@ import io.circe.*
 import io.circe.syntax.*
 import org.slf4j.LoggerFactory
 import sttp.apispec.circe.*
+import sttp.model.Header
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 import sttp.tapir.*
@@ -55,7 +56,7 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
   /** Handles the 'tools/call' JSON-RPC method. Attempts to decode the tool name and arguments, then dispatches to the tool logic. Provides
     * detailed error messages for decode failures.
     */
-  private def handleToolsCall(params: Option[io.circe.Json], id: RequestId, headerValue: Option[String])(using
+  private def handleToolsCall(params: Option[io.circe.Json], id: RequestId, headers: Seq[Header])(using
       MonadError[F]
   ): F[JSONRPCMessage] =
     val toolNameOpt = params.flatMap(_.hcursor.downField("name").as[String].toOption)
@@ -66,7 +67,7 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
           case Some(tool) =>
             def inputSnippet = args.noSpaces.take(200)
             tool.inputDecoder.decodeJson(args) match
-              case Right(decodedInput) => handleDecodedInput(tool, decodedInput, id, headerValue)
+              case Right(decodedInput) => handleDecodedInput(tool, decodedInput, id, headers)
               case Left(decodingError) =>
                 protocolError(
                   id,
@@ -80,11 +81,11 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
   /** Handles a successfully decoded tool input, dispatching to the tool's logic. */
-  private def handleDecodedInput[T](tool: ServerTool[T, F], decodedInput: T, id: RequestId, headerValue: Option[String])(using
+  private def handleDecodedInput[T](tool: ServerTool[T, F], decodedInput: T, id: RequestId, headers: Seq[Header])(using
       MonadError[F]
   ): F[JSONRPCMessage] =
     tool
-      .logic(decodedInput, headerValue)
+      .logic(decodedInput, headers)
       .map:
         case Right(result) =>
           val callResult = ToolCallResult(
@@ -99,26 +100,28 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
           )
           JSONRPCMessage.Response(id = id, result = callResult.asJson)
 
-  def handleJsonRpc(request: Json, headerValue: Option[String])(using MonadError[F]): F[Json] =
+  /** Handles a JSON-RPC request, dispatching to the appropriate handler. Logs requests and responses. */
+  def handleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[Json] =
     logger.debug(s"Request: $request")
     val responseF: F[JSONRPCMessage] = request.as[JSONRPCMessage] match
       case Left(err) => protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}").unit
       case Right(JSONRPCMessage.Request(_, method, params: Option[io.circe.Json], id)) =>
         method match
           case "tools/list" => handleToolsList(id).unit
-          case "tools/call" => handleToolsCall(params, id, headerValue)
+          case "tools/call" => handleToolsCall(params, id, headers)
           case "initialize" => handleInitialize(id).unit
           case other        => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other").unit
       case Right(JSONRPCMessage.BatchRequest(requests)) =>
+        // For each sub-request, process as a single request using flatMap/fold (no .sequence)
         def processBatch(reqs: List[JSONRPCMessage], acc: List[JSONRPCMessage]): F[List[JSONRPCMessage]] =
           reqs match
             case Nil => acc.reverse.unit
             case head :: tail =>
               head match
                 case JSONRPCMessage.Notification(_, _, _) =>
-                  processBatch(tail, acc)
+                  processBatch(tail, acc) // skip notifications
                 case _ =>
-                  handleJsonRpc(head.asJson, headerValue).flatMap { respJson =>
+                  handleJsonRpc(head.asJson, headers).flatMap { respJson =>
                     val msg = respJson
                       .as[JSONRPCMessage]
                       .getOrElse(

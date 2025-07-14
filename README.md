@@ -69,6 +69,8 @@ All requests and responses use JSON-RPC 2.0. Tool input schemas are described us
 - Add a description and annotations for metadata and hints.
 - Specify the input type (must have a Circe `Codec` and Tapir `Schema`).
 - Provide the server logic as a function from input to `Either[String, String]` (or a generic effect type).
+  - Use `handle` to connect the tool definition with the server logic when the use of headers is not required.
+  - Use `handleWithHeaders` to connect the tool definition with the server logic when headers are required.
 - Create a Tapir endpoint by providing your tools to `mcpEndpoint` 
 - Start an HTTP server using your preferred Tapir server interpreter.
 

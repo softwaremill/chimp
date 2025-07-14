@@ -4,6 +4,7 @@ package chimp
 //> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.33
 //> using dep ch.qos.logback::logback-classic:1.5.18
 
+import sttp.model.Header
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
@@ -13,13 +14,14 @@ import sttp.tapir.server.netty.sync.NettySyncServer
     .withAnnotations(ToolAnnotations(idempotentHint = Some(true)))
     .input[Input]
 
-  def logic(i: Input, headerValue: Option[String]): Either[String, String] =
-    val tokenMsg = headerValue.map(t => s"token: $t").getOrElse("no token provided")
+  def logic(i: Input, headers: Seq[Header]): Either[String, String] =
+    val tokenMsg =
+      headers.find(_.name == "test_header").map(t => s"token: ${t.value} (header name used: ${t.name})").getOrElse("no token provided")
     Right(s"The result is ${i.a + i.b} ($tokenMsg)")
 
-  val adderServerTool = adderTool.handleWithHeader(logic)
+  val adderServerTool = adderTool.handleWithHeaders(logic)
 
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"), Some("test_header_1"))
+  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
 
   NettySyncServer()
     .port(8080)
