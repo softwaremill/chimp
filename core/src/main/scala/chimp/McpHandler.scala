@@ -67,7 +67,7 @@ class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP 
         toolsByName.get(toolName) match
           case Some(tool) =>
             // Use Circe's Decoder for argument decoding
-            def inputSnippet = args.noSpaces.take(200)
+            def inputSnippet = args.noSpaces.take(200) // for error reporting
             tool.inputDecoder.decodeJson(args) match
               case Right(decodedInput) => handleDecodedInput(tool, decodedInput, id, headers)
               case Left(decodingError) =>

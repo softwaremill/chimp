@@ -23,7 +23,6 @@ private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   */
 def mcpEndpoint[F[_]](tools: List[ServerTool[?, F]], path: List[String]): ServerEndpoint[Any, F] =
   val mcpHandler = new McpHandler(tools)
-
   val e = infallibleEndpoint.post
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
     .in(extractFromRequest(_.headers))
