@@ -21,8 +21,14 @@ private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   * @tparam F
   *   The effect type. Might be `Identity` for a endpoints with synchronous logic.
   */
-def mcpEndpoint[F[_]](tools: List[ServerTool[?, F]], path: List[String]): ServerEndpoint[Any, F] =
-  val mcpHandler = new McpHandler(tools)
+def mcpEndpoint[F[_]](
+    tools: List[ServerTool[?, F]],
+    path: List[String],
+    name: String = "Chimp MCP server",
+    version: String = "1.0.0",
+    showJsonSchemaMetadata: Boolean = true
+): ServerEndpoint[Any, F] =
+  val mcpHandler = new McpHandler(tools, name, version, showJsonSchemaMetadata)
   val e = infallibleEndpoint.post
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
     .in(extractFromRequest(_.headers))

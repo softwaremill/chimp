@@ -19,15 +19,27 @@ import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
   *   The server name (for protocol reporting).
   * @param version
   *   The server version (for protocol reporting).
+  * @param showJsonSchemaMetadata
+  *   Whether to include JSON Schema metadata (such as $schema) in the tool input schemas. Some agents do not recognize it, so it can be
+  *   disabled.
   */
-class McpHandler[F[_]](tools: List[ServerTool[?, F]], name: String = "Chimp MCP server", version: String = "1.0.0"):
+class McpHandler[F[_]](
+    tools: List[ServerTool[?, F]],
+    name: String = "Chimp MCP server",
+    version: String = "1.0.0",
+    showJsonSchemaMetadata: Boolean = true
+):
   private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   private val ProtocolVersion = "2025-03-26"
   private val toolsByName = tools.map(t => t.name -> t).toMap
 
   /** Converts a ServerTool to its protocol definition. */
   private def toolToDefinition(tool: ServerTool[?, F]): ToolDefinition =
-    val jsonSchema = TapirSchemaToJsonSchema(tool.inputSchema, markOptionsAsNullable = true)
+    val jsonSchema =
+      val base = TapirSchemaToJsonSchema(tool.inputSchema, markOptionsAsNullable = true)
+      if showJsonSchemaMetadata then base
+      else base.copy($schema = None)
+
     val json = jsonSchema.asJson
     ToolDefinition(
       name = tool.name,
