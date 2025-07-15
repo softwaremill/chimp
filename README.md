@@ -14,7 +14,7 @@ Integrates with any Scala stack, using any of the HTTP server implementations su
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "core" % "0.1.3"
+libraryDependencies += "com.softwaremill.chimp" %% "core" % "0.1.4"
 ```
 
 ### Example: the simplest MCP server
@@ -22,7 +22,7 @@ libraryDependencies += "com.softwaremill.chimp" %% "core" % "0.1.3"
 Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example:
 
 ```scala
-//> using dep com.softwaremill.chimp::core:0.1.3
+//> using dep com.softwaremill.chimp::core:0.1.4
 
 import chimp.*
 import sttp.tapir.*
