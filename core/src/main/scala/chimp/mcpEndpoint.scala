@@ -7,6 +7,7 @@ import sttp.monad.syntax.*
 import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
+import sttp.model.Header
 
 private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
 
@@ -24,16 +25,17 @@ def mcpEndpoint[F[_]](tools: List[ServerTool[?, F]], path: List[String]): Server
   val mcpHandler = new McpHandler(tools)
   val e = infallibleEndpoint.post
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
+    .in(extractFromRequest(_.headers))
     .in(jsonBody[Json])
     .out(jsonBody[Json])
 
   ServerEndpoint.public(
     e,
-    me =>
-      json =>
-        given MonadError[F] = me
-        mcpHandler
-          .handleJsonRpc(json)
-          .map: responseJson =>
-            Right(responseJson.deepDropNullValues)
+    me => { (input: (Seq[Header], Json)) =>
+      val (headers, json) = input
+      given MonadError[F] = me
+      mcpHandler
+        .handleJsonRpc(json, headers)
+        .map(responseJson => Right(responseJson.deepDropNullValues))
+    }
   )

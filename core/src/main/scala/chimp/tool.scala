@@ -2,6 +2,7 @@ package chimp
 
 import sttp.tapir.Schema
 import io.circe.Decoder
+import sttp.model.Header
 import sttp.shared.Identity
 
 case class ToolAnnotations(
@@ -40,7 +41,7 @@ case class Tool[I](
   /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
     * should return either a tool execution error (`Left`), or a successful textual result (`Right`), using the F-effect.
     */
-  def serverLogic[F[_]](logic: I => F[Either[String, String]]): ServerTool[I, F] =
+  def serverLogic[F[_]](logic: (I, Seq[Header]) => F[Either[String, String]]): ServerTool[I, F] =
     ServerTool(name, description, inputSchema, inputDecoder, annotations, logic)
 
   /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
@@ -48,10 +49,16 @@ case class Tool[I](
     *
     * Same as [[serverLogic]], but using the identity "effect".
     */
-  def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
-    ServerTool(name, description, inputSchema, inputDecoder, annotations, logic)
+  def handleWithHeaders(logic: (I, Seq[Header]) => Either[String, String]): ServerTool[I, Identity] =
+    ServerTool(name, description, inputSchema, inputDecoder, annotations, (i, t) => logic(i, t))
 
-//
+  /** Combine the tool description with the server logic, that should be executed when the tool is invoked. The logic, given the input,
+    * should return either a tool execution error (`Left`), or a successful textual result (`Right`).
+    *
+    * Same as [[handleWithHeaders]], but using no headers.
+    */
+  def handle(logic: I => Either[String, String]): ServerTool[I, Identity] =
+    handleWithHeaders((i, _) => logic(i))
 
 /** A tool that can be executed by the MCP server. */
 case class ServerTool[I, F[_]](
@@ -60,5 +67,5 @@ case class ServerTool[I, F[_]](
     inputSchema: Schema[I],
     inputDecoder: Decoder[I],
     annotations: Option[ToolAnnotations],
-    logic: I => F[Either[String, String]]
+    logic: (I, Seq[Header]) => F[Either[String, String]]
 )
