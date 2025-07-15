@@ -51,7 +51,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         )
     }
 
-  val handler = McpHandler(List(echoTool, addTool, errorTool, headerEchoTool))
+  val handler = McpHandler(List(echoTool, addTool, errorTool, headerEchoTool), "Chimp MCP server", "1.0.0", true)
 
   def parseJson(str: String): Json = parse(str).getOrElse(throw new RuntimeException("Invalid JSON"))
 

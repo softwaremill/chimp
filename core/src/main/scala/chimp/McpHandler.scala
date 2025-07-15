@@ -25,9 +25,9 @@ import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
   */
 class McpHandler[F[_]](
     tools: List[ServerTool[?, F]],
-    name: String = "Chimp MCP server",
-    version: String = "1.0.0",
-    showJsonSchemaMetadata: Boolean = true
+    name: String,
+    version: String,
+    showJsonSchemaMetadata: Boolean
 ):
   private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   private val ProtocolVersion = "2025-03-26"
