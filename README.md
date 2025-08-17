@@ -76,6 +76,13 @@ All requests and responses use JSON-RPC 2.0. Tool input schemas are described us
 
 ---
 
+## Dependencies
+
+Chimp uses the [circe](https://github.com/circe/circe) JSON library, to decode the incoming input, as well as handle
+JSON-RPC envelopes (both for responses and requests).
+
+---
+
 ## Contributing
 
 Contributions are welcome! Please open issues or pull requests.

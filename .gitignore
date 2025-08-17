@@ -15,6 +15,7 @@ project/metals.sbt
 *.swp
 *.swo
 .bsp
+.cursor
 
 # OS
 .DS_Store
