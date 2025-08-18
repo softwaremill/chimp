@@ -39,6 +39,7 @@ lazy val core: Project = (project in file("core"))
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
+      "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
       "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10",
       "org.slf4j" % "slf4j-api" % "2.0.17"
     )
