@@ -5,7 +5,7 @@ import com.softwaremill.UpdateVersionInDocs
 // Version constants
 val scalaTestV = "3.2.19"
 val circeV = "0.14.14"
-val tapirV = "1.11.42"
+val tapirV = "1.11.43"
 
 lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   organization := "com.softwaremill.chimp",
