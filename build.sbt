@@ -9,7 +9,7 @@ val tapirV = "1.11.49"
 
 lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   organization := "com.softwaremill.chimp",
-  scalaVersion := "3.3.6",
+  scalaVersion := "3.3.7",
   updateDocs := Def.taskDyn {
     val files = UpdateVersionInDocs(sLog.value, organization.value, version.value)
     Def.task {
