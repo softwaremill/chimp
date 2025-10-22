@@ -5,11 +5,26 @@ import io.circe.*
 import io.circe.syntax.*
 import org.slf4j.LoggerFactory
 import sttp.apispec.circe.*
-import sttp.model.Header
+import sttp.model.{Header, StatusCode}
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
-import sttp.tapir.*
 import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
+
+/** Represents different types of HTTP responses for JSON-RPC requests */
+enum McpResponse:
+  /** Response with JSON body (for requests and errors) */
+  case JsonResponse(json: Json)
+
+  /** Response with no body (for notifications) */
+  case EmptyAcceptResponse
+
+  def statusCode: StatusCode = this match
+    case JsonResponse(_)     => StatusCode.Ok
+    case EmptyAcceptResponse => StatusCode.Accepted
+
+  def body: Option[Json] = this match
+    case JsonResponse(json)  => Some(json)
+    case EmptyAcceptResponse => None
 
 /** The MCP server handles JSON-RPC requests for tool listing, invocation, and initialization.
   *
@@ -115,16 +130,27 @@ class McpHandler[F[_]](
           JSONRPCMessage.Response(id = id, result = callResult.asJson)
 
   /** Handles a JSON-RPC request, dispatching to the appropriate handler. Logs requests and responses. */
-  def handleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[Json] =
+  def handleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[McpResponse] =
     logger.debug(s"Request: $request")
-    val responseF: F[JSONRPCMessage] = request.as[JSONRPCMessage] match
-      case Left(err) => protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}").unit
+    request.as[JSONRPCMessage] match
+      case Left(err) =>
+        val errorResponse = protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}")
+        McpResponse.JsonResponse((errorResponse: JSONRPCMessage).asJson).unit
       case Right(JSONRPCMessage.Request(_, method, params: Option[io.circe.Json], id)) =>
         method match
-          case "tools/list" => handleToolsList(id).unit
-          case "tools/call" => handleToolsCall(params, id, headers)
-          case "initialize" => handleInitialize(id).unit
-          case other        => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other").unit
+          case "tools/list" =>
+            val response = handleToolsList(id)
+            McpResponse.JsonResponse((response: JSONRPCMessage).asJson).unit
+          case "tools/call" =>
+            handleToolsCall(params, id, headers).map { response =>
+              McpResponse.JsonResponse((response: JSONRPCMessage).asJson)
+            }
+          case "initialize" =>
+            val response = handleInitialize(id)
+            McpResponse.JsonResponse((response: JSONRPCMessage).asJson).unit
+          case other =>
+            val errorResponse = protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")
+            McpResponse.JsonResponse((errorResponse: JSONRPCMessage).asJson).unit
       case Right(JSONRPCMessage.BatchRequest(requests)) =>
         // For each sub-request, process as a single request using flatMap/fold (no .sequence)
         def processBatch(reqs: List[JSONRPCMessage], acc: List[JSONRPCMessage]): F[List[JSONRPCMessage]] =
@@ -135,13 +161,17 @@ class McpHandler[F[_]](
                 case JSONRPCMessage.Notification(_, _, _) =>
                   processBatch(tail, acc) // skip notifications
                 case _ =>
-                  handleJsonRpc(head.asJson, headers).flatMap { respJson =>
-                    val msg = respJson
-                      .as[JSONRPCMessage]
-                      .getOrElse(
-                        protocolError(RequestId("null"), JSONRPCErrorCodes.InternalError.code, "Failed to decode sub-response")
-                      )
-                    processBatch(tail, msg :: acc)
+                  handleJsonRpc((head: JSONRPCMessage).asJson, headers).flatMap { resp =>
+                    resp match
+                      case McpResponse.JsonResponse(json) =>
+                        val msg = json
+                          .as[JSONRPCMessage]
+                          .getOrElse(
+                            protocolError(RequestId("null"), JSONRPCErrorCodes.InternalError.code, "Failed to decode sub-response")
+                          )
+                        processBatch(tail, msg :: acc)
+                      case McpResponse.EmptyAcceptResponse =>
+                        processBatch(tail, acc) // skip notifications in batch
                   }
         processBatch(requests, Nil).map { responses =>
           // Per JSON-RPC spec, notifications (no id) should not be included in the response
@@ -149,11 +179,13 @@ class McpHandler[F[_]](
             case r @ JSONRPCMessage.Response(_, id, _) => r
             case e @ JSONRPCMessage.Error(_, id, _)    => e
           }
-          JSONRPCMessage.BatchResponse(filtered)
+          val batchResponse = JSONRPCMessage.BatchResponse(filtered)
+          McpResponse.JsonResponse((batchResponse: JSONRPCMessage).asJson)
         }
-      case Right(notification: JSONRPCMessage.Notification) => notification.unit
-      case Right(_) => protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type").unit
-    responseF.map: response =>
-      val responseJson = response.asJson
-      logger.debug(s"Response: $responseJson")
-      responseJson
+      case Right(notification: JSONRPCMessage.Notification) =>
+        logger.debug(s"Received notification: ${notification.method}")
+        // For notifications, return EmptyAcceptResponse to indicate no body should be sent
+        McpResponse.EmptyAcceptResponse.unit
+      case Right(_) =>
+        val errorResponse = protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type")
+        McpResponse.JsonResponse((errorResponse: JSONRPCMessage).asJson).unit

@@ -5,7 +5,6 @@ package chimp
 //> using dep ch.qos.logback::logback-classic:1.5.18
 
 import sttp.model.Header
-import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
 @main def mcpAuthApp(): Unit =

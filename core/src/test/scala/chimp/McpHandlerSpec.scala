@@ -41,7 +41,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
   private val headerEchoTool = tool("headerEcho")
     .description("Echoes the header value if present.")
     .input[HeaderEchoInput]
-    .handleWithHeaders { (in, headers) =>
+    .handleWithHeaders { (_, headers) =>
       if headers.isEmpty then Right("no header")
       else
         Right(
@@ -57,12 +57,18 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   given MonadError[Identity] = IdentityMonad
 
+  // Helper function to extract JSON from McpResponse for testing
+  private def extractJsonFromResponse(response: McpResponse): Json = response match
+    case McpResponse.JsonResponse(json)  => json
+    case McpResponse.EmptyAcceptResponse => fail("Expected JsonResponse but got EmptyAcceptResponse")
+
   "McpHandler" should "respond to initialize" in:
     // Given
     val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("1"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -77,7 +83,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("2"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -95,7 +102,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("3"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -115,7 +123,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("4"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -125,17 +134,25 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.content.head shouldBe ToolContent.Text("text", "5")
       case _ => fail("Expected Response")
 
-  it should "accept notifications" in:
+  it should "accept notifications and return EmptyAcceptResponse" in:
     // Given
     val req: JSONRPCMessage = Notification(method = "notifications/initialized")
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
-    val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
+    val response = handler.handleJsonRpc(json, Seq.empty)
     // Then
-    resp match
-      case Notification(_, methodName, _) => methodName shouldBe "notifications/initialized"
-      case _                              => fail("Expected Notification")
+    // Notifications should return EmptyAcceptResponse to indicate no body should be sent
+    response shouldBe McpResponse.EmptyAcceptResponse
+
+  it should "accept different notification types and return EmptyAcceptResponse" in:
+    // Given
+    val req: JSONRPCMessage = Notification(method = "notifications/tools/list_changed")
+    val json = req.asJson
+    // When
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    // Then
+    // All notifications should return EmptyAcceptResponse to indicate no body should be sent
+    response shouldBe McpResponse.EmptyAcceptResponse
 
   it should "return an error for unknown tool" in:
     // Given
@@ -146,7 +163,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("5"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Expected error response"))
     // Then
     resp match
@@ -164,7 +182,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("6"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Expected error response"))
     // Then
     resp match
@@ -182,7 +201,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("7"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Expected error response"))
     // Then
     resp match
@@ -200,7 +220,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("8"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Expected error response"))
     // Then
     resp match
@@ -218,7 +239,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("9"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -233,7 +255,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "not/a/real/method", id = RequestId("10"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Expected error response"))
     // Then
     resp match
@@ -288,7 +311,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val batch = BatchRequest(List(req1, req2, req3, req4, notification))
     val json = batch.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode batch response"))
     // Then
     resp match
@@ -334,7 +358,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("header1"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq(Header("header-name", "my-secret-header")))
+    val response = handler.handleJsonRpc(json, Seq(Header("header-name", "my-secret-header")))
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -353,8 +378,9 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("header1"))
     val json = req.asJson
     // When
-    val respJson =
+    val response =
       handler.handleJsonRpc(json, Seq(Header("header-name", "my-secret-header"), Header("another-header-name", "another-secret-header")))
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -376,7 +402,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("header2"))
     val json = req.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq.empty)
+    val response = handler.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
     // Then
     resp match
@@ -411,7 +438,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val batch = BatchRequest(List(req1, req2))
     val json = batch.asJson
     // When
-    val respJson = handler.handleJsonRpc(json, Seq(Header("header-name", "batch-header")))
+    val response = handler.handleJsonRpc(json, Seq(Header("header-name", "batch-header")))
+    val respJson = extractJsonFromResponse(response)
     val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode batch response"))
     // Then
     resp match
