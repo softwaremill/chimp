@@ -33,7 +33,8 @@ def mcpEndpoint[F[_]](
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
     .in(extractFromRequest(_.headers))
     .in(jsonBody[Json])
-    .out(jsonBody[Json])
+    .out(statusCode)
+    .out(jsonBody[Option[Json]])
 
   ServerEndpoint.public(
     e,
@@ -42,6 +43,6 @@ def mcpEndpoint[F[_]](
       given MonadError[F] = me
       mcpHandler
         .handleJsonRpc(json, headers)
-        .map(responseJson => Right(responseJson.deepDropNullValues))
+        .map(response => Right((response.statusCode, response.body)))
     }
   )
