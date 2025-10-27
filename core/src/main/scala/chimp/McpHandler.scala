@@ -130,8 +130,7 @@ class McpHandler[F[_]](
           JSONRPCMessage.Response(id = id, result = callResult.asJson)
 
   /** Handles a JSON-RPC request, dispatching to the appropriate handler. Logs requests and responses. */
-  def handleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[McpResponse] =
-    logger.debug(s"Request: $request")
+  private def doHandleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[McpResponse] =
     request.as[JSONRPCMessage] match
       case Left(err) =>
         val errorResponse = protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}")
@@ -161,7 +160,7 @@ class McpHandler[F[_]](
                 case JSONRPCMessage.Notification(_, _, _) =>
                   processBatch(tail, acc) // skip notifications
                 case _ =>
-                  handleJsonRpc((head: JSONRPCMessage).asJson, headers).flatMap { resp =>
+                  doHandleJsonRpc((head: JSONRPCMessage).asJson, headers).flatMap { resp =>
                     resp match
                       case McpResponse.JsonResponse(json) =>
                         val msg = json
@@ -189,3 +188,9 @@ class McpHandler[F[_]](
       case Right(_) =>
         val errorResponse = protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type")
         McpResponse.JsonResponse((errorResponse: JSONRPCMessage).asJson).unit
+  end doHandleJsonRpc
+
+  def handleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[McpResponse] =
+    doHandleJsonRpc(request, headers).map: response =>
+      logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body}")
+      response
