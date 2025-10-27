@@ -26,6 +26,10 @@ enum McpResponse:
     case JsonResponse(json)  => Some(json)
     case EmptyAcceptResponse => None
 
+  def withNullsDroppedDeep: McpResponse = this match
+    case JsonResponse(json)  => JsonResponse(json.deepDropNullValues)
+    case EmptyAcceptResponse => this
+
 /** The MCP server handles JSON-RPC requests for tool listing, invocation, and initialization.
   *
   * @param tools
@@ -193,4 +197,4 @@ class McpHandler[F[_]](
   def handleJsonRpc(request: Json, headers: Seq[Header])(using MonadError[F]): F[McpResponse] =
     doHandleJsonRpc(request, headers).map: response =>
       logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body}")
-      response
+      response.withNullsDroppedDeep
