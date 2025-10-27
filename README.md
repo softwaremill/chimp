@@ -1,7 +1,7 @@
 # Chimp MCP Server
 
 [![CI](https://github.com/softwaremill/chimp/actions/workflows/ci.yml/badge.svg)](https://github.com/softwaremill/chimp/actions/workflows/ci.yml)
-[![Scala 3](https://img.shields.io/badge/scala-3.3.6-blue.svg)](https://www.scala-lang.org/)
+[![Scala 3](https://img.shields.io/badge/scala-3-blue.svg)](https://www.scala-lang.org/)
 
 A library for building [MCP](#mcp-protocol) (Model Context Protocol) servers in Scala 3, based on [Tapir](https://tapir.softwaremill.com/). Describe MCP tools with type-safe input, expose them over a JSON-RPC HTTP API. 
 
