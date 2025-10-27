@@ -78,6 +78,9 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.serverInfo.name should include("Chimp MCP server")
       case _ => fail("Expected Response")
 
+    // nulls should be dropped
+    respJson.hcursor.downField("result").downField("instructions").focus shouldBe None
+
   it should "list available tools" in:
     // Given
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("2"))
