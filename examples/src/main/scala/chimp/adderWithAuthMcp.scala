@@ -1,13 +1,17 @@
+//> using dep com.softwaremill.chimp::core:0.1.6
+//> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.33
+//> using dep ch.qos.logback:logback-classic:1.5.20
+
 package chimp
 
-//> using dep com.softwaremill.chimp::core:0.1.2
-//> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.33
-//> using dep ch.qos.logback::logback-classic:1.5.18
-
+import io.circe.Codec
 import sttp.model.Header
+import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
 @main def mcpAuthApp(): Unit =
+  case class Input(a: Int, b: Int) derives Codec, Schema
+
   val adderTool = tool("adder")
     .description("Adds two numbers")
     .withAnnotations(ToolAnnotations(idempotentHint = Some(true)))

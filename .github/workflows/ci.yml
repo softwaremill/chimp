@@ -10,15 +10,42 @@ permissions:
   pull-requests: write   # labeler, auto-merge requirement    
 jobs:
   build:
-    uses: softwaremill/github-actions-workflows/.github/workflows/build-scala.yml@main
-    # run on 1) push, 2) external PRs, 3) softwaremill-cisoftwaremill-ci PRs
+    # run on 1) push, 2) external PRs, 3) softwaremill-ci PRs
     # do not run on internal, non-steward PRs since those will be run by push to branch
     if: |
       github.event_name == 'push' || 
       github.event.pull_request.head.repo.full_name != github.repository ||
-      github.event.pull_request.user.login == 'softwaremill-cisoftwaremill-ci'
-    with:
-      java-opts: '-Xmx4G'
+      github.event.pull_request.user.login == 'softwaremill-ci'
+    runs-on: ubuntu-24.04
+    env:
+        JAVA_OPTS: '-Xmx4G'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 11
+          cache: 'sbt'
+      - uses: sbt/setup-sbt@3e125ece5c3e5248e18da9ed8d2cce3d335ec8dd # v1, specifically v1.1.14
+      - name: Install scala-cli
+        uses: VirtusLab/scala-cli-setup@68bd9c30954d20e6cb6ddaf01b3b38336f25df4b # main, specifically v1.10.1
+        with:
+          jvm: '' # needed because scala-cli-setup otherwise forces the installation of their default JVM (17)
+      - name: Check formatting
+        run: sbt -v scalafmtCheckAll
+      - name: Compile
+        run: sbt -v compile
+      - name: Verify that examples compile using Scala CLI
+        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli  
+      - name: Test
+        run: sbt -v test
+      - uses: actions/upload-artifact@v5  # upload test results
+        if: success() || failure()        # run this step even if previous step failed
+        with:
+          name: 'tests-results'
+          path: '**/test-reports/TEST*.xml'    
 
   publish:
     uses: softwaremill/github-actions-workflows/.github/workflows/publish-release.yml@main
@@ -30,14 +57,14 @@ jobs:
       sttp-native: 1
 
   label:
-    # only for PRs by softwaremill-cisoftwaremill-ci
-    if: github.event.pull_request.user.login == 'softwaremill-cisoftwaremill-ci'
+    # only for PRs by 
+    if: github.event.pull_request.user.login == 'softwaremill-ci'
     uses: softwaremill/github-actions-workflows/.github/workflows/label.yml@main
     secrets: inherit
 
   auto-merge:
-    # only for PRs by softwaremill-cisoftwaremill-ci
-    if: github.event.pull_request.user.login == 'softwaremill-cisoftwaremill-ci'
+    # only for PRs by softwaremill-ci
+    if: github.event.pull_request.user.login == 'softwaremill-ci'
     needs: [ build, label ]
     uses: softwaremill/github-actions-workflows/.github/workflows/auto-merge.yml@main
     secrets: inherit
