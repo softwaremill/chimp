@@ -5,7 +5,7 @@ import com.softwaremill.UpdateVersionInDocs
 // Version constants
 val scalaTestV = "3.2.19"
 val circeV = "0.14.15"
-val tapirV = "1.13.0"
+val tapirV = "1.13.1"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -55,7 +55,7 @@ lazy val examples = (project in file("examples"))
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.client4" %% "core" % "4.0.13",
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
-      "ch.qos.logback" % "logback-classic" % "1.5.20"
+      "ch.qos.logback" % "logback-classic" % "1.5.21"
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
