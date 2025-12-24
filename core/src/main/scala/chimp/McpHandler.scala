@@ -158,7 +158,7 @@ class McpHandler[F[_]](
         // For each sub-request, process as a single request using flatMap/fold (no .sequence)
         def processBatch(reqs: List[JSONRPCMessage], acc: List[JSONRPCMessage]): F[List[JSONRPCMessage]] =
           reqs match
-            case Nil => acc.reverse.unit
+            case Nil          => acc.reverse.unit
             case head :: tail =>
               head match
                 case JSONRPCMessage.Notification(_, _, _) =>

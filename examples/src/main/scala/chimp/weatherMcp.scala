@@ -75,7 +75,7 @@ private def geocodeCity(city: String, backend: SyncBackend): Either[String, Nomi
   val nominatimUrl = uri"https://nominatim.openstreetmap.org/search?format=json&limit=1&q=$city"
   val geoResp = basicRequest.get(nominatimUrl).header("User-Agent", "chimp-weather-tool").send(backend)
   geoResp.body match
-    case Left(_) => Left(s"Failed to contact geocoding service: ${geoResp.code}")
+    case Left(_)     => Left(s"Failed to contact geocoding service: ${geoResp.code}")
     case Right(body) =>
       decode[List[NominatimResult]](body) match
         case Left(err)               => Left(s"Failed to decode geocoding response: $err")
@@ -87,7 +87,7 @@ private def fetchWeather(lat: String, lon: String, backend: SyncBackend): Either
   val meteoUrl = uri"https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true"
   val meteoResp = basicRequest.get(meteoUrl).send(backend)
   meteoResp.body match
-    case Left(_) => Left(s"Failed to contact weather service: ${meteoResp.code}")
+    case Left(_)     => Left(s"Failed to contact weather service: ${meteoResp.code}")
     case Right(body) =>
       decode[OpenMeteoResponse](body) match
         case Left(err)    => Left(s"Failed to decode weather response: $err")
