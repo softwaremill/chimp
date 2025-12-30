@@ -5,7 +5,7 @@ import com.softwaremill.UpdateVersionInDocs
 // Version constants
 val scalaTestV = "3.2.19"
 val circeV = "0.14.15"
-val tapirV = "1.13.3"
+val tapirV = "1.13.4"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
