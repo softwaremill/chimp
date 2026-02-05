@@ -416,6 +416,51 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.content.head shouldBe ToolContent.Text("text", "no header")
       case _ => fail("Expected Response")
 
+  it should "not use type arrays for optional fields in JSON schema" in:
+    // Given - a tool with optional fields
+    case class OptionalFieldInput(requiredField: String, optionalField: Option[Long]) derives Schema, Codec
+    val optionalTool = tool("optionalTest")
+      .description("Test tool with optional fields.")
+      .input[OptionalFieldInput]
+      .handle(_ => Right("ok"))
+
+    val handlerWithOptional = McpHandler(List(optionalTool), "Test", "1.0.0", true)
+
+    val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("opt1"))
+    val json = req.asJson
+    // When
+    val response = handlerWithOptional.handleJsonRpc(json, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
+    val resp = respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
+    // Then
+    resp match
+      case Response(_, _, result) =>
+        val resultObj = result.as[ListToolsResponse].getOrElse(fail("Failed to decode result"))
+        val toolDef = resultObj.tools.find(_.name == "optionalTest").get
+        val inputSchema = toolDef.inputSchema
+
+        // Check that optionalField does NOT use ["integer", "null"] type array
+        // Claude API rejects this format - it should just be "integer" with the field not in required
+        val optionalFieldType = inputSchema.hcursor
+          .downField("properties")
+          .downField("optionalField")
+          .downField("type")
+          .focus
+
+        optionalFieldType match
+          case Some(typeValue) =>
+            // Should be a simple string "integer", not an array ["integer", "null"]
+            typeValue.isString shouldBe true
+            typeValue.asString.get shouldBe "integer"
+          case None =>
+            fail("optionalField type not found in schema")
+
+        // Verify requiredField is in required array but optionalField is not
+        val requiredFields = inputSchema.hcursor.downField("required").as[List[String]].getOrElse(Nil)
+        requiredFields should contain("requiredField")
+        requiredFields should not contain "optionalField"
+      case _ => fail("Expected Response")
+
   it should "handle batch requests with mixed headers" in:
     // Given
     val req1 = Request(

@@ -55,7 +55,7 @@ class McpHandler[F[_]](
   /** Converts a ServerTool to its protocol definition. */
   private def toolToDefinition(tool: ServerTool[?, F]): ToolDefinition =
     val jsonSchema =
-      val base = TapirSchemaToJsonSchema(tool.inputSchema, markOptionsAsNullable = true)
+      val base = TapirSchemaToJsonSchema(tool.inputSchema, markOptionsAsNullable = false)
       if showJsonSchemaMetadata then base
       else base.copy($schema = None)
 
