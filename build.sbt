@@ -55,7 +55,7 @@ lazy val examples = (project in file("examples"))
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.client4" %% "core" % "4.0.15",
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
-      "ch.qos.logback" % "logback-classic" % "1.5.26"
+      "ch.qos.logback" % "logback-classic" % "1.5.27"
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
