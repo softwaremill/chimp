@@ -3,7 +3,7 @@ import com.softwaremill.Publish.{ossPublishSettings, updateDocs}
 import com.softwaremill.UpdateVersionInDocs
 
 // Version constants
-val scalaTestV = "3.2.19"
+val scalaTestV = "3.2.20"
 val circeV = "0.14.15"
 val tapirV = "1.13.18"
 
