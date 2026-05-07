@@ -41,7 +41,6 @@ lazy val core: Project = (project in file("core"))
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
-      "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
       "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10",
       "org.slf4j" % "slf4j-api" % "2.0.17"
     )
@@ -55,6 +54,7 @@ lazy val examples = (project in file("examples"))
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.client4" %% "core" % "4.0.23",
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
+      "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
       "ch.qos.logback" % "logback-classic" % "1.5.32"
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
