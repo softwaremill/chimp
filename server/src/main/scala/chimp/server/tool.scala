@@ -25,8 +25,13 @@ case class PartialTool(
   /** Specify the input type for the tool, providing both a Tapir Schema and a Circe Decoder. */
   def input[I: Schema: Decoder]: Tool[I] = Tool[I](name, description, summon[Schema[I]], summon[Decoder[I]], annotations)
 
-/** Creates a new MCP tool description with the given name. */
-def tool(name: String): PartialTool = PartialTool(name)
+private val ToolNameRegex = "^[A-Za-z0-9_./-]+$".r
+
+/** Creates a new MCP tool description with the given name. The name must match `^[A-Za-z0-9_./-]+$` and be 1–64 characters long. */
+def tool(name: String): PartialTool =
+  require(name.length >= 1 && name.length <= 64, s"Tool name must be 1..64 characters long, got ${name.length}: $name")
+  require(ToolNameRegex.matches(name), s"Tool name must match ${ToolNameRegex.regex}, got: $name")
+  PartialTool(name)
 
 //
 
