@@ -1,4 +1,4 @@
-package chimp
+package chimp.server
 
 import sttp.tapir.Schema
 import io.circe.Decoder

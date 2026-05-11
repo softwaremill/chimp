@@ -1,4 +1,4 @@
-package chimp
+package chimp.server
 
 import chimp.protocol.*
 import io.circe.*

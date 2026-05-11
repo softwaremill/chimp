@@ -27,24 +27,34 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val rootProject = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, examples)
+  .aggregate(core, server, examples)
 
 lazy val core: Project = (project in file("core"))
   .settings(commonSettings: _*)
   .settings(
-    name := "core",
+    name := "chimp-core",
     libraryDependencies ++= Seq(
       scalaTest,
       "io.circe" %% "circe-core" % circeV,
       "io.circe" %% "circe-generic" % circeV,
       "io.circe" %% "circe-parser" % circeV,
+      "org.slf4j" % "slf4j-api" % "2.0.17"
+    )
+  )
+
+lazy val server: Project = (project in file("server"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-server",
+    libraryDependencies ++= Seq(
+      scalaTest,
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
-      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10",
-      "org.slf4j" % "slf4j-api" % "2.0.18"
+      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10"
     )
   )
+  .dependsOn(core)
 
 lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)
@@ -59,4 +69,4 @@ lazy val examples = (project in file("examples"))
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
-  .dependsOn(core)
+  .dependsOn(server)

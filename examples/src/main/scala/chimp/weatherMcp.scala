@@ -5,7 +5,7 @@
 
 package chimp
 
-import chimp.*
+import chimp.server.*
 import io.circe.Codec
 import io.circe.parser.decode
 import ox.either

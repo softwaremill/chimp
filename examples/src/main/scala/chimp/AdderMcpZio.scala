@@ -4,6 +4,7 @@
 
 package chimp
 
+import chimp.server.*
 import io.circe.Codec
 import sttp.tapir.*
 import sttp.tapir.server.ziohttp.ZioHttpInterpreter
