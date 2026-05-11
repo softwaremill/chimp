@@ -6,6 +6,7 @@ import com.softwaremill.UpdateVersionInDocs
 val scalaTestV = "3.2.20"
 val circeV = "0.14.15"
 val tapirV = "1.13.19"
+val sttpClient4V = "4.0.23"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -27,7 +28,7 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val rootProject = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, server, examples)
+  .aggregate(core, server, client, examples)
 
 lazy val core: Project = (project in file("core"))
   .settings(commonSettings: _*)
@@ -52,6 +53,17 @@ lazy val server: Project = (project in file("server"))
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
       "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10"
+    )
+  )
+  .dependsOn(core)
+
+lazy val client: Project = (project in file("client"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-client",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "com.softwaremill.sttp.client4" %% "core" % sttpClient4V
     )
   )
   .dependsOn(core)
