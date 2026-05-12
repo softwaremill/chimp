@@ -1,7 +1,7 @@
 package chimp.protocol
 
 import com.networknt.schema.{InputFormat, SchemaRegistry, SpecificationVersion}
-import io.circe.Encoder
+import io.circe.{Decoder, Encoder}
 import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -27,14 +27,21 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
       .getOrElse(throw RuntimeException("Schema root is missing $defs object"))
       .noSpaces
 
-  private def validate[T: Encoder](defName: String, value: T): Unit =
-    val encoded = value.asJson.deepDropNullValues.noSpaces
+  private def validate[T: Encoder: Decoder](defName: String, value: T): Unit =
+    val encodedJson = value.asJson.deepDropNullValues
+    val encodedStr = encodedJson.noSpaces
     val wrapper =
       s"""{"$$schema":"https://json-schema.org/draft/2020-12/schema","$$ref":"#/$$defs/$defName","$$defs":$defsText}"""
     val schema = registry.getSchema(wrapper, InputFormat.JSON)
-    val errors = schema.validate(encoded, InputFormat.JSON).asScala.toList
-    withClue(s"Encoded JSON ($defName):\n$encoded\nViolations:\n${errors.mkString("\n")}\n"):
+    val errors = schema.validate(encodedStr, InputFormat.JSON).asScala.toList
+    withClue(s"Encoded JSON ($defName):\n$encodedStr\nViolations:\n${errors.mkString("\n")}\n"):
       errors shouldBe empty
+    val _ = encodedJson.as[T] match
+      case Right(decoded) =>
+        withClue(s"Round-trip mismatch ($defName):\nencoded: $encodedStr\n"):
+          decoded shouldBe value
+      case Left(err) =>
+        fail(s"Decode round-trip failed for $defName:\nencoded: $encodedStr\nerror: ${err.getMessage}")
 
   // --- Lifecycle ---
 
