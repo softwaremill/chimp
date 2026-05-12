@@ -41,7 +41,8 @@ lazy val core: Project = (project in file("core"))
       "io.circe" %% "circe-core" % circeV,
       "io.circe" %% "circe-generic" % circeV,
       "io.circe" %% "circe-parser" % circeV,
-      "org.slf4j" % "slf4j-api" % "2.0.17"
+      "org.slf4j" % "slf4j-api" % "2.0.17",
+      "com.networknt" % "json-schema-validator" % "3.0.2" % Test
     )
   )
 
