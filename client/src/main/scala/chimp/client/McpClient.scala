@@ -1,17 +1,17 @@
 package chimp.client
 
-import chimp.client.capabilities.CapsDerive
 import chimp.client.notifications.ServerNotificationListener
 import chimp.client.transport.Transport
 import chimp.protocol.*
 import io.circe.Json
-import sttp.monad.MonadError
 
-/** An MCP client. The `Caps` type parameter is an intersection of capability typeclasses (`Roots[F]`, `Sampling[F]`, `Elicitation[F]`)
-  * the host application opts into; each one is advertised on `initialize` and routed to the corresponding `given` handler when the
-  * server invokes it.
+/** An MCP client.
+  *
+  * Server-initiated requests (`roots/list`, `sampling/createMessage`, `elicitation/create`) are dispatched to the optional
+  * handler functions supplied at construction. Each handler that is `Some` causes the corresponding capability to be advertised
+  * on `initialize`; capabilities the host application doesn't opt into are answered with `MethodNotFound`.
   */
-trait McpClient[F[_], +Caps]:
+trait McpClient[F[_]]:
   def initialize(): F[InitializeResult]
   def ping(): F[Unit]
   def close(): F[Unit]
@@ -39,10 +39,19 @@ trait McpClient[F[_], +Caps]:
   def onServerNotification(listener: ServerNotificationListener[F]): F[Unit]
 
 object McpClient:
-  def apply[F[_], Caps](
+  def apply[F[_]](
       transport: Transport[F],
       clientInfo: Implementation,
+      rootsHandler: Option[() => F[ListRootsResult]] = None,
+      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
       protocolVersion: String = ProtocolVersion.Latest
-  )(using d: CapsDerive[F, Caps]): McpClient[F, Caps] =
-    given MonadError[F] = transport.monad
-    DefaultMcpClient.create[F, Caps](transport, clientInfo, protocolVersion, d.wire, d.handlers)
+  ): McpClient[F] =
+    DefaultMcpClient.create(
+      transport,
+      clientInfo,
+      protocolVersion,
+      rootsHandler,
+      samplingHandler,
+      elicitationHandler
+    )

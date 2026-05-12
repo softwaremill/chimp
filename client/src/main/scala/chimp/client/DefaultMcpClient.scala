@@ -1,6 +1,6 @@
 package chimp.client
 
-import chimp.client.internal.{CapabilityHandlers, Correlator}
+import chimp.client.internal.Correlator
 import chimp.client.notifications.ServerNotificationListener
 import chimp.client.transport.Transport
 import chimp.protocol.*
@@ -12,34 +12,64 @@ import sttp.monad.syntax.*
 import java.util.concurrent.atomic.AtomicReference
 
 object DefaultMcpClient:
-  def create[F[_], Caps](
+  def create[F[_]](
       transport: Transport[F],
       clientInfo: Implementation,
       protocolVersion: String,
-      wireCaps: ClientCapabilities,
-      handlers: CapabilityHandlers[F]
-  ): McpClient[F, Caps] =
-    val impl = new Impl[F, Caps](transport, clientInfo, protocolVersion, wireCaps, handlers)
+      rootsHandler: Option[() => F[ListRootsResult]],
+      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]]
+  ): McpClient[F] =
+    val impl = new Impl[F](transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler)
     impl.installIncoming()
     impl
 
-  private final class Impl[F[_], Caps](
+  private final class Impl[F[_]](
       transport: Transport[F],
       clientInfo: Implementation,
       protocolVersion: String,
-      wireCaps: ClientCapabilities,
-      handlers: CapabilityHandlers[F]
-  ) extends McpClient[F, Caps]:
+      rootsHandler: Option[() => F[ListRootsResult]],
+      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]]
+  ) extends McpClient[F]:
     private given MonadError[F] = transport.monad
     private val correlator = Correlator()
     private val listeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
+
+    private val wireCaps: ClientCapabilities = ClientCapabilities(
+      roots       = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
+      sampling    = samplingHandler.map(_ => Json.obj()),
+      elicitation = elicitationHandler.map(_ => Json.obj())
+    )
+
+    private val dispatch: Map[String, Json => F[Json]] =
+      val entries = List(
+        rootsHandler.map(fn =>
+          "roots/list" -> ((_: Json) => fn().map(_.asJson))
+        ),
+        samplingHandler.map(fn =>
+          "sampling/createMessage" -> ((params: Json) =>
+            params.as[CreateMessageRequest] match
+              case Right(req) => fn(req).map(_.asJson)
+              case Left(e)    => summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${e.getMessage}"))
+          )
+        ),
+        elicitationHandler.map(fn =>
+          "elicitation/create" -> ((params: Json) =>
+            params.as[ElicitRequest] match
+              case Right(req) => fn(req).map(_.asJson)
+              case Left(e)    => summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${e.getMessage}"))
+          )
+        )
+      ).flatten
+      entries.toMap
 
     def installIncoming(): Unit =
       val _ = transport.onIncoming(handleIncoming)
 
     private def handleIncoming(msg: JSONRPCMessage): F[Unit] = msg match
       case JSONRPCMessage.Request(_, method, params, id) =>
-        handlers.methods.get(method) match
+        dispatch.get(method) match
           case Some(h) =>
             val rawParams = params.getOrElse(Json.obj())
             h(rawParams).flatMap(result =>
@@ -129,7 +159,7 @@ object DefaultMcpClient:
       sendNotification("notifications/roots/list_changed", None)
 
     override def onServerNotification(listener: ServerNotificationListener[F]): F[Unit] =
-      listeners.updateAndGet(ls => ls :+ listener)
+      val _ = listeners.updateAndGet(ls => ls :+ listener)
       summon[MonadError[F]].unit(())
 
     private def sendRequest[R: Decoder](method: String, params: Option[Json]): F[R] =

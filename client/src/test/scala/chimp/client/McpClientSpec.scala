@@ -24,7 +24,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
 
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(responseEnvelope)
     val t = HttpTransport[Identity](backend, mcpUri)
-    val client = McpClient[Identity, Any](t, clientInfo)
+    val client = McpClient[Identity](t, clientInfo)
     val result = client.initialize()
     result.protocolVersion shouldBe ProtocolVersion.Latest
     result.serverInfo.name shouldBe "test-server"
@@ -36,7 +36,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
 
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(responseEnvelope)
     val t = HttpTransport[Identity](backend, mcpUri)
-    val client = McpClient[Identity, Any](t, clientInfo)
+    val client = McpClient[Identity](t, clientInfo)
     val r = client.callTool("echo", io.circe.Json.obj("message" -> io.circe.Json.fromString("hi")))
     r.isError shouldBe false
     r.content.head shouldBe ToolContent.Text("text", "hi")
