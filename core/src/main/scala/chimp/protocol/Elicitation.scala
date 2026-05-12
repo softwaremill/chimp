@@ -29,13 +29,3 @@ final case class ElicitResult(
     content: Option[Map[String, Json]] = None,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
-
-object Elicitation:
-  def applyDefaults(requestedSchema: Json, provided: Map[String, Json]): Map[String, Json] =
-    val propsOpt = requestedSchema.hcursor.downField("properties").focus.flatMap(_.asObject)
-    propsOpt match
-      case None => provided
-      case Some(props) =>
-        val withDefaults = props.toMap.flatMap: (key, schema) =>
-          schema.hcursor.downField("default").focus.map(d => key -> d)
-        withDefaults ++ provided

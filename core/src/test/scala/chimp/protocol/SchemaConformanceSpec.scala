@@ -102,6 +102,9 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   it should "produce CallToolResult (error) that match the spec schema" in:
     validate("CallToolResult", CallToolResult(content = List(ToolContent.Text(text = "boom")), isError = true))
 
+  it should "produce ListToolsParams that match the spec schema (PaginatedRequestParams)" in:
+    validate("PaginatedRequestParams", ListToolsParams(cursor = Some("c")))
+
   it should "produce ListToolsResult that match the spec schema" in:
     val tool = ToolDefinition(name = "t", inputSchema = io.circe.Json.obj("type" -> "object".asJson))
     validate("ListToolsResult", ListToolsResponse(tools = List(tool), nextCursor = Some("c")))
@@ -133,14 +136,32 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   it should "produce BlobResourceContents that match the spec schema" in:
     validate("BlobResourceContents", ResourceContents.Blob(uri = "file:///x", blob = "AAAA", mimeType = Some("application/octet-stream")))
 
+  it should "produce ListResourcesParams that match the spec schema (PaginatedRequestParams)" in:
+    validate("PaginatedRequestParams", ListResourcesParams(cursor = Some("c")))
+
   it should "produce ListResourcesResult that match the spec schema" in:
     validate("ListResourcesResult", ListResourcesResult(resources = List(Resource(uri = "file:///x", name = "x"))))
+
+  it should "produce ListResourceTemplatesParams that match the spec schema (PaginatedRequestParams)" in:
+    validate("PaginatedRequestParams", ListResourceTemplatesParams(cursor = Some("c")))
+
+  it should "produce ReadResourceRequestParams that match the spec schema" in:
+    validate("ReadResourceRequestParams", ReadResourceParams(uri = "file:///x"))
 
   it should "produce ReadResourceResult that match the spec schema" in:
     validate("ReadResourceResult", ReadResourceResult(contents = List(ResourceContents.Text(uri = "file:///x", text = "y"))))
 
   it should "produce ResourceTemplate that match the spec schema" in:
     validate("ResourceTemplate", ResourceTemplate(uriTemplate = "file:///{path}", name = "tpl"))
+
+  it should "produce SubscribeRequestParams that match the spec schema" in:
+    validate("SubscribeRequestParams", SubscribeParams(uri = "file:///x"))
+
+  it should "produce UnsubscribeRequestParams that match the spec schema" in:
+    validate("UnsubscribeRequestParams", UnsubscribeParams(uri = "file:///x"))
+
+  it should "produce ResourceUpdatedNotificationParams that match the spec schema" in:
+    validate("ResourceUpdatedNotificationParams", ResourceUpdatedParams(uri = "file:///x"))
 
   // --- Prompts ---
 
@@ -155,8 +176,14 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   it should "produce PromptMessage that match the spec schema" in:
     validate("PromptMessage", PromptMessage(role = Role.User, content = ToolContent.Text(text = "hi")))
 
+  it should "produce ListPromptsParams that match the spec schema (PaginatedRequestParams)" in:
+    validate("PaginatedRequestParams", ListPromptsParams(cursor = Some("c")))
+
   it should "produce ListPromptsResult that match the spec schema" in:
     validate("ListPromptsResult", ListPromptsResult(prompts = List(Prompt(name = "p"))))
+
+  it should "produce GetPromptRequestParams that match the spec schema" in:
+    validate("GetPromptRequestParams", GetPromptParams(name = "greet", arguments = Some(Map("who" -> "Alice"))))
 
   it should "produce GetPromptResult that match the spec schema" in:
     validate("GetPromptResult", GetPromptResult(messages = List(PromptMessage(Role.Assistant, ToolContent.Text(text = "yo")))))
@@ -208,10 +235,16 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
 
   // --- Completion ---
 
-  it should "produce CompleteRequestParams that match the spec schema" in:
+  it should "produce CompleteRequestParams (prompt ref) that match the spec schema" in:
     validate("CompleteRequestParams", CompleteParams(
       ref = CompleteRef.Prompt(PromptReference(name = "greet")),
       argument = CompleteArgument(name = "who", value = "al")
+    ))
+
+  it should "produce CompleteRequestParams (resource template ref) that match the spec schema" in:
+    validate("CompleteRequestParams", CompleteParams(
+      ref = CompleteRef.Resource(ResourceReference(uri = "file:///{path}")),
+      argument = CompleteArgument(name = "path", value = "src/")
     ))
 
   it should "produce CompleteResult that match the spec schema" in:
