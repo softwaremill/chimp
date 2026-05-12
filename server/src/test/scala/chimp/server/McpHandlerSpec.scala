@@ -195,11 +195,10 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         error.message should include("Invalid arguments")
       case _ => fail("Expected Error")
 
-  it should "return an error for missing arguments" in:
+  it should "return an error when required fields are missing (no arguments object)" in:
     // Given
     val params = Json.obj(
       "name" -> Json.fromString("add")
-      // missing 'arguments'
     )
     val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("7"))
     val json = req.asJson
@@ -211,7 +210,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     resp match
       case Error(_, _, error) =>
         error.code shouldBe InvalidParams.code
-        error.message should include("Missing arguments")
+        error.message should include("Invalid arguments")
       case _ => fail("Expected Error")
 
   it should "return an error for missing tool name" in:

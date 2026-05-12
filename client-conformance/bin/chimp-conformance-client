@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JAR="${DIR}/../target/scala-3.3.7/chimp-client-conformance.jar"
+if [[ ! -f "${JAR}" ]]; then
+  echo "Fat jar not found at ${JAR}. Run 'sbt clientConformance/assembly' first." >&2
+  exit 127
+fi
+exec java -jar "${JAR}" "$@"

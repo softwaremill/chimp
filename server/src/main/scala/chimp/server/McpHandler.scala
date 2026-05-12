@@ -93,13 +93,12 @@ class McpHandler[F[_]](
   ): F[JSONRPCMessage] =
     // Extract tool name and arguments in a functional, idiomatic way
     val toolNameOpt = params.flatMap(_.hcursor.downField("name").as[String].toOption)
-    val argumentsOpt = params.flatMap(_.hcursor.downField("arguments").focus)
-    (toolNameOpt, argumentsOpt) match
-      case (Some(toolName), Some(args)) =>
+    val args = params.flatMap(_.hcursor.downField("arguments").focus).getOrElse(Json.obj())
+    toolNameOpt match
+      case Some(toolName) =>
         toolsByName.get(toolName) match
           case Some(tool) =>
-            def inputSnippet = args.noSpaces.take(200) // for error reporting
-            // Use Circe's Decoder for argument decoding
+            def inputSnippet = args.noSpaces.take(200)
             tool.inputDecoder.decodeJson(args) match
               case Right(decodedInput) => handleDecodedInput(tool, decodedInput, id, headers)
               case Left(decodingError) =>
@@ -109,9 +108,7 @@ class McpHandler[F[_]](
                   s"Invalid arguments: ${decodingError.getMessage}. Input: $inputSnippet"
                 ).unit
           case None => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $toolName").unit
-      case (Some(toolName), None) =>
-        protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Missing arguments for tool: $toolName").unit
-      case (None, _) =>
+      case None =>
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
   /** Handles a successfully decoded tool input, dispatching to the tool's logic. */
@@ -151,6 +148,9 @@ class McpHandler[F[_]](
             }
           case "initialize" =>
             val response = handleInitialize(params, id)
+            McpResponse.JsonResponse((response: JSONRPCMessage).asJson).unit
+          case "ping" =>
+            val response = JSONRPCMessage.Response(id = id, result = Json.obj())
             McpResponse.JsonResponse((response: JSONRPCMessage).asJson).unit
           case other =>
             val errorResponse = protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")

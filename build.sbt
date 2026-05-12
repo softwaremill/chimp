@@ -28,7 +28,9 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val rootProject = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, server, client, examples)
+  .aggregate(core, server, client, examples, serverConformance, clientConformance)
+
+val conformance = inputKey[Unit]("Run the MCP conformance harness via npx against this subproject. Extra args are passed through.")
 
 lazy val core: Project = (project in file("core"))
   .settings(commonSettings: _*)
@@ -82,3 +84,107 @@ lazy val examples = (project in file("examples"))
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
   .dependsOn(server)
+
+import sbtassembly.AssemblyPlugin.autoImport.*
+
+lazy val assemblySettings = Seq(
+  assembly / assemblyMergeStrategy := {
+    case PathList("META-INF", "MANIFEST.MF")       => MergeStrategy.discard
+    case PathList("META-INF", "INDEX.LIST")        => MergeStrategy.discard
+    case PathList("META-INF", "DEPENDENCIES")      => MergeStrategy.discard
+    case PathList("META-INF", "services", _ @ _*) => MergeStrategy.concat
+    case PathList("META-INF", xs @ _*) if xs.lastOption.exists(s => s.endsWith(".SF") || s.endsWith(".DSA") || s.endsWith(".RSA")) =>
+      MergeStrategy.discard
+    case PathList("META-INF", _ @ _*)              => MergeStrategy.first
+    case PathList("module-info.class")             => MergeStrategy.discard
+    case _                                         => MergeStrategy.first
+  }
+)
+
+lazy val serverConformance = (project in file("server-conformance"))
+  .enablePlugins(AssemblyPlugin)
+  .settings(commonSettings: _*)
+  .settings(assemblySettings: _*)
+  .settings(
+    publishArtifact := false,
+    name := "server-conformance",
+    Compile / mainClass := Some("chimp.conformance.server.Main"),
+    assembly / assemblyJarName := "chimp-server-conformance.jar",
+    libraryDependencies ++= Seq(
+      "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
+      "ch.qos.logback" % "logback-classic" % "1.5.32"
+    ),
+    conformance := {
+      import complete.DefaultParsers.*
+      import scala.sys.process.*
+      val args = spaceDelimited("<args>").parsed.toList
+      val jar = assembly.value
+      val rootDir = (LocalRootProject / baseDirectory).value
+      val baseline = (rootDir / "conformance-baseline.yml").getAbsolutePath
+      val log = streams.value.log
+
+      val urlPromise = scala.concurrent.Promise[String]()
+      val pb = new java.lang.ProcessBuilder("java", "-jar", jar.getAbsolutePath).redirectErrorStream(false)
+      val proc = pb.start()
+      val readerThread = new Thread(new Runnable {
+        def run(): Unit = {
+          val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream, "UTF-8"))
+          try {
+            val line = reader.readLine()
+            if (line != null && line.startsWith("http")) urlPromise.trySuccess(line.trim)
+            else urlPromise.tryFailure(new RuntimeException(s"Server did not print a URL; first line was: $line"))
+            var more: String = reader.readLine()
+            while (more != null) {
+              log.info(s"[server] $more")
+              more = reader.readLine()
+            }
+          } catch {
+            case t: Throwable => urlPromise.tryFailure(t)
+          }
+        }
+      })
+      readerThread.setDaemon(true)
+      readerThread.start()
+
+      try {
+        val url = scala.concurrent.Await.result(urlPromise.future, scala.concurrent.duration.Duration("15s"))
+        log.info(s"Server started at $url")
+        val cmd = List("npx", "@modelcontextprotocol/conformance") ++ args ++
+          List("--url", url, "--expected-failures", baseline)
+        val rc = Process(cmd, rootDir).!
+        if (rc != 0) sys.error(s"conformance harness exited with code $rc")
+      } finally {
+        proc.destroy()
+        if (!proc.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) proc.destroyForcibly()
+      }
+    }
+  )
+  .dependsOn(server)
+
+lazy val clientConformance = (project in file("client-conformance"))
+  .enablePlugins(AssemblyPlugin)
+  .settings(commonSettings: _*)
+  .settings(assemblySettings: _*)
+  .settings(
+    publishArtifact := false,
+    name := "client-conformance",
+    Compile / mainClass := Some("chimp.conformance.client.Main"),
+    assembly / assemblyJarName := "chimp-client-conformance.jar",
+    libraryDependencies ++= Seq(
+      "ch.qos.logback" % "logback-classic" % "1.5.32"
+    ),
+    conformance := {
+      import complete.DefaultParsers.*
+      import scala.sys.process.*
+      val args = spaceDelimited("<args>").parsed.toList
+      val _ = assembly.value
+      val baseDir = baseDirectory.value
+      val rootDir = (LocalRootProject / baseDirectory).value
+      val wrapper = (baseDir / "bin" / "chimp-conformance-client").getAbsolutePath
+      val cmd = List("npx", "@modelcontextprotocol/conformance") ++ args ++
+        List("--command", wrapper, "--expected-failures", (rootDir / "conformance-baseline.yml").getAbsolutePath)
+      val rc = Process(cmd, rootDir).!
+      if (rc != 0) sys.error(s"conformance harness exited with code $rc")
+    }
+  )
+  .dependsOn(client)

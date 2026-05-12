@@ -12,6 +12,19 @@ import sttp.monad.syntax.*
 import java.util.concurrent.atomic.AtomicReference
 
 /** Non-streaming Streamable HTTP transport. Works against any sttp `Backend[F]`. */
+object HttpTransport:
+  private[transport] def extractSingleSseData(body: String): Option[String] =
+    val blocks: List[String] = body.split("\\r?\\n\\r?\\n", -1).toList
+    val events: List[sttp.model.sse.ServerSentEvent] = blocks.map: block =>
+      val lines: List[String] = block.split("\\r?\\n", -1).toList
+      sttp.model.sse.ServerSentEvent.parse(lines)
+    events.flatMap(_.data).find(_.nonEmpty)
+
+  private[transport] def isAckLike(json: String): Boolean =
+    parser.parse(json) match
+      case Right(j) => j.hcursor.downField("id").focus.isEmpty
+      case Left(_)  => false
+
 final class HttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
@@ -40,9 +53,19 @@ final class HttpTransport[F[_]](
       case StatusCode.Ok =>
         response.body match
           case Right(bodyStr) =>
-            parser.decode[JSONRPCMessage](bodyStr) match
-              case Right(m) => monad.unit(Some(m))
-              case Left(e)  => monad.error(McpProtocolException(s"Failed to decode response body: ${e.getMessage}"))
+            val contentType = response.header("Content-Type").getOrElse("")
+            val payload =
+              if contentType.contains("text/event-stream") then HttpTransport.extractSingleSseData(bodyStr)
+              else if bodyStr.isEmpty then None
+              else Some(bodyStr)
+            payload match
+              case None => monad.unit(None)
+              case Some(json) =>
+                if HttpTransport.isAckLike(json) then monad.unit(None)
+                else
+                  parser.decode[JSONRPCMessage](json) match
+                    case Right(m) => monad.unit(Some(m))
+                    case Left(e)  => monad.error(McpProtocolException(s"Failed to decode response body: ${e.getMessage}; payload=$json"))
           case Left(err) =>
             monad.error(McpTransportException(s"HTTP 200 with empty body: $err"))
       case StatusCode.Accepted =>

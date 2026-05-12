@@ -118,6 +118,16 @@ final case class CallToolResult(
     structuredContent: Option[Json] = None,
     isError: Boolean = false,
     _meta: Option[Map[String, Json]] = None
-) derives Codec
+)
+
+object CallToolResult:
+  given Encoder[CallToolResult] = Encoder.AsObject.derived[CallToolResult]
+  given Decoder[CallToolResult] = Decoder.instance: c =>
+    for
+      content           <- c.downField("content").as[List[ToolContent]]
+      structuredContent <- c.downField("structuredContent").as[Option[Json]]
+      isError           <- c.downField("isError").as[Option[Boolean]]
+      meta              <- c.downField("_meta").as[Option[Map[String, Json]]]
+    yield CallToolResult(content, structuredContent, isError.getOrElse(false), meta)
 
 final case class ToolListChangedNotification(method: String = "notifications/tools/list_changed") derives Codec
