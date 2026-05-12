@@ -3,7 +3,7 @@ package chimp.client.internal
 import chimp.client.capabilities.{Elicitation, Roots, Sampling}
 import chimp.protocol.{CreateMessageRequest, ElicitRequest}
 import io.circe.syntax.*
-import io.circe.{Json, parser}
+import io.circe.Json
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 

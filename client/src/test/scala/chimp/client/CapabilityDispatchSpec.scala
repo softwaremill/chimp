@@ -61,7 +61,7 @@ class CapabilityDispatchSpec extends AnyFlatSpec with Matchers:
     )
     t.planResponse(JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson))
     val client = McpClient[Identity, Roots[Identity] & Elicitation[Identity]](t, clientInfo)
-    client.initialize()
+    val _ = client.initialize()
 
     t.sent.head match
       case r: JSONRPCMessage.Request =>

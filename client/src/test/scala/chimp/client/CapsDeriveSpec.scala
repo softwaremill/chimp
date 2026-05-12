@@ -1,6 +1,6 @@
 package chimp.client
 
-import chimp.client.capabilities.{CapsDerive, Elicitation, Roots, Sampling}
+import chimp.client.capabilities.{CapsDerive, Elicitation, Roots}
 import chimp.protocol.{ClientCapabilities, ElicitRequest, ElicitResult, ListRootsResult}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers

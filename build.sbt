@@ -20,7 +20,8 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
     }
   }.value,
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
-  Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s"
+  Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
+  scalacOptions ++= Seq("-Wunused:all", "-Werror")
 )
 
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test

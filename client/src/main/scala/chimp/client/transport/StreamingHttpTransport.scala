@@ -10,7 +10,7 @@ import sttp.model.Uri
   * resumability via `Last-Event-ID`, and bidirectional server-initiated dispatch over a long-lived GET.
   */
 abstract class StreamingHttpTransport[F[_], S](
-    backend: StreamBackend[F, S],
-    uri: Uri,
-    streams: Streams[S]
+    protected val backend: StreamBackend[F, S],
+    protected val uri: Uri,
+    protected val streams: Streams[S]
 ) extends Transport[F]

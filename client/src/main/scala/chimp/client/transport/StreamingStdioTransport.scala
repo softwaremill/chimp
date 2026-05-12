@@ -10,8 +10,8 @@ import java.io.File
   * `readLine` reads with non-blocking stream consumption tied to the effect's runtime.
   */
 abstract class StreamingStdioTransport[F[_], S](
-    command: List[String],
-    env: Map[String, String] = Map.empty,
-    workDir: Option[File] = None,
-    streams: Streams[S]
+    protected val command: List[String],
+    protected val env: Map[String, String] = Map.empty,
+    protected val workDir: Option[File] = None,
+    protected val streams: Streams[S]
 ) extends Transport[F]

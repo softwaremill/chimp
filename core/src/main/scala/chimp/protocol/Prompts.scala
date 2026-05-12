@@ -1,6 +1,6 @@
 package chimp.protocol
 
-import io.circe.{Codec, Decoder, DecodingFailure, Encoder, Json}
+import io.circe.{Codec, Decoder, Encoder, Json}
 
 enum Role:
   case User, Assistant

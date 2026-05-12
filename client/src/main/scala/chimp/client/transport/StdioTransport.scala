@@ -78,10 +78,10 @@ final class StdioTransport(
   private def dispatch(msg: JSONRPCMessage): Unit = msg match
     case r: JSONRPCMessage.Response =>
       val q = pending.remove(r.id)
-      if q != null then q.offer(r, 1, TimeUnit.SECONDS)
+      if q != null then { val _ = q.offer(r, 1, TimeUnit.SECONDS) }
     case e: JSONRPCMessage.Error =>
       val q = pending.remove(e.id)
-      if q != null then q.offer(e, 1, TimeUnit.SECONDS)
+      if q != null then { val _ = q.offer(e, 1, TimeUnit.SECONDS) }
     case other =>
       incomingHandler.get()(other)
 
@@ -93,7 +93,7 @@ final class StdioTransport(
         id = entry.getKey,
         error = chimp.protocol.JSONRPCErrorObject(code = -32000, message = "Transport closed")
       )
-      entry.getValue.offer(poison, 100, TimeUnit.MILLISECONDS)
+      val _ = entry.getValue.offer(poison, 100, TimeUnit.MILLISECONDS)
       it.remove()
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
@@ -122,6 +122,6 @@ final class StdioTransport(
       try writer.close() catch case _: Exception => ()
       if proc.isAlive then
         if !proc.waitFor(2, TimeUnit.SECONDS) then proc.destroy()
-        if !proc.waitFor(2, TimeUnit.SECONDS) then proc.destroyForcibly()
+        if !proc.waitFor(2, TimeUnit.SECONDS) then { val _ = proc.destroyForcibly() }
       readerThread.interrupt()
       stderrThread.interrupt()
