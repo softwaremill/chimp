@@ -1,12 +1,13 @@
-import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
 import com.softwaremill.Publish.{ossPublishSettings, updateDocs}
+import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
 import com.softwaremill.UpdateVersionInDocs
 
-// Version constants
 val scalaTestV = "3.2.20"
 val circeV = "0.14.15"
+val slf4jV = "2.0.17"
+val logbackV = "1.5.32"
 val tapirV = "1.13.19"
-val sttpClient4V = "4.0.23"
+val sttpClientV = "4.0.23"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -31,7 +32,7 @@ lazy val root = (project in file("."))
   .settings(publishArtifact := false, name := "chimp")
   .aggregate(core, server, client, examples, serverConformance, clientConformance)
 
-val conformance = inputKey[Unit]("Run the MCP conformance harness via npx against this subproject. Extra args are passed through.")
+val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
 lazy val core: Project = (project in file("core"))
   .settings(commonSettings: _*)
@@ -42,7 +43,7 @@ lazy val core: Project = (project in file("core"))
       "io.circe" %% "circe-core" % circeV,
       "io.circe" %% "circe-generic" % circeV,
       "io.circe" %% "circe-parser" % circeV,
-      "org.slf4j" % "slf4j-api" % "2.0.17",
+      "org.slf4j" % "slf4j-api" % slf4jV,
       "com.networknt" % "json-schema-validator" % "3.0.2" % Test
     )
   )
@@ -67,7 +68,7 @@ lazy val client: Project = (project in file("client"))
     name := "chimp-client",
     libraryDependencies ++= Seq(
       scalaTest,
-      "com.softwaremill.sttp.client4" %% "core" % sttpClient4V
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV
     )
   )
   .dependsOn(core)
@@ -81,7 +82,7 @@ lazy val examples = (project in file("examples"))
       "com.softwaremill.sttp.client4" %% "core" % "4.0.23",
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
-      "ch.qos.logback" % "logback-classic" % "1.5.32"
+      "ch.qos.logback" % "logback-classic" % logbackV
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
@@ -91,15 +92,15 @@ import sbtassembly.AssemblyPlugin.autoImport.*
 
 lazy val assemblySettings = Seq(
   assembly / assemblyMergeStrategy := {
-    case PathList("META-INF", "MANIFEST.MF")       => MergeStrategy.discard
-    case PathList("META-INF", "INDEX.LIST")        => MergeStrategy.discard
-    case PathList("META-INF", "DEPENDENCIES")      => MergeStrategy.discard
-    case PathList("META-INF", "services", _ @ _*) => MergeStrategy.concat
+    case PathList("META-INF", "MANIFEST.MF")     => MergeStrategy.discard
+    case PathList("META-INF", "INDEX.LIST")      => MergeStrategy.discard
+    case PathList("META-INF", "DEPENDENCIES")    => MergeStrategy.discard
+    case PathList("META-INF", "services", _ @_*) => MergeStrategy.concat
     case PathList("META-INF", xs @ _*) if xs.lastOption.exists(s => s.endsWith(".SF") || s.endsWith(".DSA") || s.endsWith(".RSA")) =>
       MergeStrategy.discard
-    case PathList("META-INF", _ @ _*)              => MergeStrategy.first
-    case PathList("module-info.class")             => MergeStrategy.discard
-    case _                                         => MergeStrategy.first
+    case PathList("META-INF", _ @_*)   => MergeStrategy.first
+    case PathList("module-info.class") => MergeStrategy.discard
+    case _                             => MergeStrategy.first
   }
 )
 
@@ -114,10 +115,11 @@ lazy val serverConformance = (project in file("server-conformance"))
     assembly / assemblyJarName := "chimp-server-conformance.jar",
     libraryDependencies ++= Seq(
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
-      "ch.qos.logback" % "logback-classic" % "1.5.32"
+      "ch.qos.logback" % "logback-classic" % logbackV
     ),
     conformance := {
       import complete.DefaultParsers.*
+
       import scala.sys.process.*
       val args = spaceDelimited("<args>").parsed.toList
       val jar = assembly.value
@@ -177,6 +179,7 @@ lazy val clientConformance = (project in file("client-conformance"))
     ),
     conformance := {
       import complete.DefaultParsers.*
+
       import scala.sys.process.*
       val args = spaceDelimited("<args>").parsed.toList
       val _ = assembly.value
