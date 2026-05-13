@@ -8,21 +8,21 @@ import sttp.tapir.server.netty.sync.NettySyncServer
 
 object Main:
 
-  case class AddNumbersInput(a: Double, b: Double) derives Codec, Schema
-  case class NoInput() derives Codec, Schema
+  private case class AddNumbersInput(a: Double, b: Double) derives Codec, Schema
+  private case class NoInput() derives Codec, Schema
 
   private val addNumbers = tool("add_numbers")
-    .description("Adds two numbers and returns the result as text.")
+    .description("Adds two numbers and returns the result as text")
     .input[AddNumbersInput]
     .handle(in => Right((in.a + in.b).toString))
 
   private val simpleText = tool("test_simple_text")
-    .description("Returns a fixed text string.")
+    .description("Returns a fixed text string")
     .input[NoInput]
-    .handle(_ => Right("This is a simple text response for testing."))
+    .handle(_ => Right("This is a simple text response for testing"))
 
   private val errorTool = tool("test_error_handling")
-    .description("Always returns an error result.")
+    .description("Always returns an error result")
     .input[NoInput]
     .handle(_ => Left("This tool intentionally returns an error for testing"))
 
