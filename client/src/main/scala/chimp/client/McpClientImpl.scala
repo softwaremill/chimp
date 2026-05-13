@@ -1,7 +1,7 @@
 package chimp.client
 
 import chimp.client.internal.{Correlator, UUIDCorrelator}
-import chimp.client.notifications.ServerNotificationListener
+import chimp.client.notifications.{ServerNotification, ServerNotificationListener}
 import chimp.client.transport.Transport
 import chimp.protocol.*
 import io.circe.syntax.*
@@ -35,6 +35,7 @@ object McpClientImpl:
       correlator: Correlator
   ) extends McpClient[F]:
     private given MonadError[F] = transport.monad
+    private val monad: MonadError[F] = transport.monad
 
     private val clientCapabilities: ClientCapabilities = ClientCapabilities(
       roots = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
@@ -54,7 +55,7 @@ object McpClientImpl:
             params.as[CreateMessageRequest] match
               case Right(request) => fn(request).map(_.asJson)
               case Left(error)    =>
-                summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${error.getMessage}"))
+                monad.error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${error.getMessage}"))
           )
         ),
         elicitationHandler.map(fn =>
@@ -62,7 +63,7 @@ object McpClientImpl:
             params.as[ElicitRequest] match
               case Right(request) => fn(request).map(_.asJson)
               case Left(error)    =>
-                summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${error.getMessage}"))
+                monad.error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${error.getMessage}"))
           )
         )
       ).flatten
@@ -94,13 +95,14 @@ object McpClientImpl:
               error = JSONRPCErrorObject(code = JSONRPCErrorCodes.MethodNotFound.code, message = s"Client doesn't support method: $method")
             )
             transport.send(error).map(_ => ())
-      case notification: JSONRPCMessage.Notification =>
+      case message: JSONRPCMessage.Notification =>
+        val notification = ServerNotification.parse(message)
         notificationListeners
           .get()
-          .foldLeft(summon[MonadError[F]].unit(())): (acc, listener) =>
-            acc.flatMap(_ => listener.onNotification(notification).handleError(_ => summon[MonadError[F]].unit(())))
+          .foldLeft(monad.unit(())): (acc, listener) =>
+            acc.flatMap(_ => listener.onNotification(notification).handleError(_ => monad.unit(())))
       case _ =>
-        summon[MonadError[F]].unit(())
+        monad.unit(())
 
     override def initialize(): F[InitializeResult] =
       val params = InitializeParams(
@@ -116,7 +118,7 @@ object McpClientImpl:
           transport
             .close()
             .flatMap: _ =>
-              summon[MonadError[F]].error(
+              monad.error(
                 McpProtocolException(
                   s"Server responded with unsupported protocol version '${result.protocolVersion}', " +
                     s"client supports: ${ProtocolVersion.values.toList.map(_.name).sorted.mkString(", ")}"
@@ -191,14 +193,14 @@ object McpClientImpl:
 
     override def onServerNotification(listener: ServerNotificationListener[F]): F[Unit] =
       val _ = notificationListeners.updateAndGet(listeners => listeners :+ listener)
-      summon[MonadError[F]].unit(())
+      monad.unit(())
 
     private def requireServerCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
       negotiatedServerCapabilities.get() match
         case None =>
-          summon[MonadError[F]].error(McpProtocolException(s"Client not initialized"))
+          monad.error(McpProtocolException(s"Client not initialized"))
         case Some(capabilities) if !present(capabilities) =>
-          summon[MonadError[F]].error(McpProtocolException(s"Server did not negotiate the capability required for $method"))
+          monad.error(McpProtocolException(s"Server did not negotiate the capability required for $method"))
         case Some(_) =>
           action
 
@@ -209,14 +211,14 @@ object McpClientImpl:
         .flatMap:
           case Some(JSONRPCMessage.Response(_, _, result)) =>
             result.as[R] match
-              case Right(response) => summon[MonadError[F]].unit(response)
-              case Left(error) => summon[MonadError[F]].error(McpProtocolException(s"Failed to decode $method result: ${error.getMessage}"))
+              case Right(response) => monad.unit(response)
+              case Left(error)     => monad.error(McpProtocolException(s"Failed to decode $method result: ${error.getMessage}"))
           case Some(JSONRPCMessage.Error(_, _, error)) =>
-            summon[MonadError[F]].error(McpProtocolException(s"$method failed: ${error.code} ${error.message}"))
+            monad.error(McpProtocolException(s"$method failed: ${error.code} ${error.message}"))
           case Some(other) =>
-            summon[MonadError[F]].error(McpProtocolException(s"Unexpected response to $method: $other"))
+            monad.error(McpProtocolException(s"Unexpected response to $method: $other"))
           case None =>
-            summon[MonadError[F]].error(McpProtocolException(s"No response received for request $method"))
+            monad.error(McpProtocolException(s"No response received for request $method"))
 
     private def sendNotification(method: String, params: Option[Json]): F[Unit] =
       val notification = JSONRPCMessage.Notification(method = method, params = params)
