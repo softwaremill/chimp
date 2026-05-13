@@ -52,16 +52,17 @@ object McpClientImpl:
         samplingHandler.map(fn =>
           "sampling/createMessage" -> ((params: Json) =>
             params.as[CreateMessageRequest] match
-              case Right(req) => fn(req).map(_.asJson)
-              case Left(e)    =>
-                summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${e.getMessage}"))
+              case Right(request) => fn(request).map(_.asJson)
+              case Left(error)    =>
+                summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${error.getMessage}"))
           )
         ),
         elicitationHandler.map(fn =>
           "elicitation/create" -> ((params: Json) =>
             params.as[ElicitRequest] match
-              case Right(req) => fn(req).map(_.asJson)
-              case Left(e)    => summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${e.getMessage}"))
+              case Right(request) => fn(request).map(_.asJson)
+              case Left(error)    =>
+                summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${error.getMessage}"))
           )
         )
       ).flatten
@@ -196,7 +197,7 @@ object McpClientImpl:
       negotiatedServerCapabilities.get() match
         case None =>
           summon[MonadError[F]].error(McpProtocolException(s"Client not initialized"))
-        case Some(caps) if !present(caps) =>
+        case Some(capabilities) if !present(capabilities) =>
           summon[MonadError[F]].error(McpProtocolException(s"Server did not negotiate the capability required for $method"))
         case Some(_) =>
           action
@@ -208,8 +209,8 @@ object McpClientImpl:
         .flatMap:
           case Some(JSONRPCMessage.Response(_, _, result)) =>
             result.as[R] match
-              case Right(r) => summon[MonadError[F]].unit(r)
-              case Left(e)  => summon[MonadError[F]].error(McpProtocolException(s"Failed to decode $method result: ${e.getMessage}"))
+              case Right(response) => summon[MonadError[F]].unit(response)
+              case Left(error) => summon[MonadError[F]].error(McpProtocolException(s"Failed to decode $method result: ${error.getMessage}"))
           case Some(JSONRPCMessage.Error(_, _, error)) =>
             summon[MonadError[F]].error(McpProtocolException(s"$method failed: ${error.code} ${error.message}"))
           case Some(other) =>
