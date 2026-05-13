@@ -1,10 +1,9 @@
-//> using dep com.softwaremill.chimp::core:0.1.7
+//> using dep com.softwaremill.chimp::chimp-server:0.2.0
 //> using dep com.softwaremill.sttp.tapir::tapir-zio-http-server:1.11.50
 //> using dep ch.qos.logback:logback-classic:1.5.20
 
-package chimp
+package chimp.server
 
-import chimp.server.*
 import io.circe.Codec
 import sttp.tapir.*
 import sttp.tapir.server.ziohttp.ZioHttpInterpreter
