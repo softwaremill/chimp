@@ -30,8 +30,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
       (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
 
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(responseEnvelope)
-    val t = HttpTransport[Identity](backend, mcpUri)
-    val client = McpClient[Identity](t, clientInfo)
+    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo)
     val result = client.initialize()
     result.protocolVersion shouldBe ProtocolVersion.Latest.name
     result.serverInfo.name shouldBe "test-server"
