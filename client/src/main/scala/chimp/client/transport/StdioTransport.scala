@@ -14,10 +14,6 @@ import java.util.concurrent.{ConcurrentHashMap, SynchronousQueue, TimeUnit}
 
 import scala.jdk.CollectionConverters.*
 
-/** Synchronous stdio transport spawning the MCP server as a subprocess.
-  *
-  * For fiber-based effects (ZIO, cats-effect), use a `StreamingStdioTransport` impl from a per-effect chimp client subproject.
-  */
 final class StdioTransport(
     command: List[String],
     env: Map[String, String] = Map.empty,

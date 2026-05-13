@@ -5,6 +5,7 @@ import chimp.protocol.{JSONRPCMessage, ProtocolVersion}
 import io.circe.parser
 import io.circe.syntax.*
 import sttp.client4.{basicRequest, Backend, Response}
+import sttp.model.sse.ServerSentEvent
 import sttp.model.{MediaType, StatusCode, Uri}
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
@@ -12,19 +13,6 @@ import sttp.monad.syntax.*
 import java.util.concurrent.atomic.AtomicReference
 
 /** Non-streaming Streamable HTTP transport. Works against any sttp `Backend[F]`. */
-object HttpTransport:
-  private[transport] def extractSingleSseData(body: String): Option[String] =
-    val blocks: List[String] = body.split("\\r?\\n\\r?\\n", -1).toList
-    val events: List[sttp.model.sse.ServerSentEvent] = blocks.map: block =>
-      val lines: List[String] = block.split("\\r?\\n", -1).toList
-      sttp.model.sse.ServerSentEvent.parse(lines)
-    events.flatMap(_.data).find(_.nonEmpty)
-
-  private[transport] def isAckLike(json: String): Boolean =
-    parser.parse(json) match
-      case Right(j) => j.hcursor.downField("id").focus.isEmpty
-      case Left(_)  => false
-
 final class HttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
@@ -93,3 +81,16 @@ final class HttpTransport[F[_]](
           .header("MCP-Protocol-Version", protocolVersion)
         sessionId.set(None)
         req.send(backend).map(_ => ())
+
+object HttpTransport:
+  private[transport] def extractSingleSseData(body: String): Option[String] =
+    val blocks: List[String] = body.split("\\r?\\n\\r?\\n", -1).toList
+    val events: List[sttp.model.sse.ServerSentEvent] = blocks.map: block =>
+      val lines: List[String] = block.split("\\r?\\n", -1).toList
+      ServerSentEvent.parse(lines)
+    events.flatMap(_.data).find(_.nonEmpty)
+
+  private[transport] def isAckLike(json: String): Boolean =
+    parser.parse(json) match
+      case Right(j) => j.hcursor.downField("id").focus.isEmpty
+      case Left(_)  => false

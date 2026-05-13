@@ -3,7 +3,6 @@ package chimp.client.notifications
 import chimp.protocol.*
 import io.circe.Json
 
-/** A parsed, strongly-typed view of an incoming server-to-client notification. */
 enum ServerNotification:
   case Progress(params: ProgressParams)
   case Cancelled(params: CancelledParams)
