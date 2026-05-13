@@ -78,7 +78,7 @@ class McpHandler[F[_]](
     val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.Latest)
     val capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false))))
     val result =
-      InitializeResult(protocolVersion = negotiated, capabilities = capabilities, serverInfo = Implementation(name, version))
+      InitializeResult(protocolVersion = negotiated.wire, capabilities = capabilities, serverInfo = Implementation(name, version))
     JSONRPCMessage.Response(id = id, result = result.asJson)
 
   /** Handles the 'tools/list' JSON-RPC method, returning the list of available tools. */

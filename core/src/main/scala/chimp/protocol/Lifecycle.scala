@@ -27,7 +27,7 @@ final case class ServerCapabilities(
 ) derives Codec
 
 final case class InitializeParams(
-    protocolVersion: String,
+    protocolVersion: ProtocolVersion,
     capabilities: ClientCapabilities,
     clientInfo: Implementation,
     _meta: Option[Map[String, Json]] = None

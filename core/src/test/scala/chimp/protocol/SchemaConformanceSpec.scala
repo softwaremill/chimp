@@ -63,7 +63,7 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
     validate(
       "InitializeResult",
       InitializeResult(
-        protocolVersion = ProtocolVersion.Latest,
+        protocolVersion = ProtocolVersion.Latest.wire,
         capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false)))),
         serverInfo = Implementation(name = "chimp-test", version = "0.0.1"),
         instructions = Some("welcome")

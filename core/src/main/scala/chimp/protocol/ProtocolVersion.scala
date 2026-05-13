@@ -1,9 +1,16 @@
 package chimp.protocol
 
+import io.circe.{Decoder, Encoder, Json}
+
+enum ProtocolVersion(val wire: String):
+  case V2025_06_18 extends ProtocolVersion("2025-06-18")
+  case V2025_11_25 extends ProtocolVersion("2025-11-25")
+
 object ProtocolVersion:
-  val Latest: String = "2025-11-25"
+  val Latest: ProtocolVersion = V2025_11_25
 
-  val Supported: Set[String] = Set("2025-06-18", "2025-11-25")
+  def from(s: String): Option[ProtocolVersion] = values.find(_.wire == s)
+  def negotiate(requested: String): ProtocolVersion = from(requested).getOrElse(Latest)
 
-  def negotiate(requested: String): String =
-    if Supported.contains(requested) then requested else Latest
+  given Encoder[ProtocolVersion] = Encoder.instance(v => Json.fromString(v.wire))
+  given Decoder[ProtocolVersion] = Decoder.decodeString.emap(s => from(s).toRight(s"Unsupported protocol version: $s"))

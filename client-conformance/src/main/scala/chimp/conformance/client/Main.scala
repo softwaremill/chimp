@@ -22,7 +22,10 @@ object Main:
       case Left(e)    => System.err.println(s"Invalid server URL: $e"); sys.exit(2)
 
     val scenario = sys.env.getOrElse("MCP_CONFORMANCE_SCENARIO", "")
-    val protocolVersion = sys.env.getOrElse("MCP_CONFORMANCE_PROTOCOL_VERSION", ProtocolVersion.Latest)
+    val protocolVersion: ProtocolVersion = sys.env
+      .get("MCP_CONFORMANCE_PROTOCOL_VERSION")
+      .flatMap(ProtocolVersion.from)
+      .getOrElse(ProtocolVersion.Latest)
 
     val backend = DefaultSyncBackend()
     val transport = HttpTransport[Identity](backend, serverUrl, protocolVersion)

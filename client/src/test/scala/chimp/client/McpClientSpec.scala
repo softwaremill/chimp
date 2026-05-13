@@ -15,7 +15,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
 
   it should "initialize and read the server's protocol version" in:
     val initResult = InitializeResult(
-      protocolVersion = ProtocolVersion.Latest,
+      protocolVersion = ProtocolVersion.Latest.wire,
       capabilities = ServerCapabilities(),
       serverInfo = Implementation(name = "test-server", version = "1.0")
     )
@@ -26,7 +26,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
     val t = HttpTransport[Identity](backend, mcpUri)
     val client = McpClient[Identity](t, clientInfo)
     val result = client.initialize()
-    result.protocolVersion shouldBe ProtocolVersion.Latest
+    result.protocolVersion shouldBe ProtocolVersion.Latest.wire
     result.serverInfo.name shouldBe "test-server"
 
   it should "call a tool and decode the result" in:

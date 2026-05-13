@@ -15,7 +15,7 @@ object McpClientImpl:
   def create[F[_]](
       transport: Transport[F],
       clientInfo: Implementation,
-      protocolVersion: String,
+      protocolVersion: ProtocolVersion,
       rootsHandler: Option[() => F[ListRootsResult]],
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
@@ -28,7 +28,7 @@ object McpClientImpl:
   private final class Impl[F[_]](
       transport: Transport[F],
       clientInfo: Implementation,
-      protocolVersion: String,
+      protocolVersion: ProtocolVersion,
       rootsHandler: Option[() => F[ListRootsResult]],
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
@@ -104,8 +104,18 @@ object McpClientImpl:
         capabilities = capabilities,
         clientInfo = clientInfo
       )
-      sendRequest[InitializeResult]("initialize", Some(params.asJson)).flatMap: r =>
-        sendNotification("notifications/initialized", None).map(_ => r)
+      sendRequest[InitializeResult]("initialize", Some(params.asJson)).flatMap: result =>
+        if ProtocolVersion.from(result.protocolVersion).isDefined then sendNotification("notifications/initialized", None).map(_ => result)
+        else
+          transport
+            .close()
+            .flatMap: _ =>
+              summon[MonadError[F]].error(
+                McpProtocolException(
+                  s"Server responded with unsupported protocol version '${result.protocolVersion}'; " +
+                    s"client supports: ${ProtocolVersion.values.toList.map(_.wire).sorted.mkString(", ")}"
+                )
+              )
 
     override def ping(): F[Unit] = sendRequest[Json]("ping", None).map(_ => ())
 

@@ -55,7 +55,7 @@ class CapabilityDispatchSpec extends AnyFlatSpec with Matchers:
   it should "include opted-in capabilities on initialize" in:
     val t = InMemoryTransport()
     val initResult = InitializeResult(
-      protocolVersion = ProtocolVersion.Latest,
+      protocolVersion = ProtocolVersion.Latest.wire,
       capabilities = ServerCapabilities(),
       serverInfo = Implementation(name = "s", version = "1")
     )

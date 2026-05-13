@@ -39,7 +39,7 @@ object McpClient:
       rootsHandler: Option[() => F[ListRootsResult]] = None,
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
-      protocolVersion: String = ProtocolVersion.Latest
+      protocolVersion: ProtocolVersion = ProtocolVersion.Latest
   ): McpClient[F] =
     McpClientImpl.create(
       transport,
