@@ -27,7 +27,7 @@ final class HttpTransport[F[_]](
     var req = basicRequest
       .post(uri)
       .header("Content-Type", "application/json")
-      .header("Accept", s"${MediaType.ApplicationJson.toString}, text/event-stream")
+      .header("Accept", s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString()}}")
       .header("MCP-Protocol-Version", protocolVersion.name)
       .body(body)
     sessionId.get().foreach(s => req = req.header("Mcp-Session-Id", s))
