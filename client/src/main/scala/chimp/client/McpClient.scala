@@ -10,6 +10,9 @@ trait McpClient[F[_]]:
   def ping(): F[Unit]
   def close(): F[Unit]
 
+  /** The server's negotiated capabilities. `None` before `initialize()` has completed successfully. */
+  def serverCapabilities: Option[ServerCapabilities]
+
   def listTools(cursor: Option[Cursor] = None): F[ListToolsResponse]
   def callTool(name: String, arguments: Json): F[CallToolResult]
 

@@ -36,7 +36,19 @@ object McpClientImpl:
   ) extends McpClient[F]:
     private given MonadError[F] = transport.monad
 
+    private val negotiated = AtomicReference[Option[ServerCapabilities]](None)
     private val listeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
+
+    override def serverCapabilities: Option[ServerCapabilities] = negotiated.get()
+
+    private def requireCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
+      negotiated.get() match
+        case None =>
+          summon[MonadError[F]].error(McpProtocolException(s"Client not initialized"))
+        case Some(caps) if !present(caps) =>
+          summon[MonadError[F]].error(McpProtocolException(s"Server did not negotiate the capability required for $method"))
+        case Some(_) =>
+          action
 
     private val capabilities: ClientCapabilities = ClientCapabilities(
       roots = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
@@ -105,7 +117,9 @@ object McpClientImpl:
         clientInfo = clientInfo
       )
       sendRequest[InitializeResult]("initialize", Some(params.asJson)).flatMap: result =>
-        if ProtocolVersion.from(result.protocolVersion).isDefined then sendNotification("notifications/initialized", None).map(_ => result)
+        if ProtocolVersion.from(result.protocolVersion).isDefined then
+          negotiated.set(Some(result.capabilities))
+          sendNotification("notifications/initialized", None).map(_ => result)
         else
           transport
             .close()
@@ -113,7 +127,7 @@ object McpClientImpl:
               summon[MonadError[F]].error(
                 McpProtocolException(
                   s"Server responded with unsupported protocol version '${result.protocolVersion}'; " +
-                    s"client supports: ${ProtocolVersion.values.toList.map(_.wire).sorted.mkString(", ")}"
+                    s"client supports: ${ProtocolVersion.values.toList.map(_.name).sorted.mkString(", ")}"
                 )
               )
 
@@ -122,45 +136,56 @@ object McpClientImpl:
     override def close(): F[Unit] = transport.close()
 
     override def listTools(cursor: Option[Cursor]): F[ListToolsResponse] =
-      val params = cursor.map(c => ListToolsParams(cursor = Some(c)).asJson)
-      sendRequest[ListToolsResponse]("tools/list", params)
+      requireCapability("tools/list", _.tools.isDefined):
+        val params = cursor.map(c => ListToolsParams(cursor = Some(c)).asJson)
+        sendRequest[ListToolsResponse]("tools/list", params)
 
     override def callTool(name: String, arguments: Json): F[CallToolResult] =
-      val params = CallToolParams(name = name, arguments = arguments).asJson
-      sendRequest[CallToolResult]("tools/call", Some(params))
+      requireCapability("tools/call", _.tools.isDefined):
+        val params = CallToolParams(name = name, arguments = arguments).asJson
+        sendRequest[CallToolResult]("tools/call", Some(params))
 
     override def listPrompts(cursor: Option[Cursor]): F[ListPromptsResult] =
-      val params = cursor.map(c => ListPromptsParams(cursor = Some(c)).asJson)
-      sendRequest[ListPromptsResult]("prompts/list", params)
+      requireCapability("prompts/list", _.prompts.isDefined):
+        val params = cursor.map(c => ListPromptsParams(cursor = Some(c)).asJson)
+        sendRequest[ListPromptsResult]("prompts/list", params)
 
     override def getPrompt(name: String, arguments: Map[String, String]): F[GetPromptResult] =
-      val argOpt = if arguments.isEmpty then None else Some(arguments)
-      val params = GetPromptParams(name = name, arguments = argOpt).asJson
-      sendRequest[GetPromptResult]("prompts/get", Some(params))
+      requireCapability("prompts/get", _.prompts.isDefined):
+        val argOpt = if arguments.isEmpty then None else Some(arguments)
+        val params = GetPromptParams(name = name, arguments = argOpt).asJson
+        sendRequest[GetPromptResult]("prompts/get", Some(params))
 
     override def listResources(cursor: Option[Cursor]): F[ListResourcesResult] =
-      val params = cursor.map(c => ListResourcesParams(cursor = Some(c)).asJson)
-      sendRequest[ListResourcesResult]("resources/list", params)
+      requireCapability("resources/list", _.resources.isDefined):
+        val params = cursor.map(c => ListResourcesParams(cursor = Some(c)).asJson)
+        sendRequest[ListResourcesResult]("resources/list", params)
 
     override def listResourceTemplates(cursor: Option[Cursor]): F[ListResourceTemplatesResult] =
-      val params = cursor.map(c => ListResourceTemplatesParams(cursor = Some(c)).asJson)
-      sendRequest[ListResourceTemplatesResult]("resources/templates/list", params)
+      requireCapability("resources/templates/list", _.resources.isDefined):
+        val params = cursor.map(c => ListResourceTemplatesParams(cursor = Some(c)).asJson)
+        sendRequest[ListResourceTemplatesResult]("resources/templates/list", params)
 
     override def readResource(uri: String): F[ReadResourceResult] =
-      sendRequest[ReadResourceResult]("resources/read", Some(ReadResourceParams(uri = uri).asJson))
+      requireCapability("resources/read", _.resources.isDefined):
+        sendRequest[ReadResourceResult]("resources/read", Some(ReadResourceParams(uri = uri).asJson))
 
     override def subscribeResource(uri: String): F[Unit] =
-      sendRequest[Json]("resources/subscribe", Some(SubscribeParams(uri = uri).asJson)).map(_ => ())
+      requireCapability("resources/subscribe", _.resources.flatMap(_.subscribe).getOrElse(false)):
+        sendRequest[Json]("resources/subscribe", Some(SubscribeParams(uri = uri).asJson)).map(_ => ())
 
     override def unsubscribeResource(uri: String): F[Unit] =
-      sendRequest[Json]("resources/unsubscribe", Some(UnsubscribeParams(uri = uri).asJson)).map(_ => ())
+      requireCapability("resources/unsubscribe", _.resources.flatMap(_.subscribe).getOrElse(false)):
+        sendRequest[Json]("resources/unsubscribe", Some(UnsubscribeParams(uri = uri).asJson)).map(_ => ())
 
     override def complete(ref: CompleteRef, argument: CompleteArgument): F[CompleteResult] =
-      val params = CompleteParams(ref = ref, argument = argument).asJson
-      sendRequest[CompleteResult]("completion/complete", Some(params))
+      requireCapability("completion/complete", _.completions.isDefined):
+        val params = CompleteParams(ref = ref, argument = argument).asJson
+        sendRequest[CompleteResult]("completion/complete", Some(params))
 
     override def setLoggingLevel(level: LoggingLevel): F[Unit] =
-      sendRequest[Json]("logging/setLevel", Some(SetLevelParams(level = level).asJson)).map(_ => ())
+      requireCapability("logging/setLevel", _.logging.isDefined):
+        sendRequest[Json]("logging/setLevel", Some(SetLevelParams(level = level).asJson)).map(_ => ())
 
     override def sendProgress(token: ProgressToken, progress: Double, total: Option[Double], message: Option[String]): F[Unit] =
       val params = ProgressParams(progressToken = token, progress = progress, total = total, message = message).asJson

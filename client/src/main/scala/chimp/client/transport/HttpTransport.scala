@@ -28,7 +28,7 @@ final class HttpTransport[F[_]](
       .post(uri)
       .header("Content-Type", "application/json")
       .header("Accept", s"${MediaType.ApplicationJson.toString}, text/event-stream")
-      .header("MCP-Protocol-Version", protocolVersion.wire)
+      .header("MCP-Protocol-Version", protocolVersion.name)
       .body(body)
     sessionId.get().foreach(s => req = req.header("Mcp-Session-Id", s))
 
@@ -77,7 +77,7 @@ final class HttpTransport[F[_]](
         val req = basicRequest
           .delete(uri)
           .header("Mcp-Session-Id", id)
-          .header("MCP-Protocol-Version", protocolVersion.wire)
+          .header("MCP-Protocol-Version", protocolVersion.name)
         sessionId.set(None)
         req.send(backend).map(_ => ())
 
