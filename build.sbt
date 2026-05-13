@@ -26,7 +26,7 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
 
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
-lazy val rootProject = (project in file("."))
+lazy val root = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
   .aggregate(core, server, client, examples, serverConformance, clientConformance)
