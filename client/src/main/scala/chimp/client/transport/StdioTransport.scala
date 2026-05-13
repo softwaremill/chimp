@@ -119,7 +119,8 @@ final class StdioTransport(
 
   override def close(): Identity[Unit] =
     if closed.compareAndSet(false, true) then
-      try writer.close() catch case _: Exception => ()
+      try writer.close()
+      catch case _: Exception => ()
       if proc.isAlive then
         if !proc.waitFor(2, TimeUnit.SECONDS) then proc.destroy()
         if !proc.waitFor(2, TimeUnit.SECONDS) then { val _ = proc.destroyForcibly() }

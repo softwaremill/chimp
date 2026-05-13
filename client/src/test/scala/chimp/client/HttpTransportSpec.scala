@@ -27,7 +27,7 @@ class HttpTransportSpec extends AnyFlatSpec with Matchers:
     val req: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
     t.send(req) match
       case Some(JSONRPCMessage.Response(_, _, r)) => r shouldBe expectedResult
-      case other                                   => fail(s"Expected Response, got: $other")
+      case other                                  => fail(s"Expected Response, got: $other")
 
   it should "return None for 202 Accepted (notification ack)" in:
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust("", StatusCode.Accepted)

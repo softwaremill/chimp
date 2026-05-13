@@ -375,4 +375,3 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         requiredFields should contain("requiredField")
         requiredFields should not contain "optionalField"
       case _ => fail("Expected Response")
-

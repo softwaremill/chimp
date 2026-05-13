@@ -27,6 +27,6 @@ object ServerNotification:
       case "notifications/tools/list_changed"     => ToolsListChanged
       case "notifications/prompts/list_changed"   => PromptsListChanged
       case "notifications/resources/list_changed" => ResourcesListChanged
-      case "notifications/message" =>
+      case "notifications/message"                =>
         params.flatMap(_.as[LoggingMessageParams].toOption).map(LoggingMessage(_)).getOrElse(Unknown(n.method, params))
       case other => Unknown(other, params)

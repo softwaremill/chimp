@@ -37,7 +37,7 @@ class CapabilityDispatchSpec extends AnyFlatSpec with Matchers:
 
     t.sent.last match
       case JSONRPCMessage.Error(_, _, err) => err.code shouldBe JSONRPCErrorCodes.MethodNotFound.code
-      case other                            => fail(s"Expected Error, got $other")
+      case other                           => fail(s"Expected Error, got $other")
 
   it should "deliver incoming notifications to registered listeners" in:
     val t = InMemoryTransport()

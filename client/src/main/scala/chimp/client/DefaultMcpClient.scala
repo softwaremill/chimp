@@ -37,21 +37,20 @@ object DefaultMcpClient:
     private val listeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
 
     private val wireCaps: ClientCapabilities = ClientCapabilities(
-      roots       = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
-      sampling    = samplingHandler.map(_ => Json.obj()),
+      roots = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
+      sampling = samplingHandler.map(_ => Json.obj()),
       elicitation = elicitationHandler.map(_ => Json.obj())
     )
 
     private val dispatch: Map[String, Json => F[Json]] =
       val entries = List(
-        rootsHandler.map(fn =>
-          "roots/list" -> ((_: Json) => fn().map(_.asJson))
-        ),
+        rootsHandler.map(fn => "roots/list" -> ((_: Json) => fn().map(_.asJson))),
         samplingHandler.map(fn =>
           "sampling/createMessage" -> ((params: Json) =>
             params.as[CreateMessageRequest] match
               case Right(req) => fn(req).map(_.asJson)
-              case Left(e)    => summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${e.getMessage}"))
+              case Left(e)    =>
+                summon[MonadError[F]].error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${e.getMessage}"))
           )
         ),
         elicitationHandler.map(fn =>
@@ -72,14 +71,16 @@ object DefaultMcpClient:
         dispatch.get(method) match
           case Some(h) =>
             val rawParams = params.getOrElse(Json.obj())
-            h(rawParams).flatMap(result =>
-              transport.send(JSONRPCMessage.Response(id = id, result = result)).map(_ => ())
-            ).handleError { case t =>
-              val err = JSONRPCMessage.Error(
-                id = id,
-                error = JSONRPCErrorObject(code = JSONRPCErrorCodes.InternalError.code, message = Option(t.getMessage).getOrElse("internal error"))
-              )
-              transport.send(err).map(_ => ())
+            h(rawParams).flatMap(result => transport.send(JSONRPCMessage.Response(id = id, result = result)).map(_ => ())).handleError {
+              case t =>
+                val err = JSONRPCMessage.Error(
+                  id = id,
+                  error = JSONRPCErrorObject(
+                    code = JSONRPCErrorCodes.InternalError.code,
+                    message = Option(t.getMessage).getOrElse("internal error")
+                  )
+                )
+                transport.send(err).map(_ => ())
             }
           case None =>
             val err = JSONRPCMessage.Error(
@@ -88,8 +89,10 @@ object DefaultMcpClient:
             )
             transport.send(err).map(_ => ())
       case n: JSONRPCMessage.Notification =>
-        listeners.get().foldLeft(summon[MonadError[F]].unit(())): (acc, l) =>
-          acc.flatMap(_ => l.onNotification(n).handleError(_ => summon[MonadError[F]].unit(())))
+        listeners
+          .get()
+          .foldLeft(summon[MonadError[F]].unit(())): (acc, l) =>
+            acc.flatMap(_ => l.onNotification(n).handleError(_ => summon[MonadError[F]].unit(())))
       case _ =>
         summon[MonadError[F]].unit(())
 
@@ -164,17 +167,19 @@ object DefaultMcpClient:
 
     private def sendRequest[R: Decoder](method: String, params: Option[Json]): F[R] =
       val req = JSONRPCMessage.Request(method = method, params = params, id = correlator.nextId())
-      transport.send(req).flatMap:
-        case Some(JSONRPCMessage.Response(_, _, result)) =>
-          result.as[R] match
-            case Right(r) => summon[MonadError[F]].unit(r)
-            case Left(e)  => summon[MonadError[F]].error(McpProtocolException(s"Failed to decode $method result: ${e.getMessage}"))
-        case Some(JSONRPCMessage.Error(_, _, error)) =>
-          summon[MonadError[F]].error(McpProtocolException(s"$method failed: ${error.code} ${error.message}"))
-        case Some(other) =>
-          summon[MonadError[F]].error(McpProtocolException(s"Unexpected response to $method: $other"))
-        case None =>
-          summon[MonadError[F]].error(McpProtocolException(s"No response received for request $method"))
+      transport
+        .send(req)
+        .flatMap:
+          case Some(JSONRPCMessage.Response(_, _, result)) =>
+            result.as[R] match
+              case Right(r) => summon[MonadError[F]].unit(r)
+              case Left(e)  => summon[MonadError[F]].error(McpProtocolException(s"Failed to decode $method result: ${e.getMessage}"))
+          case Some(JSONRPCMessage.Error(_, _, error)) =>
+            summon[MonadError[F]].error(McpProtocolException(s"$method failed: ${error.code} ${error.message}"))
+          case Some(other) =>
+            summon[MonadError[F]].error(McpProtocolException(s"Unexpected response to $method: $other"))
+          case None =>
+            summon[MonadError[F]].error(McpProtocolException(s"No response received for request $method"))
 
     private def sendNotification(method: String, params: Option[Json]): F[Unit] =
       val n = JSONRPCMessage.Notification(method = method, params = params)

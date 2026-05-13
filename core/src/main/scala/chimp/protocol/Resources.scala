@@ -31,34 +31,34 @@ object ResourceContents:
     case Text(uri, text, mimeType, meta) =>
       Json
         .obj(
-          "uri"      -> Json.fromString(uri),
-          "text"     -> Json.fromString(text),
+          "uri" -> Json.fromString(uri),
+          "text" -> Json.fromString(text),
           "mimeType" -> mimeType.map(Json.fromString).getOrElse(Json.Null),
-          "_meta"    -> meta.map(_.asJson).getOrElse(Json.Null)
+          "_meta" -> meta.map(_.asJson).getOrElse(Json.Null)
         )
         .dropNullValues
     case Blob(uri, blob, mimeType, meta) =>
       Json
         .obj(
-          "uri"      -> Json.fromString(uri),
-          "blob"     -> Json.fromString(blob),
+          "uri" -> Json.fromString(uri),
+          "blob" -> Json.fromString(blob),
           "mimeType" -> mimeType.map(Json.fromString).getOrElse(Json.Null),
-          "_meta"    -> meta.map(_.asJson).getOrElse(Json.Null)
+          "_meta" -> meta.map(_.asJson).getOrElse(Json.Null)
         )
         .dropNullValues
 
   given Decoder[ResourceContents] = Decoder.instance: (c: HCursor) =>
-    val uri      = c.downField("uri").as[String]
+    val uri = c.downField("uri").as[String]
     val mimeType = c.downField("mimeType").as[Option[String]]
-    val meta     = c.downField("_meta").as[Option[Map[String, Json]]]
-    val textOpt  = c.downField("text").as[Option[String]]
-    val blobOpt  = c.downField("blob").as[Option[String]]
+    val meta = c.downField("_meta").as[Option[Map[String, Json]]]
+    val textOpt = c.downField("text").as[Option[String]]
+    val blobOpt = c.downField("blob").as[Option[String]]
     for
-      u  <- uri
+      u <- uri
       mt <- mimeType
-      m  <- meta
-      t  <- textOpt
-      b  <- blobOpt
+      m <- meta
+      t <- textOpt
+      b <- blobOpt
       r <- (t, b) match
         case (Some(text), None) => Right(Text(u, text, mt, m))
         case (None, Some(blob)) => Right(Blob(u, blob, mt, m))

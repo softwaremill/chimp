@@ -20,10 +20,14 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
     text
 
   private val defsText: String =
-    val rootJson = io.circe.parser.parse(rootSchemaText).getOrElse(
-      throw RuntimeException("Could not parse the bundled MCP schema as JSON")
-    )
-    rootJson.hcursor.downField("$defs").focus
+    val rootJson = io.circe.parser
+      .parse(rootSchemaText)
+      .getOrElse(
+        throw RuntimeException("Could not parse the bundled MCP schema as JSON")
+      )
+    rootJson.hcursor
+      .downField("$defs")
+      .focus
       .getOrElse(throw RuntimeException("Schema root is missing $defs object"))
       .noSpaces
 
@@ -46,55 +50,73 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   // --- Lifecycle ---
 
   it should "produce InitializeRequestParams that match the spec schema" in:
-    validate("InitializeRequestParams", InitializeParams(
-      protocolVersion = ProtocolVersion.Latest,
-      capabilities = ClientCapabilities(),
-      clientInfo = Implementation(name = "chimp-test", version = "0.0.1")
-    ))
+    validate(
+      "InitializeRequestParams",
+      InitializeParams(
+        protocolVersion = ProtocolVersion.Latest,
+        capabilities = ClientCapabilities(),
+        clientInfo = Implementation(name = "chimp-test", version = "0.0.1")
+      )
+    )
 
   it should "produce InitializeResult that match the spec schema" in:
-    validate("InitializeResult", InitializeResult(
-      protocolVersion = ProtocolVersion.Latest,
-      capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false)))),
-      serverInfo = Implementation(name = "chimp-test", version = "0.0.1"),
-      instructions = Some("welcome")
-    ))
+    validate(
+      "InitializeResult",
+      InitializeResult(
+        protocolVersion = ProtocolVersion.Latest,
+        capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false)))),
+        serverInfo = Implementation(name = "chimp-test", version = "0.0.1"),
+        instructions = Some("welcome")
+      )
+    )
 
   it should "produce Implementation that match the spec schema" in:
     validate("Implementation", Implementation(name = "chimp", version = "1.0", title = Some("Chimp")))
 
   it should "produce ClientCapabilities (full) that match the spec schema" in:
-    validate("ClientCapabilities", ClientCapabilities(
-      roots = Some(ClientRootsCapability(listChanged = Some(true))),
-      sampling = Some(io.circe.Json.obj()),
-      elicitation = Some(io.circe.Json.obj())
-    ))
+    validate(
+      "ClientCapabilities",
+      ClientCapabilities(
+        roots = Some(ClientRootsCapability(listChanged = Some(true))),
+        sampling = Some(io.circe.Json.obj()),
+        elicitation = Some(io.circe.Json.obj())
+      )
+    )
 
   it should "produce ServerCapabilities (full) that match the spec schema" in:
-    validate("ServerCapabilities", ServerCapabilities(
-      tools     = Some(ServerToolsCapability(listChanged = Some(true))),
-      resources = Some(ServerResourcesCapability(subscribe = Some(true), listChanged = Some(false))),
-      prompts   = Some(ServerPromptsCapability(listChanged = Some(true))),
-      logging   = Some(io.circe.Json.obj()),
-      completions = Some(io.circe.Json.obj())
-    ))
+    validate(
+      "ServerCapabilities",
+      ServerCapabilities(
+        tools = Some(ServerToolsCapability(listChanged = Some(true))),
+        resources = Some(ServerResourcesCapability(subscribe = Some(true), listChanged = Some(false))),
+        prompts = Some(ServerPromptsCapability(listChanged = Some(true))),
+        logging = Some(io.circe.Json.obj()),
+        completions = Some(io.circe.Json.obj())
+      )
+    )
 
   // --- Tools ---
 
   it should "produce a Tool definition that matches the spec schema" in:
-    validate("Tool", ToolDefinition(
-      name = "add_numbers",
-      title = Some("Add numbers"),
-      description = Some("Adds two numbers"),
-      inputSchema = io.circe.Json.obj("type" -> "object".asJson),
-      annotations = Some(ToolAnnotations(title = Some("Add"), idempotentHint = Some(true)))
-    ))
+    validate(
+      "Tool",
+      ToolDefinition(
+        name = "add_numbers",
+        title = Some("Add numbers"),
+        description = Some("Adds two numbers"),
+        inputSchema = io.circe.Json.obj("type" -> "object".asJson),
+        annotations = Some(ToolAnnotations(title = Some("Add"), idempotentHint = Some(true)))
+      )
+    )
 
   it should "produce CallToolRequestParams that match the spec schema" in:
-    validate("CallToolRequestParams", CallToolParams(
-      name = "add_numbers",
-      arguments = io.circe.Json.obj("a" -> 1.asJson, "b" -> 2.asJson)
-    ))
+    validate(
+      "CallToolRequestParams",
+      CallToolParams(
+        name = "add_numbers",
+        arguments = io.circe.Json.obj("a" -> 1.asJson, "b" -> 2.asJson)
+      )
+    )
 
   it should "produce CallToolResult (text) that match the spec schema" in:
     validate("CallToolResult", CallToolResult(content = List(ToolContent.Text(text = "hello"))))
@@ -123,12 +145,15 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   // --- Resources ---
 
   it should "produce Resource that match the spec schema" in:
-    validate("Resource", Resource(
-      uri = "file:///x",
-      name = "x",
-      title = Some("X"),
-      mimeType = Some("text/plain")
-    ))
+    validate(
+      "Resource",
+      Resource(
+        uri = "file:///x",
+        name = "x",
+        title = Some("X"),
+        mimeType = Some("text/plain")
+      )
+    )
 
   it should "produce TextResourceContents that match the spec schema" in:
     validate("TextResourceContents", ResourceContents.Text(uri = "file:///x", text = "body", mimeType = Some("text/plain")))
@@ -166,12 +191,15 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   // --- Prompts ---
 
   it should "produce Prompt that match the spec schema" in:
-    validate("Prompt", Prompt(
-      name = "greet",
-      title = Some("Greet"),
-      description = Some("Greet the user"),
-      arguments = Some(List(PromptArgument(name = "who", required = Some(true))))
-    ))
+    validate(
+      "Prompt",
+      Prompt(
+        name = "greet",
+        title = Some("Greet"),
+        description = Some("Greet the user"),
+        arguments = Some(List(PromptArgument(name = "who", required = Some(true))))
+      )
+    )
 
   it should "produce PromptMessage that match the spec schema" in:
     validate("PromptMessage", PromptMessage(role = Role.User, content = ToolContent.Text(text = "hi")))
@@ -191,39 +219,51 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   // --- Sampling ---
 
   it should "produce CreateMessageRequestParams that match the spec schema" in:
-    validate("CreateMessageRequestParams", CreateMessageParams(
-      messages = List(SamplingMessage(role = Role.User, content = ToolContent.Text(text = "say hi"))),
-      maxTokens = 100,
-      systemPrompt = Some("you are helpful"),
-      includeContext = Some(IncludeContext.None),
-      temperature = Some(0.5),
-      stopSequences = Some(List("\n\n"))
-    ))
+    validate(
+      "CreateMessageRequestParams",
+      CreateMessageParams(
+        messages = List(SamplingMessage(role = Role.User, content = ToolContent.Text(text = "say hi"))),
+        maxTokens = 100,
+        systemPrompt = Some("you are helpful"),
+        includeContext = Some(IncludeContext.None),
+        temperature = Some(0.5),
+        stopSequences = Some(List("\n\n"))
+      )
+    )
 
   it should "produce CreateMessageResult that match the spec schema" in:
-    validate("CreateMessageResult", CreateMessageResult(
-      role = Role.Assistant,
-      content = ToolContent.Text(text = "hi"),
-      model = "claude-test",
-      stopReason = Some("endTurn")
-    ))
+    validate(
+      "CreateMessageResult",
+      CreateMessageResult(
+        role = Role.Assistant,
+        content = ToolContent.Text(text = "hi"),
+        model = "claude-test",
+        stopReason = Some("endTurn")
+      )
+    )
 
   // --- Elicitation ---
 
   it should "produce ElicitRequestParams (form variant) that match the spec schema" in:
-    validate("ElicitRequestParams", ElicitParams(
-      message = "what is your name?",
-      requestedSchema = io.circe.Json.obj(
-        "type" -> "object".asJson,
-        "properties" -> io.circe.Json.obj("name" -> io.circe.Json.obj("type" -> "string".asJson))
+    validate(
+      "ElicitRequestParams",
+      ElicitParams(
+        message = "what is your name?",
+        requestedSchema = io.circe.Json.obj(
+          "type" -> "object".asJson,
+          "properties" -> io.circe.Json.obj("name" -> io.circe.Json.obj("type" -> "string".asJson))
+        )
       )
-    ))
+    )
 
   it should "produce ElicitResult that match the spec schema" in:
-    validate("ElicitResult", ElicitResult(
-      action = ElicitAction.Accept,
-      content = Some(Map("name" -> "Alice".asJson))
-    ))
+    validate(
+      "ElicitResult",
+      ElicitResult(
+        action = ElicitAction.Accept,
+        content = Some(Map("name" -> "Alice".asJson))
+      )
+    )
 
   // --- Roots ---
 
@@ -236,19 +276,28 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
   // --- Completion ---
 
   it should "produce CompleteRequestParams (prompt ref) that match the spec schema" in:
-    validate("CompleteRequestParams", CompleteParams(
-      ref = CompleteRef.Prompt(PromptReference(name = "greet")),
-      argument = CompleteArgument(name = "who", value = "al")
-    ))
+    validate(
+      "CompleteRequestParams",
+      CompleteParams(
+        ref = CompleteRef.Prompt(PromptReference(name = "greet")),
+        argument = CompleteArgument(name = "who", value = "al")
+      )
+    )
 
   it should "produce CompleteRequestParams (resource template ref) that match the spec schema" in:
-    validate("CompleteRequestParams", CompleteParams(
-      ref = CompleteRef.Resource(ResourceReference(uri = "file:///{path}")),
-      argument = CompleteArgument(name = "path", value = "src/")
-    ))
+    validate(
+      "CompleteRequestParams",
+      CompleteParams(
+        ref = CompleteRef.Resource(ResourceReference(uri = "file:///{path}")),
+        argument = CompleteArgument(name = "path", value = "src/")
+      )
+    )
 
   it should "produce CompleteResult that match the spec schema" in:
-    validate("CompleteResult", CompleteResult(completion = Completion(values = List("Alice", "Alex"), total = Some(2), hasMore = Some(false))))
+    validate(
+      "CompleteResult",
+      CompleteResult(completion = Completion(values = List("Alice", "Alex"), total = Some(2), hasMore = Some(false)))
+    )
 
   // --- Logging ---
 
@@ -256,21 +305,27 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
     validate("SetLevelRequestParams", SetLevelParams(level = LoggingLevel.Info))
 
   it should "produce LoggingMessageNotificationParams that match the spec schema" in:
-    validate("LoggingMessageNotificationParams", LoggingMessageParams(
-      level = LoggingLevel.Warning,
-      data  = io.circe.Json.fromString("something happened"),
-      logger = Some("chimp")
-    ))
+    validate(
+      "LoggingMessageNotificationParams",
+      LoggingMessageParams(
+        level = LoggingLevel.Warning,
+        data = io.circe.Json.fromString("something happened"),
+        logger = Some("chimp")
+      )
+    )
 
   // --- Progress / Cancellation ---
 
   it should "produce ProgressNotificationParams that match the spec schema" in:
-    validate("ProgressNotificationParams", ProgressParams(
-      progressToken = ProgressToken("t1"),
-      progress = 0.5,
-      total = Some(1.0),
-      message = Some("halfway")
-    ))
+    validate(
+      "ProgressNotificationParams",
+      ProgressParams(
+        progressToken = ProgressToken("t1"),
+        progress = 0.5,
+        total = Some(1.0),
+        message = Some("halfway")
+      )
+    )
 
   it should "produce CancelledNotificationParams that match the spec schema" in:
     validate("CancelledNotificationParams", CancelledParams(requestId = RequestId("r1"), reason = Some("user cancelled")))

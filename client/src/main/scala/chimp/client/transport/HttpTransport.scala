@@ -4,7 +4,7 @@ import chimp.client.{McpAuthorizationException, McpProtocolException, McpSession
 import chimp.protocol.{JSONRPCMessage, ProtocolVersion}
 import io.circe.parser
 import io.circe.syntax.*
-import sttp.client4.{Backend, Response, basicRequest}
+import sttp.client4.{basicRequest, Backend, Response}
 import sttp.model.{MediaType, StatusCode, Uri}
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
@@ -59,7 +59,7 @@ final class HttpTransport[F[_]](
               else if bodyStr.isEmpty then None
               else Some(bodyStr)
             payload match
-              case None => monad.unit(None)
+              case None       => monad.unit(None)
               case Some(json) =>
                 if HttpTransport.isAckLike(json) then monad.unit(None)
                 else
@@ -85,7 +85,7 @@ final class HttpTransport[F[_]](
 
   override def close(): F[Unit] =
     sessionId.get() match
-      case None => monad.unit(())
+      case None     => monad.unit(())
       case Some(id) =>
         val req = basicRequest
           .delete(uri)

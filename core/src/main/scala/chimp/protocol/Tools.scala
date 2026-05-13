@@ -53,57 +53,59 @@ object ToolContent:
       )
     case Image(_, data, mimeType) =>
       Json.obj(
-        "type"     -> Json.fromString("image"),
-        "data"     -> Json.fromString(data),
+        "type" -> Json.fromString("image"),
+        "data" -> Json.fromString(data),
         "mimeType" -> Json.fromString(mimeType)
       )
     case Audio(_, data, mimeType) =>
       Json.obj(
-        "type"     -> Json.fromString("audio"),
-        "data"     -> Json.fromString(data),
+        "type" -> Json.fromString("audio"),
+        "data" -> Json.fromString(data),
         "mimeType" -> Json.fromString(mimeType)
       )
     case ResourceContent(_, resource) =>
       Json.obj(
-        "type"     -> Json.fromString("resource"),
+        "type" -> Json.fromString("resource"),
         "resource" -> resource.asJson
       )
     case ResourceLink(_, uri, name, description, mimeType) =>
       Json
         .obj(
-          "type"        -> Json.fromString("resource_link"),
-          "uri"         -> Json.fromString(uri),
-          "name"        -> name.map(Json.fromString).getOrElse(Json.Null),
+          "type" -> Json.fromString("resource_link"),
+          "uri" -> Json.fromString(uri),
+          "name" -> name.map(Json.fromString).getOrElse(Json.Null),
           "description" -> description.map(Json.fromString).getOrElse(Json.Null),
-          "mimeType"    -> mimeType.map(Json.fromString).getOrElse(Json.Null)
+          "mimeType" -> mimeType.map(Json.fromString).getOrElse(Json.Null)
         )
         .dropNullValues
 
   given Decoder[ToolContent] = Decoder.instance: (c: HCursor) =>
-    c.downField("type").as[String].flatMap:
-      case "text" =>
-        c.downField("text").as[String].map(Text("text", _))
-      case "image" =>
-        for
-          data     <- c.downField("data").as[String]
-          mimeType <- c.downField("mimeType").as[String]
-        yield Image("image", data, mimeType)
-      case "audio" =>
-        for
-          data     <- c.downField("data").as[String]
-          mimeType <- c.downField("mimeType").as[String]
-        yield Audio("audio", data, mimeType)
-      case "resource" =>
-        c.downField("resource").as[ResourceContents].map(ResourceContent("resource", _))
-      case "resource_link" =>
-        for
-          uri         <- c.downField("uri").as[String]
-          name        <- c.downField("name").as[Option[String]]
-          description <- c.downField("description").as[Option[String]]
-          mimeType    <- c.downField("mimeType").as[Option[String]]
-        yield ResourceLink("resource_link", uri, name, description, mimeType)
-      case other =>
-        Left(DecodingFailure(s"Unknown ToolContent type: $other", c.history))
+    c.downField("type")
+      .as[String]
+      .flatMap:
+        case "text" =>
+          c.downField("text").as[String].map(Text("text", _))
+        case "image" =>
+          for
+            data <- c.downField("data").as[String]
+            mimeType <- c.downField("mimeType").as[String]
+          yield Image("image", data, mimeType)
+        case "audio" =>
+          for
+            data <- c.downField("data").as[String]
+            mimeType <- c.downField("mimeType").as[String]
+          yield Audio("audio", data, mimeType)
+        case "resource" =>
+          c.downField("resource").as[ResourceContents].map(ResourceContent("resource", _))
+        case "resource_link" =>
+          for
+            uri <- c.downField("uri").as[String]
+            name <- c.downField("name").as[Option[String]]
+            description <- c.downField("description").as[Option[String]]
+            mimeType <- c.downField("mimeType").as[Option[String]]
+          yield ResourceLink("resource_link", uri, name, description, mimeType)
+        case other =>
+          Left(DecodingFailure(s"Unknown ToolContent type: $other", c.history))
 
 final case class CallToolParams(
     name: String,
@@ -124,10 +126,10 @@ object CallToolResult:
   given Encoder[CallToolResult] = Encoder.AsObject.derived[CallToolResult]
   given Decoder[CallToolResult] = Decoder.instance: c =>
     for
-      content           <- c.downField("content").as[List[ToolContent]]
+      content <- c.downField("content").as[List[ToolContent]]
       structuredContent <- c.downField("structuredContent").as[Option[Json]]
-      isError           <- c.downField("isError").as[Option[Boolean]]
-      meta              <- c.downField("_meta").as[Option[Map[String, Json]]]
+      isError <- c.downField("isError").as[Option[Boolean]]
+      meta <- c.downField("_meta").as[Option[Map[String, Json]]]
     yield CallToolResult(content, structuredContent, isError.getOrElse(false), meta)
 
 final case class ToolListChangedNotification(method: String = "notifications/tools/list_changed") derives Codec

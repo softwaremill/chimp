@@ -7,9 +7,9 @@ import io.circe.Json
 
 /** An MCP client.
   *
-  * Server-initiated requests (`roots/list`, `sampling/createMessage`, `elicitation/create`) are dispatched to the optional
-  * handler functions supplied at construction. Each handler that is `Some` causes the corresponding capability to be advertised
-  * on `initialize`; capabilities the host application doesn't opt into are answered with `MethodNotFound`.
+  * Server-initiated requests (`roots/list`, `sampling/createMessage`, `elicitation/create`) are dispatched to the optional handler
+  * functions supplied at construction. Each handler that is `Some` causes the corresponding capability to be advertised on `initialize`;
+  * capabilities the host application doesn't opt into are answered with `MethodNotFound`.
   */
 trait McpClient[F[_]]:
   def initialize(): F[InitializeResult]
