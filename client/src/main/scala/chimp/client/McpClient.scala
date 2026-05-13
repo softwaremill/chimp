@@ -41,7 +41,7 @@ object McpClient:
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
       protocolVersion: String = ProtocolVersion.Latest
   ): McpClient[F] =
-    DefaultMcpClient.create(
+    McpClientImpl.create(
       transport,
       clientInfo,
       protocolVersion,

@@ -1,6 +1,6 @@
 package chimp.client
 
-import chimp.client.internal.Correlator
+import chimp.client.internal.{Correlator, UUIDCorrelator}
 import chimp.client.notifications.ServerNotificationListener
 import chimp.client.transport.Transport
 import chimp.protocol.*
@@ -11,16 +11,17 @@ import sttp.monad.syntax.*
 
 import java.util.concurrent.atomic.AtomicReference
 
-object DefaultMcpClient:
+object McpClientImpl:
   def create[F[_]](
       transport: Transport[F],
       clientInfo: Implementation,
       protocolVersion: String,
       rootsHandler: Option[() => F[ListRootsResult]],
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
-      elicitationHandler: Option[ElicitRequest => F[ElicitResult]]
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
+      correlator: Correlator = UUIDCorrelator()
   ): McpClient[F] =
-    val impl = new Impl[F](transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler)
+    val impl = new Impl[F](transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler, correlator)
     impl.installIncoming()
     impl
 
@@ -30,13 +31,14 @@ object DefaultMcpClient:
       protocolVersion: String,
       rootsHandler: Option[() => F[ListRootsResult]],
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
-      elicitationHandler: Option[ElicitRequest => F[ElicitResult]]
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
+      correlator: Correlator
   ) extends McpClient[F]:
     private given MonadError[F] = transport.monad
-    private val correlator = Correlator()
+
     private val listeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
 
-    private val wireCaps: ClientCapabilities = ClientCapabilities(
+    private val capabilities: ClientCapabilities = ClientCapabilities(
       roots = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
       sampling = samplingHandler.map(_ => Json.obj()),
       elicitation = elicitationHandler.map(_ => Json.obj())
@@ -99,7 +101,7 @@ object DefaultMcpClient:
     override def initialize(): F[InitializeResult] =
       val params = InitializeParams(
         protocolVersion = protocolVersion,
-        capabilities = wireCaps,
+        capabilities = capabilities,
         clientInfo = clientInfo
       )
       sendRequest[InitializeResult]("initialize", Some(params.asJson)).flatMap: r =>
