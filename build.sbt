@@ -130,21 +130,19 @@ lazy val serverConformance = (project in file("server-conformance"))
       val urlPromise = scala.concurrent.Promise[String]()
       val pb = new java.lang.ProcessBuilder("java", "-jar", jar.getAbsolutePath).redirectErrorStream(false)
       val proc = pb.start()
-      val readerThread = new Thread(new Runnable {
-        def run(): Unit = {
-          val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream, "UTF-8"))
-          try {
-            val line = reader.readLine()
-            if (line != null && line.startsWith("http")) urlPromise.trySuccess(line.trim)
-            else urlPromise.tryFailure(new RuntimeException(s"Server did not print a URL; first line was: $line"))
-            var more: String = reader.readLine()
-            while (more != null) {
-              log.info(s"[server] $more")
-              more = reader.readLine()
-            }
-          } catch {
-            case t: Throwable => urlPromise.tryFailure(t)
+      val readerThread = new Thread(() => {
+        val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream, "UTF-8"))
+        try {
+          val line = reader.readLine()
+          if (line != null && line.startsWith("http")) urlPromise.trySuccess(line.trim)
+          else urlPromise.tryFailure(new RuntimeException(s"Server did not print a URL; first line was: $line"))
+          var more: String = reader.readLine()
+          while (more != null) {
+            log.info(s"[server] $more")
+            more = reader.readLine()
           }
+        } catch {
+          case t: Throwable => urlPromise.tryFailure(t)
         }
       })
       readerThread.setDaemon(true)
