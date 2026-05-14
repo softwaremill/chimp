@@ -24,35 +24,34 @@ final class HttpTransport[F[_]](
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
     val body = msg.asJson.deepDropNullValues.noSpaces
-    var req = basicRequest
+    var request = basicRequest
       .post(uri)
       .header("Content-Type", "application/json")
       .header("Accept", s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString()}}")
       .header("MCP-Protocol-Version", protocolVersion.name)
       .body(body)
-    sessionId.get().foreach(s => req = req.header("Mcp-Session-Id", s))
+    sessionId.get().foreach(s => request = request.header("Mcp-Session-Id", s))
 
-    req.send(backend).flatMap(interpret)
+    request.send(backend).flatMap(interpret)
 
   private def interpret(response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
     response.header("Mcp-Session-Id").foreach(s => sessionId.set(Some(s)))
     response.code match
       case StatusCode.Ok =>
         response.body match
-          case Right(bodyStr) =>
+          case Right(body) =>
             val contentType = response.header("Content-Type").getOrElse("")
             val payload =
-              if contentType.contains("text/event-stream") then HttpTransport.extractSingleSseData(bodyStr)
-              else if bodyStr.isEmpty then None
-              else Some(bodyStr)
+              if contentType.contains(MediaType.TextEventStream.toString()) then HttpTransport.extractSingleSseData(body)
+              else if body.isEmpty then None
+              else Some(body)
             payload match
               case None       => monad.unit(None)
               case Some(json) =>
-                if HttpTransport.isAckLike(json) then monad.unit(None)
-                else
-                  parser.decode[JSONRPCMessage](json) match
-                    case Right(m) => monad.unit(Some(m))
-                    case Left(e)  => monad.error(McpProtocolException(s"Failed to decode response body: ${e.getMessage}; payload=$json"))
+                parser.decode[JSONRPCMessage](json) match
+                  case Right(message) => monad.unit(Some(message))
+                  case Left(error)    =>
+                    monad.error(McpProtocolException(s"Failed to decode response body: ${error.getMessage}, payload $json"))
           case Left(err) =>
             monad.error(McpTransportException(s"HTTP 200 with empty body: $err"))
       case StatusCode.Accepted =>
@@ -88,8 +87,3 @@ object HttpTransport:
       val lines: List[String] = block.split("\\r?\\n", -1).toList
       ServerSentEvent.parse(lines)
     events.flatMap(_.data).find(_.nonEmpty)
-
-  private[transport] def isAckLike(json: String): Boolean =
-    parser.parse(json) match
-      case Right(j) => j.hcursor.downField("id").focus.isEmpty
-      case Left(_)  => false
