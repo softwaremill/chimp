@@ -150,6 +150,21 @@ lazy val serverConformance = (project in file("server-conformance"))
       readerThread.setDaemon(true)
       readerThread.start()
 
+      val errReaderThread = new Thread(() => {
+        val reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getErrorStream, "UTF-8"))
+        try {
+          var line: String = reader.readLine()
+          while (line != null) {
+            log.warn(s"[server-stderr] $line")
+            line = reader.readLine()
+          }
+        } catch {
+          case _: Throwable => ()
+        }
+      })
+      errReaderThread.setDaemon(true)
+      errReaderThread.start()
+
       try {
         val url = scala.concurrent.Await.result(urlPromise.future, scala.concurrent.duration.Duration("15s"))
         log.info(s"Server started at $url")
