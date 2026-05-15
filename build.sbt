@@ -8,6 +8,8 @@ val slf4jV = "2.0.18"
 val logbackV = "1.5.32"
 val tapirV = "1.13.19"
 val sttpClientV = "4.0.23"
+val zioV = "2.1.26"
+val zioProcessV = "0.8.0"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -30,7 +32,7 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val root = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, server, client, examples, serverConformance, clientConformance)
+  .aggregate(core, server, client, clientZio, examples, serverConformance, clientConformance)
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
@@ -72,6 +74,20 @@ lazy val client: Project = (project in file("client"))
     )
   )
   .dependsOn(core)
+
+lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-client-zio",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "dev.zio" %% "zio" % zioV,
+      "dev.zio" %% "zio-streams" % zioV,
+      "dev.zio" %% "zio-process" % zioProcessV,
+      "com.softwaremill.sttp.client4" %% "zio" % sttpClientV
+    )
+  )
+  .dependsOn(client)
 
 lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)
