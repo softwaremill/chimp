@@ -26,9 +26,13 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 11
+          java-version: 21
           cache: 'sbt'
       - uses: sbt/setup-sbt@3e125ece5c3e5248e18da9ed8d2cce3d335ec8dd # v1, specifically v1.1.14
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - name: Install scala-cli
         uses: VirtusLab/scala-cli-setup@68bd9c30954d20e6cb6ddaf01b3b38336f25df4b # main, specifically v1.10.1
         with:
@@ -37,10 +41,15 @@ jobs:
         run: sbt -v scalafmtCheckAll
       - name: Compile
         run: sbt -v compile
-      - name: Verify that examples compile using Scala CLI
-        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli  
+        # TODO bring this step back after first release with new project structure (client + server)
+#      - name: Verify that examples compile using Scala CLI
+#        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
       - name: Test
         run: sbt -v test
+      - name: Client conformance
+        run: sbt -v "clientConformance/conformance client --suite core"
+      - name: Server conformance
+        run: sbt -v "serverConformance/conformance server"
       - uses: actions/upload-artifact@v5  # upload test results
         if: success() || failure()        # run this step even if previous step failed
         with:
