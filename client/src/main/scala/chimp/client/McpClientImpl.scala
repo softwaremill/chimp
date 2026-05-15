@@ -2,12 +2,10 @@ package chimp.client
 
 import chimp.client.internal.{Correlator, UUIDCorrelator}
 import chimp.client.notifications.{ServerNotification, ServerNotificationListener}
-import chimp.client.transport.Transport
-import chimp.protocol
+import chimp.client.transport.{BidirectionalTransport, Transport}
 import chimp.protocol.*
 import io.circe.syntax.*
 import io.circe.{Decoder, Json}
-import org.slf4j.LoggerFactory
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 
@@ -18,99 +16,50 @@ object McpClientImpl:
       transport: Transport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion,
-      rootsHandler: Option[() => F[ListRootsResult]],
-      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
-      elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
       correlator: Correlator = UUIDCorrelator()
   ): McpClient[F] =
-    val impl = new Impl[F](transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler, correlator)
-    impl.installIncoming()
-    impl
+    new Impl[F](transport, clientInfo, protocolVersion, ClientCapabilities(), correlator)
 
-  private final class Impl[F[_]](
-      transport: Transport[F],
+  def createBidirectional[F[_]](
+      transport: BidirectionalTransport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion,
       rootsHandler: Option[() => F[ListRootsResult]],
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
-      correlator: Correlator
-  ) extends McpClient[F]:
-    private val log = LoggerFactory.getLogger(classOf[Impl[F]])
-    private given MonadError[F] = transport.monad
-    private val monad: MonadError[F] = transport.monad
-
-    private val clientCapabilities: ClientCapabilities = ClientCapabilities(
+      correlator: Correlator = UUIDCorrelator()
+  ): BidirectionalMcpClient[F] =
+    val capabilities = ClientCapabilities(
       roots = rootsHandler.map(_ => ClientRootsCapability(listChanged = Some(true))),
       sampling = samplingHandler.map(_ => Json.obj()),
       elicitation = elicitationHandler.map(_ => Json.obj())
     )
+    val impl = new BidirectionalImpl[F](
+      transport,
+      clientInfo,
+      protocolVersion,
+      capabilities,
+      rootsHandler,
+      samplingHandler,
+      elicitationHandler,
+      correlator
+    )
+    impl.installIncoming()
+    impl
+
+  private class Impl[F[_]](
+      protected val transport: Transport[F],
+      protected val clientInfo: Implementation,
+      protected val protocolVersion: ProtocolVersion,
+      protected val clientCapabilities: ClientCapabilities,
+      protected val correlator: Correlator
+  ) extends McpClient[F]:
+    protected given MonadError[F] = transport.monad
+    protected val monad: MonadError[F] = transport.monad
+
     private val negotiatedServerCapabilities = AtomicReference[Option[ServerCapabilities]](None)
-    private val notificationListeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
 
     override def serverCapabilities: Option[ServerCapabilities] = negotiatedServerCapabilities.get()
-
-    private val handlers: Map[String, Json => F[Json]] =
-      val entries = List(
-        rootsHandler.map(fn => "roots/list" -> ((_: Json) => fn().map(_.asJson))),
-        samplingHandler.map(fn =>
-          "sampling/createMessage" -> ((params: Json) =>
-            params.as[CreateMessageRequest] match
-              case Right(request) => fn(request).map(_.asJson)
-              case Left(error)    =>
-                monad.error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${error.getMessage}"))
-          )
-        ),
-        elicitationHandler.map(fn =>
-          "elicitation/create" -> ((params: Json) =>
-            params.as[ElicitRequest] match
-              case Right(request) => fn(request).map(_.asJson)
-              case Left(error)    =>
-                monad.error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${error.getMessage}"))
-          )
-        )
-      ).flatten
-      entries.toMap
-
-    def installIncoming(): Unit =
-      val _ = transport.onIncoming(handleIncoming)
-
-    private def handleIncoming(msg: JSONRPCMessage): F[Unit] = msg match
-      case JSONRPCMessage.Request(_, method, params, id) =>
-        handlers.get(method) match
-          case Some(handler) =>
-            val rawParams = params.getOrElse(Json.obj())
-            handler(rawParams)
-              .flatMap(result => transport.send(JSONRPCMessage.Response(id = id, result = result)).map(_ => ()))
-              .handleError { case t =>
-                val error = JSONRPCMessage.Error(
-                  id = id,
-                  error = JSONRPCErrorObject(
-                    code = JSONRPCErrorCodes.InternalError.code,
-                    message = Option(t.getMessage).getOrElse("Internal error")
-                  )
-                )
-                transport.send(error).map(_ => ())
-              }
-          case None =>
-            val error = JSONRPCMessage.Error(
-              id = id,
-              error = JSONRPCErrorObject(code = JSONRPCErrorCodes.MethodNotFound.code, message = s"Client doesn't support method: $method")
-            )
-            transport.send(error).map(_ => ())
-      case message: JSONRPCMessage.Notification =>
-        val notification = ServerNotification.parse(message)
-        notificationListeners
-          .get()
-          .foldLeft(monad.unit(())): (acc, listener) =>
-            acc.flatMap(_ =>
-              listener.onNotification(notification).handleError { case t =>
-                log.error(s"Server notification listener error for message ${(message: JSONRPCMessage).asJson.noSpaces}", t)
-                monad.unit(())
-              }
-            )
-      case _ =>
-        monad.unit(())
 
     override def initialize(): F[InitializeResult] =
       val params = InitializeParams(
@@ -171,14 +120,6 @@ object McpClientImpl:
       requireServerCapability("resources/read", _.resources.isDefined):
         sendRequest[ReadResourceResult]("resources/read", Some(ReadResourceParams(uri = uri).asJson))
 
-    override def subscribeResource(uri: String): F[Unit] =
-      requireServerCapability("resources/subscribe", _.resources.flatMap(_.subscribe).getOrElse(false)):
-        sendRequest[Json]("resources/subscribe", Some(SubscribeParams(uri = uri).asJson)).map(_ => ())
-
-    override def unsubscribeResource(uri: String): F[Unit] =
-      requireServerCapability("resources/unsubscribe", _.resources.flatMap(_.subscribe).getOrElse(false)):
-        sendRequest[Json]("resources/unsubscribe", Some(UnsubscribeParams(uri = uri).asJson)).map(_ => ())
-
     override def complete(ref: CompleteRef, argument: CompleteArgument): F[CompleteResult] =
       requireServerCapability("completion/complete", _.completions.isDefined):
         val params = CompleteParams(ref = ref, argument = argument).asJson
@@ -196,14 +137,7 @@ object McpClientImpl:
       val params = CancelledParams(requestId = requestId, reason = reason).asJson
       sendNotification("notifications/cancelled", Some(params))
 
-    override def sendRootsListChanged(): F[Unit] =
-      sendNotification("notifications/roots/list_changed", None)
-
-    override def onServerNotification(listener: ServerNotificationListener[F]): F[Unit] =
-      val _ = notificationListeners.updateAndGet(listeners => listeners :+ listener)
-      monad.unit(())
-
-    private def requireServerCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
+    protected def requireServerCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
       negotiatedServerCapabilities.get() match
         case None =>
           monad.error(McpProtocolException(s"Client not initialized"))
@@ -212,7 +146,7 @@ object McpClientImpl:
         case Some(_) =>
           action
 
-    private def sendRequest[R: Decoder](method: String, params: Option[Json]): F[R] =
+    protected def sendRequest[R: Decoder](method: String, params: Option[Json]): F[R] =
       val request = JSONRPCMessage.Request(method = method, params = params, id = correlator.nextId())
       transport
         .send(request)
@@ -228,6 +162,92 @@ object McpClientImpl:
           case None =>
             monad.error(McpProtocolException(s"No response received for request $method"))
 
-    private def sendNotification(method: String, params: Option[Json]): F[Unit] =
+    protected def sendNotification(method: String, params: Option[Json]): F[Unit] =
       val notification = JSONRPCMessage.Notification(method = method, params = params)
       transport.send(notification).map(_ => ())
+
+  private final class BidirectionalImpl[F[_]](
+      bidiTransport: BidirectionalTransport[F],
+      clientInfo: Implementation,
+      protocolVersion: ProtocolVersion,
+      clientCapabilities: ClientCapabilities,
+      rootsHandler: Option[() => F[ListRootsResult]],
+      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
+      correlator: Correlator
+  ) extends Impl[F](bidiTransport, clientInfo, protocolVersion, clientCapabilities, correlator)
+      with BidirectionalMcpClient[F]:
+
+    private val notificationListeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
+
+    private val handlers: Map[String, Json => F[Json]] =
+      val entries = List(
+        rootsHandler.map(fn => "roots/list" -> ((_: Json) => fn().map(_.asJson))),
+        samplingHandler.map(fn =>
+          "sampling/createMessage" -> ((params: Json) =>
+            params.as[CreateMessageRequest] match
+              case Right(request) => fn(request).map(_.asJson)
+              case Left(error)    =>
+                monad.error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${error.getMessage}"))
+          )
+        ),
+        elicitationHandler.map(fn =>
+          "elicitation/create" -> ((params: Json) =>
+            params.as[ElicitRequest] match
+              case Right(request) => fn(request).map(_.asJson)
+              case Left(error)    =>
+                monad.error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${error.getMessage}"))
+          )
+        )
+      ).flatten
+      entries.toMap
+
+    def installIncoming(): Unit =
+      val _ = bidiTransport.onIncoming(handleIncoming)
+
+    private def handleIncoming(msg: JSONRPCMessage): F[Unit] = msg match
+      case JSONRPCMessage.Request(_, method, params, id) =>
+        handlers.get(method) match
+          case Some(handler) =>
+            val rawParams = params.getOrElse(Json.obj())
+            handler(rawParams)
+              .flatMap(result => bidiTransport.send(JSONRPCMessage.Response(id = id, result = result)).map(_ => ()))
+              .handleError { case t =>
+                val error = JSONRPCMessage.Error(
+                  id = id,
+                  error = JSONRPCErrorObject(
+                    code = JSONRPCErrorCodes.InternalError.code,
+                    message = Option(t.getMessage).getOrElse("Internal error")
+                  )
+                )
+                bidiTransport.send(error).map(_ => ())
+              }
+          case None =>
+            val error = JSONRPCMessage.Error(
+              id = id,
+              error = JSONRPCErrorObject(code = JSONRPCErrorCodes.MethodNotFound.code, message = s"Client doesn't support method: $method")
+            )
+            bidiTransport.send(error).map(_ => ())
+      case message: JSONRPCMessage.Notification =>
+        val notification = ServerNotification.parse(message)
+        notificationListeners
+          .get()
+          .foldLeft(monad.unit(())): (acc, listener) =>
+            acc.flatMap(_ => listener.onNotification(notification).handleError(_ => monad.unit(())))
+      case _ =>
+        monad.unit(())
+
+    override def subscribeResource(uri: String): F[Unit] =
+      requireServerCapability("resources/subscribe", _.resources.flatMap(_.subscribe).getOrElse(false)):
+        sendRequest[Json]("resources/subscribe", Some(SubscribeParams(uri = uri).asJson)).map(_ => ())
+
+    override def unsubscribeResource(uri: String): F[Unit] =
+      requireServerCapability("resources/unsubscribe", _.resources.flatMap(_.subscribe).getOrElse(false)):
+        sendRequest[Json]("resources/unsubscribe", Some(UnsubscribeParams(uri = uri).asJson)).map(_ => ())
+
+    override def sendRootsListChanged(): F[Unit] =
+      sendNotification("notifications/roots/list_changed", None)
+
+    override def onServerNotification(listener: ServerNotificationListener[F]): F[Unit] =
+      val _ = notificationListeners.updateAndGet(listeners => listeners :+ listener)
+      monad.unit(())

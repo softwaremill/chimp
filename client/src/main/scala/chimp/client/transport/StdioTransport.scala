@@ -1,24 +1,22 @@
 package chimp.client.transport
 
-import chimp.protocol.{JSONRPCMessage, RequestId}
-import io.circe.parser
-import io.circe.syntax.*
+import chimp.client.internal.SyncPendingRequests
+import chimp.protocol.JSONRPCMessage
 import org.slf4j.LoggerFactory
 import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
 
-import java.io.{BufferedReader, BufferedWriter, File, InputStreamReader, OutputStreamWriter}
+import java.io.*
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-import java.util.concurrent.{ConcurrentHashMap, SynchronousQueue, TimeUnit}
-
 import scala.jdk.CollectionConverters.*
 
 final class StdioTransport(
     command: List[String],
     env: Map[String, String] = Map.empty,
     workDir: Option[File] = None
-) extends Transport[Identity]:
+) extends BidirectionalTransport[Identity]:
 
   private val log = LoggerFactory.getLogger(classOf[StdioTransport])
 
@@ -37,7 +35,7 @@ final class StdioTransport(
   private val reader = BufferedReader(InputStreamReader(proc.getInputStream, StandardCharsets.UTF_8))
   private val errReader = BufferedReader(InputStreamReader(proc.getErrorStream, StandardCharsets.UTF_8))
 
-  private val pending = ConcurrentHashMap[RequestId, SynchronousQueue[JSONRPCMessage]]()
+  private val pending = SyncPendingRequests()
   private val incomingHandler = AtomicReference[JSONRPCMessage => Identity[Unit]](_ => ())
   private val closed = AtomicBoolean(false)
 
@@ -56,12 +54,12 @@ final class StdioTransport(
       var line: String = reader.readLine()
       while line != null do
         if line.nonEmpty then
-          parser.decode[JSONRPCMessage](line) match
+          Transport.decode(line) match
             case Right(msg) => dispatch(msg)
             case Left(e)    => log.warn(s"Failed to parse JSON-RPC line: ${e.getMessage}; raw: $line")
         line = reader.readLine()
     catch case e: Exception => if !closed.get() then log.warn(s"Reader loop ended: ${e.getMessage}")
-    finally drainPending()
+    finally pending.closeAll("Transport closed")
 
   private def drainStderr(): Unit =
     try
@@ -73,40 +71,26 @@ final class StdioTransport(
 
   private def dispatch(msg: JSONRPCMessage): Unit = msg match
     case r: JSONRPCMessage.Response =>
-      val q = pending.remove(r.id)
-      if q != null then { val _ = q.offer(r, 1, TimeUnit.SECONDS) }
+      val _ = pending.complete(r.id, r)
     case e: JSONRPCMessage.Error =>
-      val q = pending.remove(e.id)
-      if q != null then { val _ = q.offer(e, 1, TimeUnit.SECONDS) }
+      val _ = pending.complete(e.id, e)
     case other =>
       incomingHandler.get()(other)
-
-  private def drainPending(): Unit =
-    val it = pending.entrySet().iterator()
-    while it.hasNext do
-      val entry = it.next()
-      val poison = JSONRPCMessage.Error(
-        id = entry.getKey,
-        error = chimp.protocol.JSONRPCErrorObject(code = -32000, message = "Transport closed")
-      )
-      val _ = entry.getValue.offer(poison, 100, TimeUnit.MILLISECONDS)
-      it.remove()
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
     if closed.get() then throw chimp.client.McpTransportException("Stdio transport is closed")
     msg match
       case r: JSONRPCMessage.Request =>
-        val q = SynchronousQueue[JSONRPCMessage]()
-        pending.put(r.id, q)
+        val await = pending.register(r.id)
         writeLine(r)
-        Some(q.take())
+        Some(await())
       case other =>
         writeLine(other)
         None
 
   private def writeLine(msg: JSONRPCMessage): Unit =
     writer.synchronized:
-      writer.write(msg.asJson.deepDropNullValues.noSpaces)
+      writer.write(Transport.encode(msg))
       writer.newLine()
       writer.flush()
 

@@ -20,7 +20,8 @@ import sttp.shared.Identity
   val transport = HttpTransport[Identity](backend, uri"http://localhost:3001/mcp")
   val client = McpClient[Identity](
     transport,
-    clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0")
+    clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0"),
+    protocolVersion = ProtocolVersion.Latest
   )
 
   try

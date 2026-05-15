@@ -30,7 +30,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
       (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
 
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(responseEnvelope)
-    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo)
+    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
     val result = client.initialize()
     result.protocolVersion shouldBe ProtocolVersion.Latest.name
     result.serverInfo.name shouldBe "test-server"
@@ -55,7 +55,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
       .whenAnyRequest
       .thenRespondAdjust("", StatusCode.Accepted)
 
-    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo)
+    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
     val _ = client.initialize()
     val result = client.callTool("echo", io.circe.Json.obj("message" -> io.circe.Json.fromString("hi")))
     result.isError shouldBe false
@@ -70,7 +70,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
     val initEnvelope =
       (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(initEnvelope)
-    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo)
+    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
     val _ = client.initialize()
     val ex = intercept[McpProtocolException](client.callTool("anything", io.circe.Json.obj()))
     ex.getMessage should include("Server did not negotiate the capability required for tools/call")
@@ -78,6 +78,6 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
   it should "fail fast when called before initialization" in:
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust("")
     val t = HttpTransport[Identity](backend, mcpUri)
-    val client = McpClient[Identity](t, clientInfo)
+    val client = McpClient[Identity](t, clientInfo, ProtocolVersion.Latest)
     val ex = intercept[McpProtocolException](client.listTools())
     ex.getMessage should include("Client not initialized")

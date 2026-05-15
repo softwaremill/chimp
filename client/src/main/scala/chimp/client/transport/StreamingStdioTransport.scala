@@ -9,4 +9,4 @@ abstract class StreamingStdioTransport[F[_], S](
     protected val env: Map[String, String] = Map.empty,
     protected val workDir: Option[File] = None,
     protected val streams: Streams[S]
-) extends Transport[F]
+) extends BidirectionalTransport[F]
