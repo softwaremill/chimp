@@ -24,13 +24,13 @@ final class HttpTransport[F[_]](
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
     val body = msg.asJson.deepDropNullValues.noSpaces
-    var request = basicRequest
+    val base = basicRequest
       .post(uri)
       .header("Content-Type", "application/json")
-      .header("Accept", s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString()}}")
+      .header("Accept", s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString}")
       .header("MCP-Protocol-Version", protocolVersion.name)
       .body(body)
-    sessionId.get().foreach(s => request = request.header("Mcp-Session-Id", s))
+    val request = sessionId.get().fold(base)(base.header("Mcp-Session-Id", _))
 
     request.send(backend).flatMap(interpret)
 
