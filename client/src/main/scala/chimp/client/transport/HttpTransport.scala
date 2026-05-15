@@ -1,5 +1,6 @@
 package chimp.client.transport
 
+import chimp.client.transport.HttpTransport.HttpOutcome
 import chimp.client.{McpAuthorizationException, McpProtocolException, McpSessionNotFoundException, McpTransportException}
 import chimp.protocol.{JSONRPCMessage, ProtocolVersion}
 import sttp.client4.{basicRequest, Backend, Request, Response}
@@ -26,31 +27,27 @@ final class HttpTransport[F[_]](
 
   private def interpret(response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
     response.header("Mcp-Session-Id").foreach(s => sessionId.set(Some(s)))
-    if response.code == StatusCode.NotFound && sessionId.get().isDefined then
-      val ex = HttpTransport.mapStatusToError(response.code, response.body.fold(identity, identity), sessionId.get())
-      sessionId.set(None)
-      monad.error(ex.get)
-    else
-      HttpTransport.mapStatusToError(response.code, response.body.fold(identity, identity), sessionId.get()) match
-        case Some(error) => monad.error(error)
-        case None        =>
-          response.code match
-            case StatusCode.Accepted => monad.unit(None)
-            case _                   =>
-              response.body match
-                case Left(err)   => monad.error(McpTransportException(s"HTTP 200 with empty body: $err"))
-                case Right(body) =>
-                  val payload =
-                    if HttpTransport.isSseResponse(response) then HttpTransport.extractSingleSseData(body)
-                    else if body.isEmpty then None
-                    else Some(body)
-                  payload match
-                    case None       => monad.unit(None)
-                    case Some(json) =>
-                      Transport.decode(json) match
-                        case Right(message) => monad.unit(Some(message))
-                        case Left(error)    =>
-                          monad.error(McpProtocolException(s"Failed to decode response body: ${error.getMessage}, payload $json"))
+    HttpTransport.resolveResponse(response, sessionId.get()) match
+      case Left(error: McpSessionNotFoundException) =>
+        sessionId.set(None)
+        monad.error(error)
+      case Left(error)               => monad.error(error)
+      case Right(HttpOutcome.NoBody) => monad.unit(None)
+      case Right(kind)               =>
+        response.body match
+          case Left(err)   => monad.error(McpTransportException(s"HTTP 200 with empty body: $err"))
+          case Right(body) =>
+            val payload = kind match
+              case HttpOutcome.JsonBody => if body.isEmpty then None else Some(body)
+              case HttpOutcome.SseBody  => HttpTransport.extractSingleSseData(body)
+              case HttpOutcome.NoBody   => None
+            payload match
+              case None       => monad.unit(None)
+              case Some(json) =>
+                Transport.decode(json) match
+                  case Right(message) => monad.unit(Some(message))
+                  case Left(error)    =>
+                    monad.error(McpProtocolException(s"Failed to decode response body: ${error.getMessage}, payload $json"))
 
   override def close(): F[Unit] =
     sessionId.get() match
@@ -60,6 +57,11 @@ final class HttpTransport[F[_]](
         HttpTransport.baseDeleteRequest(uri, protocolVersion, id).send(backend).map(_ => ())
 
 object HttpTransport:
+  enum HttpOutcome:
+    case NoBody
+    case JsonBody
+    case SseBody
+
   private[transport] val AcceptHeader: String =
     s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString}"
 
@@ -91,26 +93,28 @@ object HttpTransport:
       .header("Mcp-Session-Id", sessionId)
       .header("MCP-Protocol-Version", protocolVersion.name)
 
-  private[transport] def isSseResponse(response: Response[?]): Boolean =
+  private[transport] def resolveResponse(
+      response: Response[?],
+      currentSession: Option[String]
+  ): Either[McpTransportException, HttpOutcome] =
+    response.code match
+      case StatusCode.Ok =>
+        if isSseResponse(response) then Right(HttpOutcome.SseBody)
+        else Right(HttpOutcome.JsonBody)
+      case StatusCode.Accepted     => Right(HttpOutcome.NoBody)
+      case StatusCode.Unauthorized => Left(McpAuthorizationException("Authorization required", StatusCode.Unauthorized.code))
+      case StatusCode.Forbidden    => Left(McpAuthorizationException("Forbidden", StatusCode.Forbidden.code))
+      case StatusCode.NotFound     =>
+        currentSession match
+          case Some(id) => Left(McpSessionNotFoundException(id))
+          case None     => Left(McpTransportException("404 Not Found"))
+      case other => Left(McpTransportException(s"Unexpected HTTP response: ${other.code}"))
+
+  private def isSseResponse(response: Response[?]): Boolean =
     response
       .header("Content-Type")
       .flatMap(ct => MediaType.parse(ct).toOption)
       .exists(mt => mt.mainType == MediaType.TextEventStream.mainType && mt.subType == MediaType.TextEventStream.subType)
-
-  private[transport] def mapStatusToError(
-      status: StatusCode,
-      body: => String,
-      currentSession: Option[String]
-  ): Option[McpTransportException] =
-    status match
-      case StatusCode.Ok | StatusCode.Accepted => None
-      case StatusCode.Unauthorized             => Some(McpAuthorizationException("Authorization required", status.code))
-      case StatusCode.Forbidden                => Some(McpAuthorizationException("Forbidden", status.code))
-      case StatusCode.NotFound                 =>
-        currentSession match
-          case Some(id) => Some(McpSessionNotFoundException(id))
-          case None     => Some(McpTransportException(s"404 Not Found: $body"))
-      case other => Some(McpTransportException(s"Unexpected HTTP response: ${other.code} $body"))
 
   private[transport] def extractSingleSseData(body: String): Option[String] =
     val blocks: List[String] = body.split("\\r?\\n\\r?\\n", -1).toList
