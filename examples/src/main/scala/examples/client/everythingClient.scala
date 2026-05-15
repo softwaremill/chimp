@@ -5,8 +5,9 @@
 // Start the bundled mcp/everything server before running this example:
 // cd examples && docker compose up -d
 
-package chimp.client
+package examples.client
 
+import chimp.client.*
 import chimp.client.transport.HttpTransport
 import chimp.protocol.*
 import io.circe.Json

@@ -2,23 +2,28 @@
 //> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.50
 //> using dep ch.qos.logback:logback-classic:1.5.20
 
-package chimp.server
+package examples.server
 
+import chimp.server.*
 import io.circe.Codec
+import sttp.model.Header
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
-case class Input(a: Int, b: Int) derives Codec, Schema
+@main def mcpAuthApp(): Unit =
+  case class Input(a: Int, b: Int) derives Codec, Schema
 
-@main def mcpApp(): Unit =
   val adderTool = tool("adder")
     .description("Adds two numbers")
     .withAnnotations(ToolAnnotations(idempotentHint = Some(true)))
     .input[Input]
 
-  def logic(i: Input): Either[String, String] = Right(s"The result is ${i.a + i.b}")
+  def logic(i: Input, headers: Seq[Header]): Either[String, String] =
+    val tokenMsg =
+      headers.find(_.name == "test_header").map(t => s"token: ${t.value} (header name used: ${t.name})").getOrElse("no token provided")
+    Right(s"The result is ${i.a + i.b} ($tokenMsg)")
 
-  val adderServerTool = adderTool.handle(logic)
+  val adderServerTool = adderTool.handleWithHeaders(logic)
 
   val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
 
