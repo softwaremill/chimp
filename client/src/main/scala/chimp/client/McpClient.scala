@@ -6,11 +6,11 @@ import chimp.protocol.*
 import io.circe.Json
 
 trait McpClient[F[_]]:
-  def initialize(): F[InitializeResult]
   def ping(): F[Unit]
   def close(): F[Unit]
 
-  def serverCapabilities: Option[ServerCapabilities]
+  def serverCapabilities: ServerCapabilities
+  def serverInfo: Implementation
 
   def listTools(cursor: Option[Cursor] = None): F[ListToolsResponse]
   def callTool(name: String, arguments: Json): F[CallToolResult]
@@ -40,7 +40,7 @@ object McpClient:
       transport: Transport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion
-  ): McpClient[F] =
+  ): F[McpClient[F]] =
     McpClientImpl.create(transport, clientInfo, protocolVersion)
 
   def apply[F[_]](
@@ -50,5 +50,5 @@ object McpClient:
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest
-  ): BidirectionalMcpClient[F] =
+  ): F[BidirectionalMcpClient[F]] =
     McpClientImpl.createBidirectional(transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler)
