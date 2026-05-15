@@ -9,6 +9,7 @@ import sttp.monad.MonadError
 import sttp.monad.syntax.*
 
 import java.util.concurrent.atomic.AtomicReference
+import scala.util.chaining.*
 
 final class HttpTransport[F[_]](
     backend: Backend[F],
@@ -68,14 +69,17 @@ object HttpTransport:
       sessionId: Option[String],
       body: String
   ): Request[Either[String, String]] =
-    var req = basicRequest
+    basicRequest
       .post(uri)
       .header("Content-Type", MediaType.ApplicationJson.toString)
       .header("Accept", AcceptHeader)
       .header("MCP-Protocol-Version", protocolVersion.name)
       .body(body)
-    sessionId.foreach(s => req = req.header("Mcp-Session-Id", s))
-    req
+      .pipe { request =>
+        sessionId match
+          case Some(sessionId) => request.header("Mcp-Session-Id", sessionId)
+          case _               => request
+      }
 
   private[transport] def baseDeleteRequest(
       uri: Uri,
