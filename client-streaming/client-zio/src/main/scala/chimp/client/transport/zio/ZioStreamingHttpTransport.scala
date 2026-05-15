@@ -57,8 +57,8 @@ final class ZioStreamingHttpTransport private (
   private def sendRequest(request: JSONRPCMessage.Request, await: () => Task[JSONRPCMessage]): Task[Option[JSONRPCMessage]] =
     post(request).flatMap: resp =>
       captureSession(resp) *>
-        sessionRef.get.flatMap: currentSession =>
-          HttpTransport.resolveResponse(resp, currentSession) match
+        sessionRef.get.flatMap: session =>
+          HttpTransport.resolveResponse(resp, session) match
             case Left(err: McpSessionNotFoundException) =>
               sessionRef.set(None) *> ZIO.fail(err)
             case Left(err) =>
