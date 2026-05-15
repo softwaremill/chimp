@@ -55,7 +55,7 @@ final class ZioStreamingStdioTransport private (
       .mapZIO: line =>
         Transport.decode(line) match
           case Right(msg) => dispatch(msg)
-          case Left(err)  => ZIO.succeed(log.warn(s"Failed to parse JSON-RPC line: ${err.getMessage}; raw: $line"))
+          case Left(err)  => ZIO.succeed(log.warn(s"Failed to parse JSON-RPC line: ${err.getMessage}, raw: $line"))
       .runDrain
       .ensuring(pending.closeAll("Transport closed").orDie)
     drain.catchAll(t => ZIO.succeed(log.warn(s"Reader fiber ended: ${t.getMessage}"))).forkIn(scope).unit
