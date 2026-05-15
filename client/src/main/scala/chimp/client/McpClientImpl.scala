@@ -3,9 +3,11 @@ package chimp.client
 import chimp.client.internal.{Correlator, UUIDCorrelator}
 import chimp.client.notifications.{ServerNotification, ServerNotificationListener}
 import chimp.client.transport.Transport
+import chimp.protocol
 import chimp.protocol.*
 import io.circe.syntax.*
 import io.circe.{Decoder, Json}
+import org.slf4j.LoggerFactory
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 
@@ -34,6 +36,7 @@ object McpClientImpl:
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]],
       correlator: Correlator
   ) extends McpClient[F]:
+    private val log = LoggerFactory.getLogger(classOf[Impl[F]])
     private given MonadError[F] = transport.monad
     private val monad: MonadError[F] = transport.monad
 
@@ -100,7 +103,12 @@ object McpClientImpl:
         notificationListeners
           .get()
           .foldLeft(monad.unit(())): (acc, listener) =>
-            acc.flatMap(_ => listener.onNotification(notification).handleError(_ => monad.unit(())))
+            acc.flatMap(_ =>
+              listener.onNotification(notification).handleError { case t =>
+                log.error(s"Server notification listener error for message ${(message: JSONRPCMessage).asJson.noSpaces}", t)
+                monad.unit(())
+              }
+            )
       case _ =>
         monad.unit(())
 
