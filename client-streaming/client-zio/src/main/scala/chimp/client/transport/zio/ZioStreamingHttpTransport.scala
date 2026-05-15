@@ -4,6 +4,7 @@ import chimp.client.transport.HttpTransport.HttpOutcome
 import chimp.client.transport.{HttpTransport, StreamingHttpTransport, Transport}
 import chimp.client.{McpProtocolException, McpSessionNotFoundException}
 import chimp.protocol.{JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
+import org.slf4j.LoggerFactory
 import sttp.capabilities.zio.ZioStreams
 import sttp.client4.{asStreamUnsafe, basicRequest, Response, StreamBackend}
 import sttp.model.sse.ServerSentEvent
@@ -24,6 +25,8 @@ final class ZioStreamingHttpTransport private (
     pending: ZioPendingRequests,
     incomingRef: Ref[JSONRPCMessage => Task[Unit]]
 ) extends StreamingHttpTransport[Task, ZioStreams](backend, uri, ZioStreams):
+
+  private val log = LoggerFactory.getLogger(classOf[ZioStreamingHttpTransport])
 
   override given monad: MonadError[Task] = backend.monad
 
@@ -130,7 +133,7 @@ final class ZioStreamingHttpTransport private (
         val drain = parseSseEvents(stream)
           .mapZIO(dispatch)
           .runDrain
-          .catchAll(t => ZIO.logWarning(s"SSE drain failed: ${t.getMessage}"))
+          .catchAll(t => ZIO.succeed(log.warn(s"SSE drain failed: ${t.getMessage}")))
           .ensuring:
             requestId match
               case Some(id) => pending.complete(id, sseEnded(id)).orDie
@@ -161,7 +164,7 @@ final class ZioStreamingHttpTransport private (
 
   private[zio] def startGetListener: Task[Unit] =
     val listener = sessionReady.await *> runGetStream
-    listener.catchAll(t => ZIO.logWarning(s"GET listener failed: ${t.getMessage}")).forkIn(scope).unit
+    listener.catchAll(t => ZIO.succeed(log.warn(s"GET listener failed: ${t.getMessage}"))).forkIn(scope).unit
 
   private def runGetStream: Task[Unit] =
     sessionRef.get.flatMap: session =>

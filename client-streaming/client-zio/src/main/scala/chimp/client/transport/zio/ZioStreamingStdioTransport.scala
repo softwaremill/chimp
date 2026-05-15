@@ -24,13 +24,15 @@ final class ZioStreamingStdioTransport private (
     incomingRef: Ref[JSONRPCMessage => Task[Unit]]
 ) extends StreamingStdioTransport[Task, ZioStreams](command, env, workDir, ZioStreams):
 
+  private val log = LoggerFactory.getLogger(classOf[ZioStreamingStdioTransport])
+
   override given monad: MonadError[Task] = new RIOMonadAsyncError[Any]
 
   override def send(msg: JSONRPCMessage): Task[Option[JSONRPCMessage]] =
     msg match
-      case r: JSONRPCMessage.Request =>
+      case request: JSONRPCMessage.Request =>
         pending
-          .register(r.id)
+          .register(request.id)
           .flatMap: await =>
             writeQueue.offer(msg) *> await().map(Some(_))
       case _ =>
@@ -43,9 +45,9 @@ final class ZioStreamingStdioTransport private (
     writeQueue.shutdown *> process.kill.ignore
 
   private def dispatch(msg: JSONRPCMessage): Task[Unit] = msg match
-    case r: JSONRPCMessage.Response => pending.complete(r.id, r).unit
-    case e: JSONRPCMessage.Error    => pending.complete(e.id, e).unit
-    case other                      => incomingRef.get.flatMap(_(other))
+    case response: JSONRPCMessage.Response => pending.complete(response.id, response).unit
+    case err: JSONRPCMessage.Error         => pending.complete(err.id, err).unit
+    case other                             => incomingRef.get.flatMap(_(other))
 
   private[zio] def startReader: Task[Unit] =
     val drain = process.stdout.linesStream
@@ -53,21 +55,19 @@ final class ZioStreamingStdioTransport private (
       .mapZIO: line =>
         Transport.decode(line) match
           case Right(msg) => dispatch(msg)
-          case Left(err)  => ZIO.logWarning(s"Failed to parse JSON-RPC line: ${err.getMessage}; raw: $line")
+          case Left(err)  => ZIO.succeed(log.warn(s"Failed to parse JSON-RPC line: ${err.getMessage}; raw: $line"))
       .runDrain
       .ensuring(pending.closeAll("Transport closed").orDie)
-    drain.catchAll(t => ZIO.logWarning(s"Reader fiber ended: ${t.getMessage}")).forkIn(scope).unit
+    drain.catchAll(t => ZIO.succeed(log.warn(s"Reader fiber ended: ${t.getMessage}"))).forkIn(scope).unit
 
   private[zio] def startStderr: Task[Unit] =
     process.stderr.linesStream
-      .runForeach(line => ZIO.succeed(ZioStreamingStdioTransport.log.info(s"stdio-server: $line")))
+      .runForeach(line => ZIO.succeed(log.info(s"stdio-server: $line")))
       .catchAll(_ => ZIO.unit)
       .forkIn(scope)
       .unit
 
 object ZioStreamingStdioTransport:
-  private val log = LoggerFactory.getLogger(classOf[ZioStreamingStdioTransport])
-
   def make(
       command: List[String],
       env: Map[String, String] = Map.empty,
@@ -81,7 +81,7 @@ object ZioStreamingStdioTransport:
       stdinBytes = ZStream
         .fromQueue(writeQueue)
         .map(msg => Transport.encode(msg) + "\n")
-        .flatMap(s => ZStream.fromIterable(s.getBytes(StandardCharsets.UTF_8)))
+        .flatMap(str => ZStream.fromIterable(str.getBytes(StandardCharsets.UTF_8)))
       baseCmd = Command(command.head, command.tail*)
       withEnv = if env.isEmpty then baseCmd else baseCmd.env(env)
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
