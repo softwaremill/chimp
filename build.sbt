@@ -10,6 +10,7 @@ val tapirV = "1.13.19"
 val sttpClientV = "4.0.23"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
+val testcontainersScalaV = "0.41.8"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -24,6 +25,8 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   }.value,
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
+  IntegrationTest / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
+  IntegrationTest / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
   scalacOptions ++= Seq("-Wunused:all", "-Werror")
 )
 
@@ -65,18 +68,24 @@ lazy val server: Project = (project in file("server"))
   .dependsOn(core)
 
 lazy val client: Project = (project in file("client"))
+  .configs(IntegrationTest)
   .settings(commonSettings: _*)
+  .settings(Defaults.itSettings: _*)
   .settings(
     name := "chimp-client",
     libraryDependencies ++= Seq(
       scalaTest,
-      "com.softwaremill.sttp.client4" %% "core" % sttpClientV
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % IntegrationTest,
+      "org.scalatest" %% "scalatest" % scalaTestV % IntegrationTest
     )
   )
   .dependsOn(core)
 
 lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
+  .configs(IntegrationTest)
   .settings(commonSettings: _*)
+  .settings(Defaults.itSettings: _*)
   .settings(
     name := "chimp-client-zio",
     libraryDependencies ++= Seq(
@@ -84,10 +93,12 @@ lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
       "dev.zio" %% "zio" % zioV,
       "dev.zio" %% "zio-streams" % zioV,
       "dev.zio" %% "zio-process" % zioProcessV,
-      "com.softwaremill.sttp.client4" %% "zio" % sttpClientV
+      "com.softwaremill.sttp.client4" %% "zio" % sttpClientV,
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % IntegrationTest,
+      "org.scalatest" %% "scalatest" % scalaTestV % IntegrationTest
     )
   )
-  .dependsOn(client)
+  .dependsOn(client % "compile->compile;it->it")
 
 lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)
