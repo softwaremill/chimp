@@ -8,7 +8,7 @@ import java.time.Duration
 
 class MCPEverythingContainer
     extends GenericContainer(
-      dockerImage = "node:22-alpine",
+      dockerImage = "node:24-alpine",
       exposedPorts = Seq(3001),
       command = Seq("npx", "-y", "@modelcontextprotocol/server-everything", "streamableHttp"),
       waitStrategy = Some(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(2)))

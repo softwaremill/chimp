@@ -25,8 +25,7 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   }.value,
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
-  IntegrationTest / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
-  IntegrationTest / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
+  Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
   scalacOptions ++= Seq("-Wunused:all", "-Werror")
 )
 
@@ -68,24 +67,19 @@ lazy val server: Project = (project in file("server"))
   .dependsOn(core)
 
 lazy val client: Project = (project in file("client"))
-  .configs(IntegrationTest)
   .settings(commonSettings: _*)
-  .settings(Defaults.itSettings: _*)
   .settings(
     name := "chimp-client",
     libraryDependencies ++= Seq(
       scalaTest,
       "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
-      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % IntegrationTest,
-      "org.scalatest" %% "scalatest" % scalaTestV % IntegrationTest
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test
     )
   )
   .dependsOn(core)
 
 lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
-  .configs(IntegrationTest)
   .settings(commonSettings: _*)
-  .settings(Defaults.itSettings: _*)
   .settings(
     name := "chimp-client-zio",
     libraryDependencies ++= Seq(
@@ -94,11 +88,10 @@ lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
       "dev.zio" %% "zio-streams" % zioV,
       "dev.zio" %% "zio-process" % zioProcessV,
       "com.softwaremill.sttp.client4" %% "zio" % sttpClientV,
-      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % IntegrationTest,
-      "org.scalatest" %% "scalatest" % scalaTestV % IntegrationTest
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test
     )
   )
-  .dependsOn(client % "compile->compile;it->it")
+  .dependsOn(client % "compile->compile;test->test")
 
 lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)

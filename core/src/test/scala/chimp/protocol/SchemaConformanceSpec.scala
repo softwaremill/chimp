@@ -1,8 +1,8 @@
 package chimp.protocol
 
 import com.networknt.schema.{InputFormat, SchemaRegistry, SpecificationVersion}
-import io.circe.{Decoder, Encoder}
 import io.circe.syntax.*
+import io.circe.{Decoder, Encoder}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -14,7 +14,7 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
 
   private val rootSchemaText: String =
     val stream = getClass.getResourceAsStream("/schema/2025-11-25/schema.json")
-    assert(stream != null, "MCP schema not found on the classpath at /schema/2025-11-25/schema.json")
+    require(stream != null, "MCP schema not found on the classpath at /schema/2025-11-25/schema.json")
     val text = String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
     stream.close()
     text

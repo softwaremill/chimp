@@ -12,8 +12,8 @@ import sttp.monad.syntax.*
 
 import scala.concurrent.Future
 
-abstract class HttpIntegrationSpec[F[_], B] extends AsyncFlatSpec with Matchers with BeforeAndAfterAll:
-  this: FutureFixtures[F] =>
+abstract class HttpIntegrationSpec[F[_], B] extends AsyncFlatSpec with Matchers with BeforeAndAfterAll with IntegrationSpec:
+  this: ToFuture[F] =>
 
   protected val container: MCPEverythingContainer = new MCPEverythingContainer
 
@@ -29,14 +29,6 @@ abstract class HttpIntegrationSpec[F[_], B] extends AsyncFlatSpec with Matchers 
   def usingTransport[A](backend: B, uri: Uri)(use: Transport[F] => F[A]): F[A]
 
   private val clientInfo = Implementation(name = "chimp-integration", version = "0.0.1")
-
-  protected def withClient(test: McpClient[F] => F[Assertion]): Future[Assertion] =
-    toFuture(
-      usingBackend: backend =>
-        usingTransport(backend, container.mcpUri): transport =>
-          McpClient(transport, clientInfo, ProtocolVersion.Latest).flatMap: client =>
-            test(client).flatMap(assertion => client.close().map(_ => assertion))
-    )
 
   "an HTTP transport" should "expose server info from initialize" in withClient: client =>
     monad.unit(client.serverInfo.name should not be empty)
@@ -63,3 +55,11 @@ abstract class HttpIntegrationSpec[F[_], B] extends AsyncFlatSpec with Matchers 
 
   it should "ping" in withClient: client =>
     client.ping().map(_ => succeed)
+
+  protected def withClient(test: McpClient[F] => F[Assertion]): Future[Assertion] =
+    toFuture(
+      usingBackend: backend =>
+        usingTransport(backend, container.mcpUri): transport =>
+          McpClient(transport, clientInfo, ProtocolVersion.Latest).flatMap: client =>
+            test(client).flatMap(assertion => client.close().map(_ => assertion))
+    )

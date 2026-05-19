@@ -13,8 +13,8 @@ import sttp.monad.syntax.*
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import scala.concurrent.Future
 
-abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers:
-  this: FutureFixtures[F] =>
+abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers with IntegrationSpec:
+  this: ToFuture[F] =>
 
   protected val everythingServerCommand: List[String] =
     List("npx", "-y", "@modelcontextprotocol/server-everything")
@@ -22,17 +22,6 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers:
   def usingTransport[A](command: List[String])(use: BidirectionalTransport[F] => F[A]): F[A]
 
   private val clientInfo = Implementation(name = "chimp-integration", version = "0.0.1")
-
-  protected def withClient(
-      rootsHandler: Option[() => F[ListRootsResult]] = None,
-      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
-      elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None
-  )(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion] =
-    toFuture(
-      usingTransport(everythingServerCommand): transport =>
-        McpClient[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest).flatMap: client =>
-          test(client).flatMap(assertion => client.close().map(_ => assertion))
-    )
 
   "a stdio transport" should "expose server info from initialize" in withClient(): client =>
     monad.unit(client.serverInfo.name should not be empty)
@@ -79,6 +68,17 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers:
         _ <- client.setLoggingLevel(LoggingLevel.Debug)
         _ <- waitUntil(received.get().isDefined, attempts = 50, intervalMs = 100)
       yield received.get().isDefined shouldBe true
+
+  protected def withClient(
+      rootsHandler: Option[() => F[ListRootsResult]] = None,
+      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
+      elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None
+  )(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion] =
+    toFuture(
+      usingTransport(everythingServerCommand): transport =>
+        McpClient[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest).flatMap: client =>
+          test(client).flatMap(assertion => client.close().map(_ => assertion))
+    )
 
   private def waitUntil(condition: => Boolean, attempts: Int, intervalMs: Long): F[Unit] =
     if condition || attempts <= 0 then monad.unit(())
