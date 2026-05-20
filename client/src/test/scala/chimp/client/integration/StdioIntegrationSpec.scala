@@ -51,11 +51,11 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
       )
     withClient(samplingHandler = Some(sampling)): client =>
       client
-        .callTool("sampleLLM", Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8)))
+        .callTool("trigger-sampling-request", Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8)))
         .map: _ =>
           invoked.get() shouldBe true
 
-  it should "deliver log notifications after setLoggingLevel" in:
+  it should "deliver log notifications after enabling simulated logging" in:
     val received = AtomicReference[Option[ServerNotification]](None)
     val listener: ServerNotificationListener[F] = notification =>
       notification match
@@ -66,7 +66,8 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
       for
         _ <- client.onServerNotification(listener)
         _ <- client.setLoggingLevel(LoggingLevel.Debug)
-        _ <- waitUntil(received.get().isDefined, attempts = 50, intervalMs = 100)
+        _ <- client.callTool("toggle-simulated-logging", Json.obj())
+        _ <- waitUntil(received.get().isDefined, attempts = 120, intervalMs = 100)
       yield received.get().isDefined shouldBe true
 
   protected def withClient(

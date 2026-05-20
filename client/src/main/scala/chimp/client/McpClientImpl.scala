@@ -103,18 +103,18 @@ object McpClientImpl:
       rootsHandler.map(fn => "roots/list" -> ((_: Json) => fn().map(_.asJson))),
       samplingHandler.map(fn =>
         "sampling/createMessage" -> ((params: Json) =>
-          params.as[CreateMessageRequest] match
-            case Right(request) => fn(request).map(_.asJson)
+          params.as[CreateMessageParams] match
+            case Right(decoded) => fn(CreateMessageRequest(params = decoded)).map(_.asJson)
             case Left(error)    =>
-              monad.error(IllegalArgumentException(s"Failed to decode CreateMessageRequest: ${error.getMessage}"))
+              monad.error(IllegalArgumentException(s"Failed to decode CreateMessageParams: ${error.getMessage}"))
         )
       ),
       elicitationHandler.map(fn =>
         "elicitation/create" -> ((params: Json) =>
-          params.as[ElicitRequest] match
-            case Right(request) => fn(request).map(_.asJson)
+          params.as[ElicitParams] match
+            case Right(decoded) => fn(ElicitRequest(params = decoded)).map(_.asJson)
             case Left(error)    =>
-              monad.error(IllegalArgumentException(s"Failed to decode ElicitRequest: ${error.getMessage}"))
+              monad.error(IllegalArgumentException(s"Failed to decode ElicitParams: ${error.getMessage}"))
         )
       )
     ).flatten

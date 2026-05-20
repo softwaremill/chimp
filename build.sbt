@@ -25,7 +25,7 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   }.value,
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
-  Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
+  Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
   scalacOptions ++= Seq("-Wunused:all", "-Werror")
 )
 
@@ -73,7 +73,8 @@ lazy val client: Project = (project in file("client"))
     libraryDependencies ++= Seq(
       scalaTest,
       "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
-      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test,
+      "ch.qos.logback" % "logback-classic" % logbackV % Test
     )
   )
   .dependsOn(core)
