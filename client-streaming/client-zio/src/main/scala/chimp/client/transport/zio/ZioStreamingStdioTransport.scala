@@ -8,7 +8,7 @@ import sttp.client4.impl.zio.RIOMonadAsyncError
 import sttp.monad.MonadError
 import zio.process.{Command, Process, ProcessInput}
 import zio.stream.ZStream
-import zio.{Queue, Ref, Scope, Task, ZIO}
+import zio.{Chunk, Queue, Ref, Scope, Task, ZIO}
 
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -80,12 +80,12 @@ object ZioStreamingStdioTransport:
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
       stdinBytes = ZStream
         .fromQueue(writeQueue)
-        .map(msg => Transport.encode(msg) + "\n")
-        .flatMap(str => ZStream.fromIterable(str.getBytes(StandardCharsets.UTF_8)))
+        .map(msg => Chunk.fromArray((Transport.encode(msg) + "\n").getBytes(StandardCharsets.UTF_8)))
+        .flattenChunks
       baseCmd = Command(command.head, command.tail*)
       withEnv = if env.isEmpty then baseCmd else baseCmd.env(env)
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
-      cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes))
+      cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes, flushChunksEagerly = true))
       process <- cmd.run
       transport = new ZioStreamingStdioTransport(command, env, workDir, scope, process, writeQueue, pending, incomingRef)
       _ <- transport.startReader

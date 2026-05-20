@@ -88,8 +88,7 @@ lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
       "dev.zio" %% "zio" % zioV,
       "dev.zio" %% "zio-streams" % zioV,
       "dev.zio" %% "zio-process" % zioProcessV,
-      "com.softwaremill.sttp.client4" %% "zio" % sttpClientV,
-      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test
+      "com.softwaremill.sttp.client4" %% "zio" % sttpClientV
     )
   )
   .dependsOn(client % "compile->compile;test->test")
