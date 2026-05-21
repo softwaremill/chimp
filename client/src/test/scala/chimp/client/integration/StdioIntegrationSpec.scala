@@ -78,12 +78,14 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
     client.listResources().map(_.resources should not be empty)
 
   it should "read the first listed resource" in withClient(): client =>
-    client.listResources().flatMap: resources =>
-      val first = resources.resources.head
-      client
-        .readResource(first.uri)
-        .map: result =>
-          result.contents should not be empty
+    client
+      .listResources()
+      .flatMap: resources =>
+        val first = resources.resources.head
+        client
+          .readResource(first.uri)
+          .map: result =>
+            result.contents should not be empty
 
   it should "list resource templates" in withClient(): client =>
     client.listResourceTemplates().map(_.resourceTemplates should not be empty)
@@ -142,7 +144,7 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
       monad.unit(())
     withClient(): client =>
       for
-        _         <- client.onServerNotification(listener)
+        _ <- client.onServerNotification(listener)
         resources <- client.listResources()
         first = resources.resources.head
         _ <- client.subscribeResource(first.uri)

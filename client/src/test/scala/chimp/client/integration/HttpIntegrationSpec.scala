@@ -85,12 +85,14 @@ abstract class HttpIntegrationSpec[F[_], B] extends AsyncFlatSpec with Matchers 
     client.listResources().map(_.resources should not be empty)
 
   it should "read the first listed resource" in withClient: client =>
-    client.listResources().flatMap: resources =>
-      val first = resources.resources.head
-      client
-        .readResource(first.uri)
-        .map: result =>
-          result.contents should not be empty
+    client
+      .listResources()
+      .flatMap: resources =>
+        val first = resources.resources.head
+        client
+          .readResource(first.uri)
+          .map: result =>
+            result.contents should not be empty
 
   it should "list resource templates" in withClient: client =>
     client.listResourceTemplates().map(_.resourceTemplates should not be empty)

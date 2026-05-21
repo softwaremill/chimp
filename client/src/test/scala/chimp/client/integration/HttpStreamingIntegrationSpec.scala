@@ -73,7 +73,7 @@ abstract class HttpStreamingIntegrationSpec[F[_], B] extends HttpIntegrationSpec
       monad.unit(())
     withBidirectionalClient(): client =>
       for
-        _         <- client.onServerNotification(listener)
+        _ <- client.onServerNotification(listener)
         resources <- client.listResources()
         first = resources.resources.head
         _ <- client.subscribeResource(first.uri)
