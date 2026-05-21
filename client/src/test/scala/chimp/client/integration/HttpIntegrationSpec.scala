@@ -71,7 +71,7 @@ abstract class HttpIntegrationSpec[F[_], B] extends AsyncFlatSpec with Matchers 
         result.content.collect { case link: ToolContent.ResourceLink => link } should not be empty
 
   it should "call the get-resource-reference tool" in withClient: client =>
-    val arguments = Json.obj("resourceType" -> Json.fromString("text"), "resourceId" -> Json.fromInt(1))
+    val arguments = Json.obj("resourceType" -> Json.fromString("Text"), "resourceId" -> Json.fromInt(1))
     client
       .callTool("get-resource-reference", arguments)
       .map: result =>
