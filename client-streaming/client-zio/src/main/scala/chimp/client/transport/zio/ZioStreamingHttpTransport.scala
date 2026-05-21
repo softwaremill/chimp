@@ -11,7 +11,7 @@ import sttp.model.sse.ServerSentEvent
 import sttp.model.{MediaType, StatusCode, Uri}
 import sttp.monad.MonadError
 import zio.stream.{Stream, ZPipeline, ZStream}
-import zio.{Promise, Ref, Scope, Task, ZIO}
+import zio.{Exit, Promise, Ref, Scope, Task, ZIO, ZLayer}
 
 import scala.util.chaining.*
 
@@ -19,7 +19,7 @@ final class ZioStreamingHttpTransport private (
     backend: StreamBackend[Task, ZioStreams],
     uri: Uri,
     protocolVersion: ProtocolVersion,
-    scope: Scope,
+    scope: Scope.Closeable,
     sessionRef: Ref[Option[String]],
     sessionReady: Promise[Nothing, Unit],
     pending: ZioPendingRequests,
@@ -45,7 +45,7 @@ final class ZioStreamingHttpTransport private (
     incomingRef.set(handler)
 
   override def close(): Task[Unit] =
-    sessionRef
+    val deleteSession = sessionRef
       .getAndSet(None)
       .flatMap:
         case Some(id) =>
@@ -56,6 +56,7 @@ final class ZioStreamingHttpTransport private (
             .flatMap(drainBody)
             .ignore
         case None => ZIO.unit
+    deleteSession *> scope.close(Exit.unit).ignore
 
   private def sendRequest(request: JSONRPCMessage.Request, await: () => Task[JSONRPCMessage]): Task[Option[JSONRPCMessage]] =
     post(request).flatMap: resp =>
@@ -193,13 +194,13 @@ final class ZioStreamingHttpTransport private (
     JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = -32000, message = "SSE stream ended before response"))
 
 object ZioStreamingHttpTransport:
-  def make(
+  def apply(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest
-  ): ZIO[Scope, Throwable, ZioStreamingHttpTransport] =
+  ): Task[ZioStreamingHttpTransport] =
     for
-      scope <- ZIO.scope
+      scope <- Scope.make
       sessionRef <- Ref.make(Option.empty[String])
       sessionReady <- Promise.make[Nothing, Unit]
       pending <- ZioPendingRequests.make
@@ -207,3 +208,17 @@ object ZioStreamingHttpTransport:
       transport = new ZioStreamingHttpTransport(backend, uri, protocolVersion, scope, sessionRef, sessionReady, pending, incomingRef)
       _ <- transport.startGetListener
     yield transport
+
+  def scoped(
+      backend: StreamBackend[Task, ZioStreams],
+      uri: Uri,
+      protocolVersion: ProtocolVersion = ProtocolVersion.Latest
+  ): ZIO[Scope, Throwable, ZioStreamingHttpTransport] =
+    ZIO.acquireRelease(apply(backend, uri, protocolVersion))(_.close().ignore)
+
+  def layer(
+      backend: StreamBackend[Task, ZioStreams],
+      uri: Uri,
+      protocolVersion: ProtocolVersion = ProtocolVersion.Latest
+  ): ZLayer[Any, Throwable, ZioStreamingHttpTransport] =
+    ZLayer.scoped(scoped(backend, uri, protocolVersion))

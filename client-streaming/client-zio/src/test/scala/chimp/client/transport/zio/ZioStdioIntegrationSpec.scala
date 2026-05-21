@@ -7,4 +7,4 @@ import zio.{Task, ZIO}
 class ZioStdioIntegrationSpec extends StdioIntegrationSpec[Task] with ZioToFuture:
 
   override def usingTransport[A](command: List[String])(use: BidirectionalTransport[Task] => Task[A]): Task[A] =
-    ZIO.scoped(ZioStreamingStdioTransport.make(command).flatMap(use))
+    ZIO.scoped(ZioStreamingStdioTransport.scoped(command).flatMap(use))

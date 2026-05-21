@@ -8,7 +8,7 @@ import sttp.client4.impl.zio.RIOMonadAsyncError
 import sttp.monad.MonadError
 import zio.process.{Command, Process, ProcessInput}
 import zio.stream.ZStream
-import zio.{Chunk, Queue, Ref, Scope, Task, ZIO}
+import zio.{Chunk, Exit, Queue, Ref, Scope, Task, ZIO, ZLayer}
 
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -17,7 +17,7 @@ final class ZioStreamingStdioTransport private (
     command: List[String],
     env: Map[String, String],
     workDir: Option[File],
-    scope: Scope,
+    scope: Scope.Closeable,
     process: Process,
     writeQueue: Queue[JSONRPCMessage],
     pending: ZioPendingRequests,
@@ -42,7 +42,7 @@ final class ZioStreamingStdioTransport private (
     incomingRef.set(handler)
 
   override def close(): Task[Unit] =
-    writeQueue.shutdown *> process.kill.ignore
+    writeQueue.shutdown *> scope.close(Exit.unit).ignore
 
   private def dispatch(msg: JSONRPCMessage): Task[Unit] = msg match
     case response: JSONRPCMessage.Response => pending.complete(response.id, response).unit
@@ -68,13 +68,13 @@ final class ZioStreamingStdioTransport private (
       .unit
 
 object ZioStreamingStdioTransport:
-  def make(
+  def apply(
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None
-  ): ZIO[Scope, Throwable, ZioStreamingStdioTransport] =
+  ): Task[ZioStreamingStdioTransport] =
     for
-      scope <- ZIO.scope
+      scope <- Scope.make
       writeQueue <- Queue.unbounded[JSONRPCMessage]
       pending <- ZioPendingRequests.make
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
@@ -86,8 +86,22 @@ object ZioStreamingStdioTransport:
       withEnv = if env.isEmpty then baseCmd else baseCmd.env(env)
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
       cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes, flushChunksEagerly = true))
-      process <- cmd.run
+      process <- cmd.run.provideEnvironment(zio.ZEnvironment(scope))
       transport = new ZioStreamingStdioTransport(command, env, workDir, scope, process, writeQueue, pending, incomingRef)
       _ <- transport.startReader
       _ <- transport.startStderr
     yield transport
+
+  def scoped(
+      command: List[String],
+      env: Map[String, String] = Map.empty,
+      workDir: Option[File] = None
+  ): ZIO[Scope, Throwable, ZioStreamingStdioTransport] =
+    ZIO.acquireRelease(apply(command, env, workDir))(_.close().ignore)
+
+  def layer(
+      command: List[String],
+      env: Map[String, String] = Map.empty,
+      workDir: Option[File] = None
+  ): ZLayer[Any, Throwable, ZioStreamingStdioTransport] =
+    ZLayer.scoped(scoped(command, env, workDir))

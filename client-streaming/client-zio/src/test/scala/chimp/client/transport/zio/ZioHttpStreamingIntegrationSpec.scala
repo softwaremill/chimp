@@ -17,4 +17,4 @@ class ZioHttpStreamingIntegrationSpec extends HttpStreamingIntegrationSpec[Task,
   override def usingBidirectionalTransport[A](b: StreamBackend[Task, ZioStreams], uri: Uri)(
       use: BidirectionalTransport[Task] => Task[A]
   ): Task[A] =
-    ZIO.scoped(ZioStreamingHttpTransport.make(b, uri).flatMap(use))
+    ZIO.scoped(ZioStreamingHttpTransport.scoped(b, uri).flatMap(use))
