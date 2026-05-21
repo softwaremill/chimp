@@ -26,6 +26,9 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
   "a stdio transport" should "expose server info from initialize" in withClient(): client =>
     monad.unit(client.serverInfo.name should not be empty)
 
+  it should "negotiate tools capability" in withClient(): client =>
+    monad.unit(client.serverCapabilities.tools.isDefined shouldBe true)
+
   it should "list tools" in withClient(): client =>
     client.listTools().map(_.tools should not be empty)
 
@@ -36,6 +39,57 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
       .map: result =>
         result.isError shouldBe false
         result.content should not be empty
+
+  it should "call the get-tiny-image tool and receive image content" in withClient(): client =>
+    client
+      .callTool("get-tiny-image", Json.obj())
+      .map: result =>
+        result.isError shouldBe false
+        result.content.collect { case image: ToolContent.Image => image } should not be empty
+
+  it should "call the get-structured-content tool and receive structured content" in withClient(): client =>
+    val arguments = Json.obj("location" -> Json.fromString("New York"))
+    client
+      .callTool("get-structured-content", arguments)
+      .map: result =>
+        result.isError shouldBe false
+        result.structuredContent.isDefined shouldBe true
+
+  it should "call the get-resource-links tool and receive resource links" in withClient(): client =>
+    val arguments = Json.obj("count" -> Json.fromInt(3))
+    client
+      .callTool("get-resource-links", arguments)
+      .map: result =>
+        result.isError shouldBe false
+        result.content.collect { case link: ToolContent.ResourceLink => link } should not be empty
+
+  it should "call the get-resource-reference tool" in withClient(): client =>
+    val arguments = Json.obj("resourceType" -> Json.fromString("text"), "resourceId" -> Json.fromInt(1))
+    client
+      .callTool("get-resource-reference", arguments)
+      .map: result =>
+        result.isError shouldBe false
+        result.content should not be empty
+
+  it should "list prompts" in withClient(): client =>
+    client.listPrompts().map(_.prompts should not be empty)
+
+  it should "list resources" in withClient(): client =>
+    client.listResources().map(_.resources should not be empty)
+
+  it should "read the first listed resource" in withClient(): client =>
+    client.listResources().flatMap: resources =>
+      val first = resources.resources.head
+      client
+        .readResource(first.uri)
+        .map: result =>
+          result.contents should not be empty
+
+  it should "list resource templates" in withClient(): client =>
+    client.listResourceTemplates().map(_.resourceTemplates should not be empty)
+
+  it should "ping" in withClient(): client =>
+    client.ping().map(_ => succeed)
 
   it should "invoke the sampling handler when the server requests sampling" in:
     val invoked = AtomicBoolean(false)
@@ -54,6 +108,47 @@ abstract class StdioIntegrationSpec[F[_]] extends AsyncFlatSpec with Matchers wi
         .callTool("trigger-sampling-request", Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8)))
         .map: _ =>
           invoked.get() shouldBe true
+
+  it should "invoke the elicitation handler when the server requests elicitation" in:
+    val invoked = AtomicBoolean(false)
+    val elicitation: ElicitRequest => F[ElicitResult] = _ =>
+      invoked.set(true)
+      monad.unit(ElicitResult(action = ElicitAction.Cancel))
+    withClient(elicitationHandler = Some(elicitation)): client =>
+      client
+        .callTool("trigger-elicitation-request", Json.obj())
+        .map: result =>
+          invoked.get() shouldBe true
+          result.isError shouldBe false
+
+  it should "invoke the roots handler when get-roots-list is called" in:
+    val invoked = AtomicBoolean(false)
+    val roots: () => F[ListRootsResult] = () =>
+      invoked.set(true)
+      monad.unit(ListRootsResult(roots = List(Root(uri = "file:///chimp-test", name = Some("test")))))
+    withClient(rootsHandler = Some(roots)): client =>
+      client
+        .callTool("get-roots-list", Json.obj())
+        .map: result =>
+          invoked.get() shouldBe true
+          result.isError shouldBe false
+
+  it should "deliver resource update notifications after toggling subscriber updates" in:
+    val received = AtomicReference[Option[ServerNotification]](None)
+    val listener: ServerNotificationListener[F] = notification =>
+      notification match
+        case _: ServerNotification.ResourceUpdated => received.set(Some(notification))
+        case _                                     => ()
+      monad.unit(())
+    withClient(): client =>
+      for
+        _         <- client.onServerNotification(listener)
+        resources <- client.listResources()
+        first = resources.resources.head
+        _ <- client.subscribeResource(first.uri)
+        _ <- client.callTool("toggle-subscriber-updates", Json.obj())
+        _ <- waitUntil(received.get().isDefined, attempts = 120, intervalMs = 100)
+      yield received.get().isDefined shouldBe true
 
   it should "deliver log notifications after enabling simulated logging" in:
     val received = AtomicReference[Option[ServerNotification]](None)
