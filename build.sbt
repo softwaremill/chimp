@@ -7,7 +7,7 @@ val circeV = "0.14.15"
 val slf4jV = "2.0.18"
 val logbackV = "1.5.32"
 val tapirV = "1.13.19"
-val sttpClientV = "4.0.23"
+val sttpClientV = "4.0.24"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
 val testcontainersScalaV = "0.41.8"
@@ -100,7 +100,7 @@ lazy val examples = (project in file("examples"))
     publishArtifact := false,
     name := "examples",
     libraryDependencies ++= Seq(
-      "com.softwaremill.sttp.client4" %% "core" % "4.0.23",
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
       "ch.qos.logback" % "logback-classic" % logbackV
