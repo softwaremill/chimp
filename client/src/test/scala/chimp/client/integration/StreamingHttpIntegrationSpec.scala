@@ -9,7 +9,7 @@ import sttp.monad.syntax.*
 
 import scala.concurrent.Future
 
-abstract class HttpStreamingIntegrationSpec[F[_], B] extends HttpIntegrationSpec[F, B] with BidirectionalMcpClientTests[F]:
+abstract class StreamingHttpIntegrationSpec[F[_], B] extends HttpIntegrationSpec[F, B] with BidirectionalMcpClientTests[F]:
   this: ToFuture[F] =>
 
   def usingBidirectionalTransport[A](b: B, uri: Uri)(use: BidirectionalTransport[F] => F[A]): F[A]
