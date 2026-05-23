@@ -22,7 +22,7 @@ final class ZioStreamingStdioTransport private (
     writeQueue: Queue[JSONRPCMessage],
     pending: ZioPendingRequests,
     incomingRef: Ref[JSONRPCMessage => Task[Unit]]
-) extends StreamingStdioTransport[Task, ZioStreams](command, env, workDir, ZioStreams):
+) extends StreamingStdioTransport[Task, ZioStreams](command, env, workDir):
 
   private val log = LoggerFactory.getLogger(classOf[ZioStreamingStdioTransport])
 
