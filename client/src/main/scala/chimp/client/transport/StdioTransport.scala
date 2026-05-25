@@ -10,12 +10,14 @@ import java.io.*
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.jdk.CollectionConverters.*
 
 final class StdioTransport(
     command: List[String],
     env: Map[String, String] = Map.empty,
-    workDir: Option[File] = None
+    workDir: Option[File] = None,
+    timeout: FiniteDuration = 60.seconds
 ) extends BidirectionalTransport[Identity]:
 
   private val log = LoggerFactory.getLogger(classOf[StdioTransport])
@@ -43,11 +45,11 @@ final class StdioTransport(
   private val stderrThread = startDaemon("mcp-stdio-stderr", drainStderr _)
 
   private def startDaemon(name: String, body: () => Unit): Thread =
-    val t = Thread(() => body())
-    t.setName(name)
-    t.setDaemon(true)
-    t.start()
-    t
+    val thread = Thread(() => body())
+    thread.setName(name)
+    thread.setDaemon(true)
+    thread.start()
+    thread
 
   private def readLoop(): Unit =
     try
@@ -70,19 +72,19 @@ final class StdioTransport(
     catch case _: Exception => ()
 
   private def dispatch(msg: JSONRPCMessage): Unit = msg match
-    case r: JSONRPCMessage.Response =>
-      val _ = pending.complete(r.id, r)
-    case e: JSONRPCMessage.Error =>
-      val _ = pending.complete(e.id, e)
+    case response: JSONRPCMessage.Response =>
+      val _ = pending.complete(response.id, response)
+    case err: JSONRPCMessage.Error =>
+      val _ = pending.complete(err.id, err)
     case other =>
       incomingHandler.get()(other)
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
     if closed.get() then throw chimp.client.McpTransportException("Stdio transport is closed")
     msg match
-      case r: JSONRPCMessage.Request =>
-        val await = pending.register(r.id)
-        writeLine(r)
+      case request: JSONRPCMessage.Request =>
+        val await = pending.register(request.id, timeout)
+        writeLine(request)
         Some(await())
       case other =>
         writeLine(other)

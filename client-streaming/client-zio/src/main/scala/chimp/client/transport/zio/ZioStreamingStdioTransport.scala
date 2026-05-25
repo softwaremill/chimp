@@ -12,11 +12,13 @@ import zio.{Chunk, Exit, Queue, Ref, Scope, Task, ZIO, ZLayer}
 
 import java.io.File
 import java.nio.charset.StandardCharsets
+import scala.concurrent.duration.FiniteDuration
 
 final class ZioStreamingStdioTransport private (
     command: List[String],
     env: Map[String, String],
     workDir: Option[File],
+    timeout: FiniteDuration,
     scope: Scope.Closeable,
     process: Process,
     writeQueue: Queue[JSONRPCMessage],
@@ -32,7 +34,7 @@ final class ZioStreamingStdioTransport private (
     msg match
       case request: JSONRPCMessage.Request =>
         pending
-          .register(request.id)
+          .register(request.id, timeout)
           .flatMap: await =>
             writeQueue.offer(msg) *> await().map(Some(_))
       case _ =>
@@ -68,10 +70,14 @@ final class ZioStreamingStdioTransport private (
       .unit
 
 object ZioStreamingStdioTransport:
+  import scala.concurrent.duration.DurationInt
+  private val defaultTimeout: FiniteDuration = 60.seconds
+
   def apply(
       command: List[String],
       env: Map[String, String] = Map.empty,
-      workDir: Option[File] = None
+      workDir: Option[File] = None,
+      timeout: FiniteDuration = defaultTimeout
   ): Task[ZioStreamingStdioTransport] =
     for
       scope <- Scope.make
@@ -87,7 +93,7 @@ object ZioStreamingStdioTransport:
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
       cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes, flushChunksEagerly = true))
       process <- cmd.run.provideEnvironment(zio.ZEnvironment(scope))
-      transport = new ZioStreamingStdioTransport(command, env, workDir, scope, process, writeQueue, pending, incomingRef)
+      transport = new ZioStreamingStdioTransport(command, env, workDir, timeout, scope, process, writeQueue, pending, incomingRef)
       _ <- transport.startReader
       _ <- transport.startStderr
     yield transport
@@ -95,13 +101,15 @@ object ZioStreamingStdioTransport:
   def scoped(
       command: List[String],
       env: Map[String, String] = Map.empty,
-      workDir: Option[File] = None
+      workDir: Option[File] = None,
+      timeout: FiniteDuration = defaultTimeout
   ): ZIO[Scope, Throwable, ZioStreamingStdioTransport] =
-    ZIO.acquireRelease(apply(command, env, workDir))(_.close().ignore)
+    ZIO.acquireRelease(apply(command, env, workDir, timeout))(_.close().ignore)
 
   def layer(
       command: List[String],
       env: Map[String, String] = Map.empty,
-      workDir: Option[File] = None
+      workDir: Option[File] = None,
+      timeout: FiniteDuration = defaultTimeout
   ): ZLayer[Any, Throwable, ZioStreamingStdioTransport] =
-    ZLayer.scoped(scoped(command, env, workDir))
+    ZLayer.scoped(scoped(command, env, workDir, timeout))

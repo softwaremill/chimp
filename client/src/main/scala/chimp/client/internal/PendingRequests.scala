@@ -3,22 +3,27 @@ package chimp.client.internal
 import chimp.protocol.{JSONRPCErrorObject, JSONRPCMessage, RequestId}
 import sttp.shared.Identity
 
-import java.util.concurrent.ConcurrentHashMap
-import scala.concurrent.duration.Duration
+import java.util.concurrent.{ConcurrentHashMap, TimeoutException}
+import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{Await, Promise}
 
 trait PendingRequests[F[_]]:
-  def register(id: RequestId): F[() => F[JSONRPCMessage]]
+  def register(id: RequestId, timeout: FiniteDuration): F[() => F[JSONRPCMessage]]
   def complete(id: RequestId, msg: JSONRPCMessage): F[Boolean]
   def closeAll(reason: String): F[Unit]
 
 final class SyncPendingRequests extends PendingRequests[Identity]:
   private val pending = ConcurrentHashMap[RequestId, Promise[JSONRPCMessage]]()
 
-  override def register(id: RequestId): () => JSONRPCMessage =
+  override def register(id: RequestId, timeout: FiniteDuration): () => JSONRPCMessage =
     val promise = Promise[JSONRPCMessage]()
     pending.put(id, promise)
-    () => Await.result(promise.future, Duration.Inf)
+    () =>
+      try Await.result(promise.future, timeout)
+      catch
+        case t: TimeoutException =>
+          pending.computeIfPresent(id, (_, _) => null)
+          throw t
 
   override def complete(id: RequestId, msg: JSONRPCMessage): Boolean =
     var completed = false
