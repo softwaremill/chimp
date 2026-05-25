@@ -73,7 +73,7 @@ final class ZioStreamingHttpTransport private (
               for
                 body <- collectBody(resp)
                 msg <- decode(body)
-                _ <- pending.complete(request.id, msg)
+                _ <- routeMessage(msg)
                 out <- await().map(Some(_))
               yield out
             case Right(HttpOutcome.SseBody) =>
@@ -111,7 +111,7 @@ final class ZioStreamingHttpTransport private (
   private def collectBody(response: Response[Either[String, Stream[Throwable, Byte]]]): Task[String] =
     response.body match
       case Left(err)     => ZIO.fail(McpProtocolException(s"HTTP 200 with non-stream body: $err"))
-      case Right(stream) => stream.via(ZPipeline.utf8Decode).runFold("")(_ + _)
+      case Right(stream) => stream.via(ZPipeline.utf8Decode).runCollect.map(_.mkString)
 
   private def drainBody(response: Response[Either[String, Stream[Throwable, Byte]]]): Task[Unit] =
     response.body match
@@ -147,21 +147,22 @@ final class ZioStreamingHttpTransport private (
       .via(ZPipeline.splitLines)
       .concat(ZStream.succeed(""))
       .mapAccum(List.empty[String]): (buffered, line) =>
-        if line.isEmpty then (Nil, Some(ServerSentEvent.parse(buffered)))
-        else (buffered :+ line, None)
+        if line.isEmpty then (Nil, Some(ServerSentEvent.parse(buffered.reverse)))
+        else (line :: buffered, None)
       .collect { case Some(event) => event }
 
   private def dispatch(event: ServerSentEvent): Task[Unit] =
     event.data match
       case Some(data) if data.nonEmpty =>
         Transport.decode(data) match
-          case Right(msg) =>
-            msg match
-              case response: JSONRPCMessage.Response => pending.complete(response.id, response).unit
-              case err: JSONRPCMessage.Error         => pending.complete(err.id, err).unit
-              case other                             => incomingRef.get.flatMap(_(other))
-          case Left(_) => ZIO.unit
+          case Right(msg) => routeMessage(msg)
+          case Left(_)    => ZIO.unit
       case _ => ZIO.unit
+
+  private def routeMessage(msg: JSONRPCMessage): Task[Unit] = msg match
+    case response: JSONRPCMessage.Response => pending.complete(response.id, response).unit
+    case err: JSONRPCMessage.Error         => pending.complete(err.id, err).unit
+    case other                             => incomingRef.get.flatMap(_(other))
 
   private[zio] def startGetListener: Task[Unit] =
     val listener = sessionReady.await *> runGetStream

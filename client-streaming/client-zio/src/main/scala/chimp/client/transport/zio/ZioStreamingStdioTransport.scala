@@ -75,7 +75,7 @@ object ZioStreamingStdioTransport:
   ): Task[ZioStreamingStdioTransport] =
     for
       scope <- Scope.make
-      writeQueue <- Queue.unbounded[JSONRPCMessage]
+      writeQueue <- Queue.bounded[JSONRPCMessage](256)
       pending <- ZioPendingRequests.make
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
       stdinBytes = ZStream
