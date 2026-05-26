@@ -25,7 +25,8 @@ final class ZioStreamingHttpTransport private (
     sessionReady: Promise[Nothing, Unit],
     pending: ZioPendingRequests,
     incomingRef: Ref[JSONRPCMessage => Task[Unit]],
-    lastEventId: Ref[Option[String]]
+    lastEventId: Ref[Option[String]],
+    closingRef: Ref[Boolean]
 ) extends StreamingHttpTransport[Task, ZioStreams](backend, uri, ZioStreams):
 
   private val log = LoggerFactory.getLogger(classOf[ZioStreamingHttpTransport])
@@ -59,7 +60,7 @@ final class ZioStreamingHttpTransport private (
             .flatMap(drainBody)
             .ignore
         case None => ZIO.unit
-    deleteSession *> scope.close(Exit.unit).ignore
+    closingRef.set(true) *> deleteSession *> scope.close(Exit.unit).ignore
 
   private def sendRequest(request: JSONRPCMessage.Request, await: () => Task[JSONRPCMessage]): Task[Option[JSONRPCMessage]] =
     post(request).flatMap: resp =>
@@ -173,7 +174,7 @@ final class ZioStreamingHttpTransport private (
   private[zio] def startGetSseListener: Task[Unit] =
     val listener = sessionReady.await *> openGetSseStream(None).flatMap:
       case None         => ZIO.unit
-      case Some(stream) => streamWithResume(stream, lastEventId, ZIO.succeed(true))
+      case Some(stream) => streamWithResume(stream, lastEventId, closingRef.get.map(!_))
     listener.catchAll(t => ZIO.succeed(log.warn(s"GET listener failed: ${t.getMessage}"))).forkIn(scope).unit
 
   private def streamWithResume(
@@ -260,6 +261,7 @@ object ZioStreamingHttpTransport:
       pending <- ZioPendingRequests.make
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
       lastEventId <- Ref.make(Option.empty[String])
+      closingRef <- Ref.make(false)
       transport = new ZioStreamingHttpTransport(
         backend,
         uri,
@@ -270,7 +272,8 @@ object ZioStreamingHttpTransport:
         sessionReady,
         pending,
         incomingRef,
-        lastEventId
+        lastEventId,
+        closingRef
       )
       _ <- transport.startGetSseListener
     yield transport
