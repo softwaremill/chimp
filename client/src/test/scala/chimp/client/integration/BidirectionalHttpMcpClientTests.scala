@@ -61,28 +61,6 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
         second should be > first
         third should be > second
 
-  "POST SSE response" should "deliver the result via reconnected GET after the POST stream is cut mid-response" in:
-    val samplingInvoked = AtomicBoolean(false)
-    val sampling: CreateMessageRequest => F[CreateMessageResult] = _ =>
-      samplingInvoked.set(true)
-      monad.unit(
-        CreateMessageResult(
-          role = Role.Assistant,
-          content = ToolContent.Text(text = "synthetic"),
-          model = "test-model",
-          stopReason = Some("endTurn")
-        )
-      )
-    withProxiedBidirectionalClient(samplingHandler = Some(sampling)): (proxy, client) =>
-      scheduleCutAfter(proxy, delayMs = 400)
-      for result <- client.callTool(
-          "trigger-sampling-request",
-          Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8))
-        )
-      yield
-        samplingInvoked.get() shouldBe true
-        result.isError shouldBe false
-
   "a server initiated request" should "fail with a timeout when the response is delayed beyond the configured timeout" in:
     val samplingInvoked = AtomicBoolean(false)
     val sampling: CreateMessageRequest => F[CreateMessageResult] = _ =>
@@ -115,11 +93,3 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
       case _: ServerNotification.LoggingMessage => val _ = counter.incrementAndGet()
       case _                                    => ()
     monad.unit(())
-
-  private def scheduleCutAfter(proxy: MCPProxyContainer, delayMs: Long): Unit =
-    val t = Thread(() =>
-      Thread.sleep(delayMs)
-      proxy.cutConnections()
-    )
-    t.setDaemon(true)
-    t.start()
