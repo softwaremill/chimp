@@ -136,8 +136,11 @@ final class ZioStreamingHttpTransport private (
         ZIO.fail(McpProtocolException(s"Expected SSE stream, got: $err"))
       case Right(stream) =>
         val shouldContinue: Task[Boolean] = requestId match
-          case Some(id) => pending.isPending(id)
-          case None     => ZIO.succeed(false)
+          case Some(id) =>
+            closingRef.get.flatMap:
+              case true  => ZIO.succeed(false)
+              case false => pending.isPending(id)
+          case None => ZIO.succeed(false)
         val drain = Ref
           .make(Option.empty[String])
           .flatMap: localLastEventId =>
