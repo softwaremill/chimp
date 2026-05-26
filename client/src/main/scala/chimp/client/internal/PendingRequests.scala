@@ -10,6 +10,7 @@ import scala.concurrent.{Await, Promise}
 trait PendingRequests[F[_]]:
   def register(id: RequestId, timeout: FiniteDuration): F[() => F[JSONRPCMessage]]
   def complete(id: RequestId, msg: JSONRPCMessage): F[Boolean]
+  def isPending(id: RequestId): F[Boolean]
   def closeAll(reason: String): F[Unit]
 
 final class SyncPendingRequests extends PendingRequests[Identity]:
@@ -34,6 +35,8 @@ final class SyncPendingRequests extends PendingRequests[Identity]:
         null
     )
     completed
+
+  override def isPending(id: RequestId): Boolean = pending.containsKey(id)
 
   override def closeAll(reason: String): Unit =
     val it = pending.entrySet().iterator()

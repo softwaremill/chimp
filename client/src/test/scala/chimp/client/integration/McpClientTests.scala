@@ -16,10 +16,10 @@ trait McpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
   protected def withClient(test: McpClient[F] => F[Assertion]): Future[Assertion]
 
   "an MCP client" should "expose server info from initialize" in withClient: client =>
-    monad.unit(client.serverInfo.name should not be empty)
-
-  it should "negotiate tools capability" in withClient: client =>
-    monad.unit(client.serverCapabilities.tools.isDefined shouldBe true)
+    monad.unit {
+      client.serverInfo.name should not be empty
+      client.serverCapabilities.tools.isDefined shouldBe true
+    }
 
   it should "list tools" in withClient: client =>
     client.listTools().map(_.tools should not be empty)

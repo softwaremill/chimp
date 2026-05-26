@@ -31,6 +31,8 @@ final class ZioPendingRequests private (pending: Ref[Map[RequestId, Promise[Thro
         case Some(promise) => promise.succeed(msg).as(true)
         case None          => ZIO.succeed(false)
 
+  override def isPending(id: RequestId): Task[Boolean] = pending.get.map(_.contains(id))
+
   override def closeAll(reason: String): Task[Unit] =
     pending
       .getAndSet(Map.empty)

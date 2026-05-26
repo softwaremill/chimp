@@ -75,7 +75,8 @@ lazy val client: Project = (project in file("client"))
       scalaTest,
       "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
       "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test,
-      "ch.qos.logback" % "logback-classic" % logbackV % Test
+      "ch.qos.logback" % "logback-classic" % logbackV % Test,
+      "com.dimafeng" %% "testcontainers-scala-toxiproxy" % testcontainersScalaV % Test
     )
   )
   .dependsOn(core)

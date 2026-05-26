@@ -13,8 +13,7 @@ import sttp.monad.MonadError
 import zio.stream.{Stream, ZPipeline, ZStream}
 import zio.{Exit, Promise, Ref, Scope, Task, ZIO, ZLayer}
 
-import scala.concurrent.duration.FiniteDuration
-import scala.util.chaining.*
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 final class ZioStreamingHttpTransport private (
     backend: StreamBackend[Task, ZioStreams],
@@ -25,10 +24,12 @@ final class ZioStreamingHttpTransport private (
     sessionRef: Ref[Option[String]],
     sessionReady: Promise[Nothing, Unit],
     pending: ZioPendingRequests,
-    incomingRef: Ref[JSONRPCMessage => Task[Unit]]
+    incomingRef: Ref[JSONRPCMessage => Task[Unit]],
+    lastEventId: Ref[Option[String]]
 ) extends StreamingHttpTransport[Task, ZioStreams](backend, uri, ZioStreams):
 
   private val log = LoggerFactory.getLogger(classOf[ZioStreamingHttpTransport])
+  private val sseStreamReconnectBackoff: FiniteDuration = 5.seconds
 
   override given monad: MonadError[Task] = backend.monad
 
@@ -133,10 +134,13 @@ final class ZioStreamingHttpTransport private (
       case Left(err) =>
         ZIO.fail(McpProtocolException(s"Expected SSE stream, got: $err"))
       case Right(stream) =>
-        val drain = parseSseEvents(stream)
-          .mapZIO(dispatch)
-          .runDrain
-          .catchAll(t => ZIO.succeed(log.warn(s"SSE drain failed: ${t.getMessage}")))
+        val shouldContinue: Task[Boolean] = requestId match
+          case Some(id) => pending.isPending(id)
+          case None     => ZIO.succeed(false)
+        val drain = Ref
+          .make(Option.empty[String])
+          .flatMap: localLastEventId =>
+            streamWithResume(stream, localLastEventId, shouldContinue)
           .ensuring:
             requestId match
               case Some(id) => pending.complete(id, sseEnded(id)).orDie
@@ -166,29 +170,73 @@ final class ZioStreamingHttpTransport private (
     case err: JSONRPCMessage.Error         => pending.complete(err.id, err).unit
     case other                             => incomingRef.get.flatMap(_(other))
 
-  private[zio] def startGetListener: Task[Unit] =
-    val listener = sessionReady.await *> runGetStream
+  private[zio] def startGetSseListener: Task[Unit] =
+    val listener = sessionReady.await *> openGetSseStream(None).flatMap:
+      case None         => ZIO.unit
+      case Some(stream) => streamWithResume(stream, lastEventId, ZIO.succeed(true))
     listener.catchAll(t => ZIO.succeed(log.warn(s"GET listener failed: ${t.getMessage}"))).forkIn(scope).unit
 
-  private def runGetStream: Task[Unit] =
+  private def streamWithResume(
+      stream: Stream[Throwable, Byte],
+      lastEventIdRef: Ref[Option[String]],
+      shouldContinue: Task[Boolean]
+  ): Task[Unit] =
+    def loop(stream: Stream[Throwable, Byte]): Task[Unit] =
+      drainSseStream(stream, lastEventIdRef)
+        .catchAll(t => ZIO.succeed(log.warn(s"SSE drain error: ${t.getMessage}")))
+        .flatMap: _ =>
+          shouldContinue.flatMap:
+            case false => ZIO.unit
+            case true  =>
+              ZIO.sleep(zio.Duration.fromScala(sseStreamReconnectBackoff)) *>
+                lastEventIdRef.get.flatMap: lastEventId =>
+                  openGetSseStream(lastEventId).flatMap:
+                    case Some(stream) => loop(stream)
+                    case None         => ZIO.unit
+    loop(stream)
+
+  private def drainSseStream(
+      stream: Stream[Throwable, Byte],
+      lastEventIdRef: Ref[Option[String]]
+  ): Task[Unit] =
+    parseSseEvents(stream)
+      .mapZIO: event =>
+        dispatch(event) *> (event.id match
+          case Some(id) if id.nonEmpty => lastEventIdRef.set(Some(id))
+          case _                       => ZIO.unit)
+      .runDrain
+
+  private def openGetSseStream(lastEventId: Option[String]): Task[Option[Stream[Throwable, Byte]]] =
     sessionRef.get.flatMap: session =>
-      basicRequest
+      val base = basicRequest
         .get(uri)
         .header("Accept", MediaType.TextEventStream.toString)
         .header("MCP-Protocol-Version", protocolVersion.name)
         .response(asStreamUnsafe(ZioStreams))
-        .pipe { request =>
-          session match
-            case Some(sessionId) => request.header("Mcp-Session-Id", sessionId)
-            case _               => request
-        }
+      val withSession = session.fold(base)(s => base.header("Mcp-Session-Id", s))
+      val withLastEventId = lastEventId.fold(withSession)(id => withSession.header("Last-Event-ID", id))
+      withLastEventId
         .send(backend)
         .flatMap: response =>
-          if response.code == StatusCode.MethodNotAllowed then ZIO.unit
-          else
-            response.body match
-              case Left(_)       => ZIO.unit
-              case Right(stream) => parseSseEvents(stream).mapZIO(dispatch).runDrain
+          response.code match
+            case StatusCode.Ok =>
+              response.body match
+                case Right(stream) => ZIO.succeed(Some(stream))
+                case Left(err)     =>
+                  ZIO.succeed {
+                    log.warn(s"GET SSE stream returned non-stream body: $err")
+                    None
+                  }
+            case StatusCode.MethodNotAllowed =>
+              drainBody(response) *> ZIO.succeed {
+                log.info("Server does not support GET SSE stream")
+                None
+              }
+            case other =>
+              drainBody(response) *> ZIO.succeed {
+                log.warn(s"GET SSE stream returned HTTP ${other.code}; not reconnecting")
+                None
+              }
 
   private def cancelled(id: RequestId): JSONRPCMessage.Error =
     JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = -32000, message = "request cancelled"))
@@ -211,6 +259,7 @@ object ZioStreamingHttpTransport:
       sessionReady <- Promise.make[Nothing, Unit]
       pending <- ZioPendingRequests.make
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
+      lastEventId <- Ref.make(Option.empty[String])
       transport = new ZioStreamingHttpTransport(
         backend,
         uri,
@@ -220,9 +269,10 @@ object ZioStreamingHttpTransport:
         sessionRef,
         sessionReady,
         pending,
-        incomingRef
+        incomingRef,
+        lastEventId
       )
-      _ <- transport.startGetListener
+      _ <- transport.startGetSseListener
     yield transport
 
   def scoped(

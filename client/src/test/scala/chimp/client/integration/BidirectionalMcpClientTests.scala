@@ -94,7 +94,3 @@ trait BidirectionalMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
         _ <- client.callTool("toggle-simulated-logging", Json.obj())
         _ <- waitUntil(received.get().isDefined, attempts = 120, intervalMs = 100)
       yield received.get().isDefined shouldBe true
-
-  protected def waitUntil(condition: => Boolean, attempts: Int, intervalMs: Long): F[Unit] =
-    if condition || attempts <= 0 then monad.unit(())
-    else monad.eval { Thread.sleep(intervalMs); () }.flatMap(_ => waitUntil(condition, attempts - 1, intervalMs))
