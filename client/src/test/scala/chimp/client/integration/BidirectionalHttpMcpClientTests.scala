@@ -9,31 +9,117 @@ import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 import sttp.monad.syntax.*
 
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import scala.concurrent.Future
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
   this: ToFuture[F] =>
 
-  protected def withProxiedBidirectionalClient(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion]
+  protected def withProxiedBidirectionalClient(
+      samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
+      timeout: FiniteDuration = 60.seconds
+  )(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion]
 
   "GET SSE stream" should "resume delivering notifications after the underlying connection is cut" in:
     val logCount = AtomicInteger(0)
-    val listener: ServerNotificationListener[F] = notification =>
-      notification match
-        case _: ServerNotification.LoggingMessage => val _ = logCount.incrementAndGet()
-        case _                                    => ()
-      monad.unit(())
-
-    withProxiedBidirectionalClient: (proxy, client) =>
+    val listener = loggingCounter(logCount)
+    withProxiedBidirectionalClient(): (proxy, client) =>
       for
         _ <- client.onServerNotification(listener)
         _ <- client.setLoggingLevel(LoggingLevel.Debug)
         _ <- client.callTool("toggle-simulated-logging", Json.obj())
         _ <- waitUntil(logCount.get() >= 2, attempts = 300, intervalMs = 100)
         beforeCut = logCount.get()
-        _ <- monad.eval { proxy.cutConnections(); () }
+        _ <- monad.eval(proxy.cutConnections())
         _ <- sleep(2000)
-        _ <- monad.eval { proxy.restoreConnections(); () }
+        _ <- monad.eval(proxy.restoreConnections())
         _ <- waitUntil(logCount.get() > beforeCut, attempts = 400, intervalMs = 100)
       yield logCount.get() should be > beforeCut
+
+  it should "survive multiple successive disconnects" in:
+    val logCount = AtomicInteger(0)
+    val listener = loggingCounter(logCount)
+    withProxiedBidirectionalClient(): (proxy, client) =>
+      def cycle(prev: Int): F[Int] =
+        for
+          _ <- monad.eval(proxy.cutConnections())
+          _ <- sleep(1500)
+          _ <- monad.eval(proxy.restoreConnections())
+          _ <- waitUntil(logCount.get() > prev, attempts = 400, intervalMs = 100)
+        yield logCount.get()
+      for
+        _ <- client.onServerNotification(listener)
+        _ <- client.setLoggingLevel(LoggingLevel.Debug)
+        _ <- client.callTool("toggle-simulated-logging", Json.obj())
+        _ <- waitUntil(logCount.get() >= 2, attempts = 300, intervalMs = 100)
+        first = logCount.get()
+        second <- cycle(first)
+        third <- cycle(second)
+      yield
+        second should be > first
+        third should be > second
+
+  "POST SSE response" should "deliver the result via reconnected GET after the POST stream is cut mid-response" in:
+    val samplingInvoked = AtomicBoolean(false)
+    val sampling: CreateMessageRequest => F[CreateMessageResult] = _ =>
+      samplingInvoked.set(true)
+      monad.unit(
+        CreateMessageResult(
+          role = Role.Assistant,
+          content = ToolContent.Text(text = "synthetic"),
+          model = "test-model",
+          stopReason = Some("endTurn")
+        )
+      )
+    withProxiedBidirectionalClient(samplingHandler = Some(sampling)): (proxy, client) =>
+      scheduleCutAfter(proxy, delayMs = 400)
+      for result <- client.callTool(
+          "trigger-sampling-request",
+          Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8))
+        )
+      yield
+        samplingInvoked.get() shouldBe true
+        result.isError shouldBe false
+
+  "a server initiated request" should "fail with a timeout when the response is delayed beyond the configured timeout" in:
+    val samplingInvoked = AtomicBoolean(false)
+    val sampling: CreateMessageRequest => F[CreateMessageResult] = _ =>
+      samplingInvoked.set(true)
+      monad.unit(
+        CreateMessageResult(
+          role = Role.Assistant,
+          content = ToolContent.Text(text = "ok"),
+          model = "test-model",
+          stopReason = Some("endTurn")
+        )
+      )
+    val failure = AtomicReference[Option[Throwable]](None)
+    withProxiedBidirectionalClient(samplingHandler = Some(sampling), timeout = 500.millis): (proxy, client) =>
+      proxy.addLatencyMs(2000)
+      val attempt = client
+        .callTool("trigger-sampling-request", Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8)))
+        .map(_ => ())
+        .handleError:
+          case t =>
+            failure.set(Some(t))
+            monad.unit(())
+      for _ <- attempt
+      yield
+        samplingInvoked.get() shouldBe true
+        failure.get().exists(_.isInstanceOf[TimeoutException]) shouldBe true
+
+  private def loggingCounter(counter: AtomicInteger): ServerNotificationListener[F] = notification =>
+    notification match
+      case _: ServerNotification.LoggingMessage => val _ = counter.incrementAndGet()
+      case _                                    => ()
+    monad.unit(())
+
+  private def scheduleCutAfter(proxy: MCPProxyContainer, delayMs: Long): Unit =
+    val t = Thread(() =>
+      Thread.sleep(delayMs)
+      proxy.cutConnections()
+    )
+    t.setDaemon(true)
+    t.start()
