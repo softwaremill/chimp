@@ -19,7 +19,7 @@ abstract class StdioIntegrationSpec[F[_]]
   this: ToFuture[F] =>
 
   protected val everythingServerCommand: List[String] =
-    List("npx", "-y", "@modelcontextprotocol/server-everything")
+    List("npx", "-y", "@modelcontextprotocol/server-everything@2026.1.26")
 
   def usingTransport[A](command: List[String])(use: BidirectionalTransport[F] => F[A]): F[A]
 

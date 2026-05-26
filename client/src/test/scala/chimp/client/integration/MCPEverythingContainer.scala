@@ -11,7 +11,7 @@ class MCPEverythingContainer(network: Option[Network] = None, networkAlias: Stri
     extends GenericContainer(
       dockerImage = "node:24-alpine",
       exposedPorts = Seq(3001),
-      command = Seq("npx", "-y", "@modelcontextprotocol/server-everything", "streamableHttp"),
+      command = Seq("npx", "-y", "@modelcontextprotocol/server-everything@2026.1.26", "streamableHttp"),
       waitStrategy = Some(Wait.forListeningPort().withStartupTimeout(Duration.ofMinutes(2)))
     ):
   network.foreach: n =>

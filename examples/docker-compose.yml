@@ -1,7 +1,7 @@
 services:
   mcp-everything:
     image: node:lts-alpine
-    command: ["npx", "-y", "@modelcontextprotocol/server-everything", "streamableHttp"]
+    command: ["npx", "-y", "@modelcontextprotocol/server-everything@2026.1.26", "streamableHttp"]
     ports:
       - "3001:3001"
     environment:
