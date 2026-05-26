@@ -3,7 +3,7 @@ package chimp.client.transport.zio
 import chimp.client.transport.HttpTransport.HttpOutcome
 import chimp.client.transport.{HttpTransport, StreamingHttpTransport, Transport}
 import chimp.client.{McpProtocolException, McpSessionNotFoundException}
-import chimp.protocol.{JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
+import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.slf4j.LoggerFactory
 import sttp.capabilities.zio.ZioStreams
 import sttp.client4.{asStreamUnsafe, basicRequest, Response, StreamBackend}
@@ -249,10 +249,13 @@ final class ZioStreamingHttpTransport private (
               }
 
   private def cancelled(id: RequestId): JSONRPCMessage.Error =
-    JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = -32000, message = "request cancelled"))
+    JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = JSONRPCErrorCodes.InvocationError.code, message = "Request cancelled"))
 
   private def sseEnded(id: RequestId): JSONRPCMessage.Error =
-    JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = -32000, message = "SSE stream ended before response"))
+    JSONRPCMessage.Error(
+      id = id,
+      error = JSONRPCErrorObject(code = JSONRPCErrorCodes.InvocationError.code, message = "SSE stream ended before response")
+    )
 
 object ZioStreamingHttpTransport:
   import scala.concurrent.duration.DurationInt

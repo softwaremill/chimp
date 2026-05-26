@@ -1,7 +1,7 @@
 package chimp.protocol
 
 import io.circe.syntax.*
-import io.circe.{Codec, Decoder, DecodingFailure, Encoder, Json}
+import io.circe.*
 
 enum JSONRPCMessage:
   case Request(jsonrpc: String = "2.0", method: String, params: Option[Json] = None, id: RequestId)
@@ -65,3 +65,4 @@ enum JSONRPCErrorCodes(val code: Int):
   case MethodNotFound extends JSONRPCErrorCodes(-32601)
   case InvalidParams extends JSONRPCErrorCodes(-32602)
   case InternalError extends JSONRPCErrorCodes(-32603)
+  case InvocationError extends JSONRPCErrorCodes(-32000)

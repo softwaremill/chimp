@@ -1,6 +1,6 @@
 package chimp.client.internal
 
-import chimp.protocol.{JSONRPCErrorObject, JSONRPCMessage, RequestId}
+import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, RequestId}
 import sttp.shared.Identity
 
 import java.util.concurrent.{ConcurrentHashMap, TimeoutException}
@@ -44,7 +44,7 @@ private[client] final class SyncPendingRequests extends PendingRequests[Identity
       val entry = it.next()
       val poison = JSONRPCMessage.Error(
         id = entry.getKey,
-        error = JSONRPCErrorObject(code = -32000, message = reason)
+        error = JSONRPCErrorObject(code = JSONRPCErrorCodes.InvocationError.code, message = reason)
       )
       val _ = entry.getValue.trySuccess(poison)
       it.remove()
