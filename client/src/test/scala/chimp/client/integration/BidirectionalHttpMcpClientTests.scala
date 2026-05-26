@@ -33,7 +33,7 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
         _ <- waitUntil(logCount.get() >= 2, attempts = 300, intervalMs = 100)
         beforeCut = logCount.get()
         _ <- monad.eval(proxy.cutConnections())
-        _ <- sleep(2000)
+        _ <- sleep(500)
         _ <- monad.eval(proxy.restoreConnections())
         _ <- waitUntil(logCount.get() > beforeCut, attempts = 400, intervalMs = 100)
       yield logCount.get() should be > beforeCut
@@ -45,7 +45,7 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
       def cycle(prev: Int): F[Int] =
         for
           _ <- monad.eval(proxy.cutConnections())
-          _ <- sleep(1500)
+          _ <- sleep(500)
           _ <- monad.eval(proxy.restoreConnections())
           _ <- waitUntil(logCount.get() > prev, attempts = 400, intervalMs = 100)
         yield logCount.get()
@@ -74,8 +74,8 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
         )
       )
     val failure = AtomicReference[Option[Throwable]](None)
-    withProxiedBidirectionalClient(samplingHandler = Some(sampling), timeout = 500.millis): (proxy, client) =>
-      proxy.addLatencyMs(2000)
+    withProxiedBidirectionalClient(samplingHandler = Some(sampling), timeout = 100.millis): (proxy, client) =>
+      proxy.addLatencyMs(500)
       val attempt = client
         .callTool("trigger-sampling-request", Json.obj("prompt" -> Json.fromString("hi"), "maxTokens" -> Json.fromInt(8)))
         .map(_ => ())

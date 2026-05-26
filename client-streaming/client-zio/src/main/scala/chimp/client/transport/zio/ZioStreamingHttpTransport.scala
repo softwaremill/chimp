@@ -11,15 +11,16 @@ import sttp.model.sse.ServerSentEvent
 import sttp.model.{MediaType, StatusCode, Uri}
 import sttp.monad.MonadError
 import zio.stream.{Stream, ZPipeline, ZStream}
-import zio.{Exit, Promise, Ref, Scope, Task, ZIO, ZLayer}
+import zio.{Duration, Exit, Promise, Ref, Schedule, Scope, Task, ZIO, ZLayer}
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 
 final class ZioStreamingHttpTransport private (
     backend: StreamBackend[Task, ZioStreams],
     uri: Uri,
     protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
+    reconnectSchedule: Schedule[Any, Any, Any],
     scope: Scope.Closeable,
     sessionRef: Ref[Option[String]],
     sessionReady: Promise[Nothing, Unit],
@@ -30,7 +31,6 @@ final class ZioStreamingHttpTransport private (
 ) extends StreamingHttpTransport[Task, ZioStreams](backend, uri, ZioStreams):
 
   private val log = LoggerFactory.getLogger(classOf[ZioStreamingHttpTransport])
-  private val sseStreamReconnectBackoff: FiniteDuration = 5.seconds
 
   override given monad: MonadError[Task] = backend.monad
 
@@ -185,19 +185,25 @@ final class ZioStreamingHttpTransport private (
       lastEventIdRef: Ref[Option[String]],
       shouldContinue: Task[Boolean]
   ): Task[Unit] =
-    def loop(stream: Stream[Throwable, Byte]): Task[Unit] =
-      drainSseStream(stream, lastEventIdRef)
-        .catchAll(t => ZIO.succeed(log.warn(s"SSE drain error: ${t.getMessage}")))
-        .flatMap: _ =>
-          shouldContinue.flatMap:
-            case false => ZIO.unit
-            case true  =>
-              ZIO.sleep(zio.Duration.fromScala(sseStreamReconnectBackoff)) *>
-                lastEventIdRef.get.flatMap: lastEventId =>
-                  openGetSseStream(lastEventId).flatMap:
-                    case Some(stream) => loop(stream)
-                    case None         => ZIO.unit
-    loop(stream)
+    reconnectSchedule.driver.flatMap: driver =>
+      def loop(stream: Stream[Throwable, Byte]): Task[Unit] =
+        drainSseStream(stream, lastEventIdRef)
+          .catchAll(t => ZIO.succeed(log.warn(s"SSE drain error: ${t.getMessage}")))
+          .flatMap: _ =>
+            shouldContinue.flatMap:
+              case false => ZIO.unit
+              case true  =>
+                driver
+                  .next(())
+                  .foldZIO(
+                    _ => ZIO.unit,
+                    _ =>
+                      lastEventIdRef.get.flatMap: lastEventId =>
+                        openGetSseStream(lastEventId).flatMap:
+                          case Some(stream) => loop(stream)
+                          case None         => ZIO.unit
+                  )
+      loop(stream)
 
   private def drainSseStream(
       stream: Stream[Throwable, Byte],
@@ -251,11 +257,15 @@ final class ZioStreamingHttpTransport private (
 object ZioStreamingHttpTransport:
   import scala.concurrent.duration.DurationInt
 
+  val defaultReconnectSchedule: Schedule[Any, Any, Any] =
+    Schedule.exponential(Duration.fromMillis(100)).jittered || Schedule.spaced(Duration.fromSeconds(30))
+
   def apply(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = 60.seconds
+      timeout: FiniteDuration = 60.seconds,
+      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
   ): Task[ZioStreamingHttpTransport] =
     for
       scope <- Scope.make
@@ -270,6 +280,7 @@ object ZioStreamingHttpTransport:
         uri,
         protocolVersion,
         timeout,
+        reconnectSchedule,
         scope,
         sessionRef,
         sessionReady,
@@ -285,14 +296,16 @@ object ZioStreamingHttpTransport:
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = 60.seconds
+      timeout: FiniteDuration = 60.seconds,
+      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
   ): ZIO[Scope, Throwable, ZioStreamingHttpTransport] =
-    ZIO.acquireRelease(apply(backend, uri, protocolVersion, timeout))(_.close().ignore)
+    ZIO.acquireRelease(apply(backend, uri, protocolVersion, timeout, reconnectSchedule))(_.close().ignore)
 
   def layer(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = 60.seconds
+      timeout: FiniteDuration = 60.seconds,
+      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
   ): ZLayer[Any, Throwable, ZioStreamingHttpTransport] =
-    ZLayer.scoped(scoped(backend, uri, protocolVersion, timeout))
+    ZLayer.scoped(scoped(backend, uri, protocolVersion, timeout, reconnectSchedule))
