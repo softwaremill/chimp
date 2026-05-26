@@ -8,7 +8,8 @@ import zio.{Duration, Promise, Ref, Task, UIO, ZIO}
 import java.util.concurrent.TimeoutException
 import scala.concurrent.duration.FiniteDuration
 
-final class ZioPendingRequests private (pending: Ref[Map[RequestId, Promise[Throwable, JSONRPCMessage]]]) extends PendingRequests[Task]:
+private[zio] final class ZioPendingRequests private (pending: Ref[Map[RequestId, Promise[Throwable, JSONRPCMessage]]])
+    extends PendingRequests[Task]:
   override def register(id: RequestId, timeout: FiniteDuration): Task[() => Task[JSONRPCMessage]] =
     Promise
       .make[Throwable, JSONRPCMessage]

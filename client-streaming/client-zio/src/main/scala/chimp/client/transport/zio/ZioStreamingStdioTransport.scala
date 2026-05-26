@@ -44,7 +44,7 @@ final class ZioStreamingStdioTransport private (
     incomingRef.set(handler)
 
   override def close(): Task[Unit] =
-    writeQueue.shutdown *> process.kill.ignore *> scope.close(Exit.unit).ignore
+    writeQueue.shutdown *> pending.closeAll("Transport closed").ignore *> process.kill.ignore *> scope.close(Exit.unit).ignore
 
   private def dispatch(msg: JSONRPCMessage): Task[Unit] = msg match
     case response: JSONRPCMessage.Response => pending.complete(response.id, response).unit

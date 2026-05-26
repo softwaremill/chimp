@@ -13,7 +13,7 @@ trait PendingRequests[F[_]]:
   def isPending(id: RequestId): F[Boolean]
   def closeAll(reason: String): F[Unit]
 
-final class SyncPendingRequests extends PendingRequests[Identity]:
+private[client] final class SyncPendingRequests extends PendingRequests[Identity]:
   private val pending = ConcurrentHashMap[RequestId, Promise[JSONRPCMessage]]()
 
   override def register(id: RequestId, timeout: FiniteDuration): () => JSONRPCMessage =
