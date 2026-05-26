@@ -3,7 +3,7 @@ package chimp.client.transport.zio
 import chimp.client.integration.ToFuture
 import sttp.client4.impl.zio.RIOMonadAsyncError
 import sttp.monad.MonadError
-import zio.{Runtime, Task, Unsafe}
+import zio.{Duration, Runtime, Task, Unsafe, ZIO}
 
 import scala.concurrent.Future
 
@@ -16,3 +16,5 @@ trait ZioToFuture extends ToFuture[Task]:
     Unsafe.unsafe { implicit u =>
       runtime.unsafe.runToFuture(fa)
     }
+
+  override def sleep(millis: Long): Task[Unit] = ZIO.sleep(Duration.fromMillis(millis))

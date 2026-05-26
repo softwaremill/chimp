@@ -33,7 +33,7 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
         _ <- waitUntil(logCount.get() >= 2, attempts = 300, intervalMs = 100)
         beforeCut = logCount.get()
         _ <- monad.eval { proxy.cutConnections(); () }
-        _ <- monad.eval { Thread.sleep(2000); () }
+        _ <- sleep(2000)
         _ <- monad.eval { proxy.restoreConnections(); () }
         _ <- waitUntil(logCount.get() > beforeCut, attempts = 400, intervalMs = 100)
       yield logCount.get() should be > beforeCut
