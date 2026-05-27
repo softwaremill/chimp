@@ -123,8 +123,8 @@ trait BidirectionalMcpClient[F[_]] extends McpClient[F]:
   def onServerNotification(listener: ServerNotificationListener[F]): F[Unit]
 
 object McpClient:
-  /** Creates an [[McpClient]] over the given [[chimp.client.transport.Transport]] and performs the initialization handshake with the
-    * server.
+  /** Creates an unidirectional [[McpClient]] over the given [[chimp.client.transport.Transport]] and performs the initialization handshake
+    * with the server.
     *
     * @param transport
     *   The transport carrying JSON-RPC messages between client and server.

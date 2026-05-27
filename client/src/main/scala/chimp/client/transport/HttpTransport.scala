@@ -12,6 +12,15 @@ import sttp.monad.syntax.*
 import java.util.concurrent.atomic.AtomicReference
 import scala.util.chaining.*
 
+/** Implementation of unidirectional MCP Streamable HTTP transport that exchanges JSON-RPC messages with an MCP server over HTTP.
+  *
+  * @param backend
+  *   The sttp backend used to send HTTP requests.
+  * @param uri
+  *   The MCP endpoint URI.
+  * @param protocolVersion
+  *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
+  */
 final class HttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
