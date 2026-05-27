@@ -3,7 +3,6 @@ package chimp.client.transport.zio
 import chimp.client.transport.{StreamingStdioTransport, Transport}
 import chimp.protocol.JSONRPCMessage
 import org.slf4j.LoggerFactory
-import sttp.capabilities.zio.ZioStreams
 import sttp.client4.impl.zio.RIOMonadAsyncError
 import sttp.monad.MonadError
 import zio.process.{Command, Process, ProcessInput}
@@ -24,7 +23,7 @@ final class ZioStreamingStdioTransport private (
     writeQueue: Queue[JSONRPCMessage],
     pending: ZioPendingRequests,
     incomingRef: Ref[JSONRPCMessage => Task[Unit]]
-) extends StreamingStdioTransport[Task, ZioStreams](command, env, workDir):
+) extends StreamingStdioTransport[Task](command, env, workDir):
 
   private val log = LoggerFactory.getLogger(classOf[ZioStreamingStdioTransport])
 
