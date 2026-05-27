@@ -11,8 +11,17 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
 
   private val clientInfo = Implementation(name = "chimp-test", version = "0.0.1")
 
+  private def planInitResponse(transport: InMemoryTransport): Unit =
+    val initResult = InitializeResult(
+      protocolVersion = ProtocolVersion.Latest.name,
+      capabilities = ServerCapabilities(),
+      serverInfo = Implementation(name = "s", version = "1")
+    )
+    transport.planResponse(JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson))
+
   it should "respond to a server-initiated roots/list with the registered handler's result" in:
     val transport = InMemoryTransport()
+    planInitResponse(transport)
     val _ = McpClient[Identity](
       transport,
       clientInfo,
@@ -32,6 +41,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
 
   it should "respond with MethodNotFound for capabilities the client didn't opt into" in:
     val transport = InMemoryTransport()
+    planInitResponse(transport)
     val _ = McpClient[Identity](transport, clientInfo)
 
     val request: JSONRPCMessage = JSONRPCMessage.Request(method = "sampling/createMessage", id = RequestId("server-2"))
@@ -43,6 +53,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
 
   it should "deliver incoming notifications to registered listeners" in:
     val transport = InMemoryTransport()
+    planInitResponse(transport)
     val client = McpClient[Identity](transport, clientInfo)
     var received: Option[ServerNotification] = None
     val listener: ServerNotificationListener[Identity] = n => { received = Some(n); () }
@@ -56,19 +67,13 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
 
   it should "include opted-in capabilities on initialize" in:
     val transport = InMemoryTransport()
-    val initResult = InitializeResult(
-      protocolVersion = ProtocolVersion.Latest.name,
-      capabilities = ServerCapabilities(),
-      serverInfo = Implementation(name = "s", version = "1")
-    )
-    transport.planResponse(JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson))
-    val client = McpClient[Identity](
+    planInitResponse(transport)
+    val _ = McpClient[Identity](
       transport,
       clientInfo,
       rootsHandler = Some(() => ListRootsResult(roots = Nil)),
       elicitationHandler = Some((_: ElicitRequest) => ElicitResult(action = ElicitAction.Cancel))
     )
-    val _ = client.initialize()
 
     transport.sent.head match
       case request: JSONRPCMessage.Request =>

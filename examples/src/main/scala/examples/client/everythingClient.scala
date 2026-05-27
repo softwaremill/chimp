@@ -20,12 +20,12 @@ import sttp.shared.Identity
   val transport = HttpTransport[Identity](backend, uri"http://localhost:3001/mcp")
   val client = McpClient[Identity](
     transport,
-    clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0")
+    clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0"),
+    protocolVersion = ProtocolVersion.Latest
   )
 
   try
-    val init = client.initialize()
-    println(s"Connected to ${init.serverInfo.name} ${init.serverInfo.version} (MCP ${init.protocolVersion})")
+    println(s"Connected to ${client.serverInfo.name} ${client.serverInfo.version}")
 
     val tools = client.listTools().tools
     println(s"Available tools (${tools.size}):")

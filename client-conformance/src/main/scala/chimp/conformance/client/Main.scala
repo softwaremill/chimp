@@ -34,14 +34,12 @@ object Main:
       try
         scenario match
           case "initialize" =>
-            val client = McpClient[Identity](transport, clientInfo, protocolVersion = protocolVersion)
-            val _ = client.initialize()
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
             client.close()
             0
 
           case "tools_call" =>
-            val client = McpClient[Identity](transport, clientInfo, protocolVersion = protocolVersion)
-            val _ = client.initialize()
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
             val _ = client.callTool(
               "add_numbers",
               Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3))

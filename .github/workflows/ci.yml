@@ -44,12 +44,14 @@ jobs:
         # TODO bring this step back after first release with new project structure (client + server)
 #      - name: Verify that examples compile using Scala CLI
 #        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
-      - name: Test
+      - name: Unit tests
         run: sbt -v test
-      - name: Client conformance
+      - name: Client conformance tests
         run: sbt -v "clientConformance/conformance client --suite core"
-      - name: Server conformance
+      - name: Server conformance tests
         run: sbt -v "serverConformance/conformance server"
+      - name: Integration tests
+        run: sbt -v "testOnly -- -n Integration"
       - uses: actions/upload-artifact@v5  # upload test results
         if: success() || failure()        # run this step even if previous step failed
         with:

@@ -8,6 +8,9 @@ val slf4jV = "2.0.18"
 val logbackV = "1.5.32"
 val tapirV = "1.13.19"
 val sttpClientV = "4.0.24"
+val zioV = "2.1.26"
+val zioProcessV = "0.8.0"
+val testcontainersScalaV = "0.41.8"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -22,6 +25,8 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   }.value,
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
+  Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
+  Test / parallelExecution := false,
   scalacOptions ++= Seq("-Wunused:all", "-Werror")
 )
 
@@ -30,7 +35,7 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val root = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, server, client, examples, serverConformance, clientConformance)
+  .aggregate(core, server, client, clientZio, examples, serverConformance, clientConformance)
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
@@ -68,10 +73,27 @@ lazy val client: Project = (project in file("client"))
     name := "chimp-client",
     libraryDependencies ++= Seq(
       scalaTest,
-      "com.softwaremill.sttp.client4" %% "core" % sttpClientV
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
+      "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaV % Test,
+      "ch.qos.logback" % "logback-classic" % logbackV % Test,
+      "com.dimafeng" %% "testcontainers-scala-toxiproxy" % testcontainersScalaV % Test
     )
   )
   .dependsOn(core)
+
+lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-client-zio",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "dev.zio" %% "zio" % zioV,
+      "dev.zio" %% "zio-streams" % zioV,
+      "dev.zio" %% "zio-process" % zioProcessV,
+      "com.softwaremill.sttp.client4" %% "zio" % sttpClientV
+    )
+  )
+  .dependsOn(client % "compile->compile;test->test")
 
 lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)
@@ -79,7 +101,7 @@ lazy val examples = (project in file("examples"))
     publishArtifact := false,
     name := "examples",
     libraryDependencies ++= Seq(
-      "com.softwaremill.sttp.client4" %% "core" % "4.0.24",
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
       "ch.qos.logback" % "logback-classic" % logbackV
