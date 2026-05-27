@@ -42,7 +42,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
   it should "respond with MethodNotFound for capabilities the client didn't opt into" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
-    val _ = McpClient[Identity](transport, clientInfo)
+    val _ = McpClient.bidirectional[Identity](transport, clientInfo)
 
     val request: JSONRPCMessage = JSONRPCMessage.Request(method = "sampling/createMessage", id = RequestId("server-2"))
     transport.simulateIncoming(request)
