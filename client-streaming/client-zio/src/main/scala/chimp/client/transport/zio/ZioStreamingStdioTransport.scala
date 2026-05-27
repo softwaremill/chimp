@@ -69,14 +69,12 @@ final class ZioStreamingStdioTransport private (
       .unit
 
 object ZioStreamingStdioTransport:
-  import scala.concurrent.duration.DurationInt
-  private val defaultTimeout: FiniteDuration = 60.seconds
 
   def apply(
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = defaultTimeout
+      timeout: FiniteDuration = Transport.defaultTimeout
   ): Task[ZioStreamingStdioTransport] =
     for
       scope <- Scope.make
@@ -101,7 +99,7 @@ object ZioStreamingStdioTransport:
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = defaultTimeout
+      timeout: FiniteDuration = Transport.defaultTimeout
   ): ZIO[Scope, Throwable, ZioStreamingStdioTransport] =
     ZIO.acquireRelease(apply(command, env, workDir, timeout))(_.close().ignore)
 
@@ -109,6 +107,6 @@ object ZioStreamingStdioTransport:
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = defaultTimeout
+      timeout: FiniteDuration = Transport.defaultTimeout
   ): ZLayer[Any, Throwable, ZioStreamingStdioTransport] =
     ZLayer.scoped(scoped(command, env, workDir, timeout))

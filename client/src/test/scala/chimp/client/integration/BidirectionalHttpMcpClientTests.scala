@@ -1,6 +1,7 @@
 package chimp.client.integration
 
 import chimp.client.notifications.{ServerNotification, ServerNotificationListener}
+import chimp.client.transport.Transport
 import chimp.client.{BidirectionalMcpClient, McpTimeoutException}
 import chimp.protocol.*
 import io.circe.Json
@@ -18,7 +19,7 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
 
   protected def withProxiedBidirectionalClient(
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
-      timeout: FiniteDuration = 60.seconds
+      timeout: FiniteDuration = Transport.defaultTimeout
   )(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion]
 
   "GET SSE stream" should "resume delivering notifications after the underlying connection is cut" in:

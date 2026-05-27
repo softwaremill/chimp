@@ -258,7 +258,6 @@ final class ZioStreamingHttpTransport private (
     )
 
 object ZioStreamingHttpTransport:
-  import scala.concurrent.duration.DurationInt
 
   val defaultReconnectSchedule: Schedule[Any, Any, Any] =
     Schedule.exponential(Duration.fromMillis(100)).jittered || Schedule.spaced(Duration.fromSeconds(30))
@@ -267,7 +266,7 @@ object ZioStreamingHttpTransport:
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = 60.seconds,
+      timeout: FiniteDuration = Transport.defaultTimeout,
       reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
   ): Task[ZioStreamingHttpTransport] =
     for
@@ -299,7 +298,7 @@ object ZioStreamingHttpTransport:
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = 60.seconds,
+      timeout: FiniteDuration = Transport.defaultTimeout,
       reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
   ): ZIO[Scope, Throwable, ZioStreamingHttpTransport] =
     ZIO.acquireRelease(apply(backend, uri, protocolVersion, timeout, reconnectSchedule))(_.close().ignore)
@@ -308,7 +307,7 @@ object ZioStreamingHttpTransport:
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = 60.seconds,
+      timeout: FiniteDuration = Transport.defaultTimeout,
       reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
   ): ZLayer[Any, Throwable, ZioStreamingHttpTransport] =
     ZLayer.scoped(scoped(backend, uri, protocolVersion, timeout, reconnectSchedule))

@@ -5,6 +5,8 @@ import io.circe.parser
 import io.circe.syntax.*
 import sttp.monad.MonadError
 
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
+
 /** A unidirectional MCP transport: the client sends a [[chimp.protocol.JSONRPCMessage]] and optionally receives a response back. For
   * transports that doesn't handle server initiated requests.
   */
@@ -20,6 +22,9 @@ trait BidirectionalTransport[F[_]] extends Transport[F]:
   def onIncoming(handler: JSONRPCMessage => F[Unit]): F[Unit]
 
 object Transport:
+
+  val defaultTimeout: FiniteDuration = 60.seconds
+
   private[client] def encode(msg: JSONRPCMessage): String =
     msg.asJson.deepDropNullValues.noSpaces
 
