@@ -22,7 +22,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
   it should "respond to a server-initiated roots/list with the registered handler's result" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
-    val _ = McpClient[Identity](
+    val _ = McpClient.bidirectional[Identity](
       transport,
       clientInfo,
       rootsHandler = Some(() => ListRootsResult(roots = List(Root(uri = "file:///x", name = Some("x")))))
@@ -54,7 +54,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
   it should "deliver incoming notifications to registered listeners" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
-    val client = McpClient[Identity](transport, clientInfo)
+    val client = McpClient.bidirectional[Identity](transport, clientInfo)
     var received: Option[ServerNotification] = None
     val listener: ServerNotificationListener[Identity] = n => { received = Some(n); () }
     val _ = client.onServerNotification(listener)
@@ -68,7 +68,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
   it should "include opted-in capabilities on initialize" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
-    val _ = McpClient[Identity](
+    val _ = McpClient.bidirectional[Identity](
       transport,
       clientInfo,
       rootsHandler = Some(() => ListRootsResult(roots = Nil)),

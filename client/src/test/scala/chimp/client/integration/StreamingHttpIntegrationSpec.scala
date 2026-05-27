@@ -41,7 +41,8 @@ abstract class StreamingHttpIntegrationSpec[F[_], B]
     toFuture(
       usingBackend: backend =>
         usingBidirectionalTransport(backend, mcpEverythingContainer.mcpUri, 60.seconds): transport =>
-          McpClient[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
+          McpClient
+            .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
             .flatMap: client =>
               test(client).flatMap(assertion => client.close().map(_ => assertion))
     )
@@ -55,7 +56,8 @@ abstract class StreamingHttpIntegrationSpec[F[_], B]
     toFuture(
       usingBackend: backend =>
         usingBidirectionalTransport(backend, proxyContainer.mcpUri, timeout): transport =>
-          McpClient[F](transport, clientInfo, None, samplingHandler, None, ProtocolVersion.Latest)
+          McpClient
+            .bidirectional[F](transport, clientInfo, None, samplingHandler, None, ProtocolVersion.Latest)
             .flatMap: client =>
               test(proxyContainer, client).flatMap(assertion => client.close().map(_ => assertion))
     )

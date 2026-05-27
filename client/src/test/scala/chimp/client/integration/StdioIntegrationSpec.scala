@@ -35,6 +35,8 @@ abstract class StdioIntegrationSpec[F[_]]
   )(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion] =
     toFuture(
       usingTransport(everythingServerCommand): transport =>
-        McpClient[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest).flatMap: client =>
-          test(client).flatMap(assertion => client.close().map(_ => assertion))
+        McpClient
+          .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
+          .flatMap: client =>
+            test(client).flatMap(assertion => client.close().map(_ => assertion))
     )
