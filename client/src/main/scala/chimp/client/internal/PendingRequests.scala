@@ -1,5 +1,6 @@
 package chimp.client.internal
 
+import chimp.client.McpTimeoutException
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, RequestId}
 import sttp.shared.Identity
 
@@ -8,35 +9,35 @@ import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{Await, Promise}
 
 trait PendingRequests[F[_]]:
-  def register(id: RequestId, timeout: FiniteDuration): F[() => F[JSONRPCMessage]]
-  def complete(id: RequestId, msg: JSONRPCMessage): F[Boolean]
-  def isPending(id: RequestId): F[Boolean]
+  def register(requestId: RequestId, timeout: FiniteDuration): F[() => F[JSONRPCMessage]]
+  def complete(requestId: RequestId, msg: JSONRPCMessage): F[Boolean]
+  def isPending(requestId: RequestId): F[Boolean]
   def closeAll(reason: String): F[Unit]
 
 private[client] final class SyncPendingRequests extends PendingRequests[Identity]:
   private val pending = ConcurrentHashMap[RequestId, Promise[JSONRPCMessage]]()
 
-  override def register(id: RequestId, timeout: FiniteDuration): () => JSONRPCMessage =
+  override def register(requestId: RequestId, timeout: FiniteDuration): () => JSONRPCMessage =
     val promise = Promise[JSONRPCMessage]()
-    pending.put(id, promise)
+    pending.put(requestId, promise)
     () =>
       try Await.result(promise.future, timeout)
       catch
-        case t: TimeoutException =>
-          pending.computeIfPresent(id, (_, _) => null)
-          throw t
+        case _: TimeoutException =>
+          pending.computeIfPresent(requestId, (_, _) => null)
+          throw new McpTimeoutException(requestId)
 
-  override def complete(id: RequestId, msg: JSONRPCMessage): Boolean =
+  override def complete(requestId: RequestId, msg: JSONRPCMessage): Boolean =
     var completed = false
     pending.computeIfPresent(
-      id,
+      requestId,
       (_, promise) =>
         completed = promise.trySuccess(msg)
         null
     )
     completed
 
-  override def isPending(id: RequestId): Boolean = pending.containsKey(id)
+  override def isPending(requestId: RequestId): Boolean = pending.containsKey(requestId)
 
   override def closeAll(reason: String): Unit =
     val it = pending.entrySet().iterator()

@@ -8,7 +8,7 @@ import sttp.model.Uri
 import sttp.monad.syntax.*
 
 import scala.concurrent.Future
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 
 abstract class StreamingHttpIntegrationSpec[F[_], B]
     extends HttpIntegrationSpec[F, B]
@@ -29,7 +29,7 @@ abstract class StreamingHttpIntegrationSpec[F[_], B]
   def usingBidirectionalTransport[A](b: B, uri: Uri, timeout: FiniteDuration)(use: BidirectionalTransport[F] => F[A]): F[A]
 
   override def usingTransport[A](backend: B, uri: Uri)(use: Transport[F] => F[A]): F[A] =
-    usingBidirectionalTransport(backend, uri, 60.seconds)(use)
+    usingBidirectionalTransport(backend, uri, Transport.defaultTimeout)(use)
 
   private val clientInfo = Implementation(name = "chimp-integration", version = "0.0.1")
 
@@ -40,22 +40,24 @@ abstract class StreamingHttpIntegrationSpec[F[_], B]
   )(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion] =
     toFuture(
       usingBackend: backend =>
-        usingBidirectionalTransport(backend, mcpEverythingContainer.mcpUri, 60.seconds): transport =>
-          McpClient[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
+        usingBidirectionalTransport(backend, mcpEverythingContainer.mcpUri, Transport.defaultTimeout): transport =>
+          McpClient
+            .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
             .flatMap: client =>
               test(client).flatMap(assertion => client.close().map(_ => assertion))
     )
 
   override protected def withProxiedBidirectionalClient(
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
-      timeout: FiniteDuration = 60.seconds
+      timeout: FiniteDuration = Transport.defaultTimeout
   )(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion] =
     proxyContainer.restoreConnections()
     proxyContainer.clearToxics()
     toFuture(
       usingBackend: backend =>
         usingBidirectionalTransport(backend, proxyContainer.mcpUri, timeout): transport =>
-          McpClient[F](transport, clientInfo, None, samplingHandler, None, ProtocolVersion.Latest)
+          McpClient
+            .bidirectional[F](transport, clientInfo, None, samplingHandler, None, ProtocolVersion.Latest)
             .flatMap: client =>
               test(proxyContainer, client).flatMap(assertion => client.close().map(_ => assertion))
     )

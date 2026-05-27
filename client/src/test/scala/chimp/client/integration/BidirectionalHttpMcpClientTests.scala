@@ -1,7 +1,8 @@
 package chimp.client.integration
 
-import chimp.client.BidirectionalMcpClient
 import chimp.client.notifications.{ServerNotification, ServerNotificationListener}
+import chimp.client.transport.Transport
+import chimp.client.{BidirectionalMcpClient, McpTimeoutException}
 import chimp.protocol.*
 import io.circe.Json
 import org.scalatest.Assertion
@@ -9,7 +10,6 @@ import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 import sttp.monad.syntax.*
 
-import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 import scala.concurrent.Future
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -19,7 +19,7 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
 
   protected def withProxiedBidirectionalClient(
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
-      timeout: FiniteDuration = 60.seconds
+      timeout: FiniteDuration = Transport.defaultTimeout
   )(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion]
 
   "GET SSE stream" should "resume delivering notifications after the underlying connection is cut" in:
@@ -86,7 +86,7 @@ trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
       for _ <- attempt
       yield
         samplingInvoked.get() shouldBe true
-        failure.get().exists(_.isInstanceOf[TimeoutException]) shouldBe true
+        failure.get().exists(_.isInstanceOf[McpTimeoutException]) shouldBe true
 
   private def loggingCounter(counter: AtomicInteger): ServerNotificationListener[F] = notification =>
     notification match

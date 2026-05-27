@@ -10,14 +10,26 @@ import java.io.*
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 import scala.jdk.CollectionConverters.*
 
+/** A synchronous implementation of MCP Stdio transport. Launches a local MCP server as a subprocess and exchanges line-delimited JSON-RPC
+  * messages over its standard input and output. Standard error from the subprocess is drained and forwarded to the logger.
+  *
+  * @param command
+  *   The command and arguments used to start the subprocess.
+  * @param env
+  *   Additional environment variables to set for the subprocess.
+  * @param workDir
+  *   Optional working directory for the subprocess.
+  * @param timeout
+  *   Maximum time to wait for a response to each request before raising an [[chimp.client.McpTimeoutException]].
+  */
 final class StdioTransport(
     command: List[String],
     env: Map[String, String] = Map.empty,
     workDir: Option[File] = None,
-    timeout: FiniteDuration = 60.seconds
+    timeout: FiniteDuration = Transport.defaultTimeout
 ) extends BidirectionalTransport[Identity]:
 
   private val log = LoggerFactory.getLogger(classOf[StdioTransport])
