@@ -244,7 +244,7 @@ lazy val docs: Project = (project in file("generated-docs"))
       "VERSION" -> version.value
     ),
     mdocOut := file("generated-docs/out"),
-    mdocExtraArguments := Seq("--clean-target"),
+    mdocExtraArguments := Seq("--clean-target", "--exclude", ".venv", "--exclude", "_build"),
     publishArtifact := false,
     name := "docs"
   )
