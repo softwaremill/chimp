@@ -228,3 +228,24 @@ lazy val clientConformance = (project in file("client-conformance"))
     }
   )
   .dependsOn(client)
+
+val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
+compileDocs := {
+  (docs / mdoc).toTask(" --out target/chimp-docs").value
+}
+
+lazy val docs: Project = (project in file("generated-docs"))
+  .enablePlugins(MdocPlugin)
+  .settings(commonSettings)
+  .settings(
+    mdocIn := file("docs"),
+    moduleName := "chimp-docs",
+    mdocVariables := Map(
+      "VERSION" -> version.value
+    ),
+    mdocOut := file("generated-docs/out"),
+    mdocExtraArguments := Seq("--clean-target"),
+    publishArtifact := false,
+    name := "docs"
+  )
+  .dependsOn(core, server, client, clientZio)

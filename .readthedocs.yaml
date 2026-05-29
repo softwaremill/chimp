@@ -1,0 +1,13 @@
+version: 2
+
+sphinx:
+  configuration: generated-docs/out/conf.py
+
+python:
+  install:
+    - requirements: generated-docs/out/requirements.txt
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
