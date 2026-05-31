@@ -24,5 +24,5 @@ source .venv/bin/activate
 
 ## Notes
 
-- `0.1.8+11-2a8e17d4+20260529-1138-SNAPSHOT` and other mdoc variables are **not** substituted in this mode. For a fully-rendered preview, run `sbt 'docs/mdoc'` from the repo root and serve `generated-docs/out/` instead.
+- `0.1.8+14-8ce910d5+20260531-1230-SNAPSHOT` and other mdoc variables are **not** substituted in this mode. For a fully-rendered preview, run `sbt 'docs/mdoc'` from the repo root and serve `generated-docs/out/` instead.
 - Scala code snippets are verified by `sbt compileDocs` (also runs in CI).

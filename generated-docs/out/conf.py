@@ -28,7 +28,7 @@ if os.environ.get("READTHEDOCS", "") == "True":
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['myst_parser', 'sphinx_rtd_theme']
+extensions = ['myst_parser', 'sphinx_rtd_theme', 'sphinxcontrib.mermaid']
 
 myst_enable_extensions = ['attrs_block']
 

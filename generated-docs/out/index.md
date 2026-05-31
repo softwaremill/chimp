@@ -5,8 +5,13 @@ Chimp is a library for building [MCP](https://modelcontextprotocol.io/specificat
 ```{eval-rst}
 .. toctree::
    :maxdepth: 2
-   :caption: Topics
+   :caption: Server
 
    server/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Client
+
    client/index
 ```

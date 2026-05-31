@@ -22,7 +22,17 @@ source .venv/bin/activate
 ./watch.sh
 ```
 
+## Publishing changes
+
+Read the Docs builds from `generated-docs/out/`, **not** from this `docs/` folder. After editing the docs, regenerate that output with mdoc:
+
+```
+sbt compileDocs
+```
+
+Commit both `docs/` (the source) and `generated-docs/` (the mdoc output) — if `generated-docs/` is stale, the published site won't reflect your changes.
+
 ## Notes
 
-- `@VERSION@` and other mdoc variables are **not** substituted in this mode. For a fully-rendered preview, run `sbt 'docs/mdoc'` from the repo root and serve `generated-docs/out/` instead.
+- `@VERSION@` and other mdoc variables are **not** substituted in the local watch mode. For a fully-rendered preview, run `sbt docs/mdoc` from the repo root and serve `generated-docs/out/` instead.
 - Scala code snippets are verified by `sbt compileDocs` (also runs in CI).
