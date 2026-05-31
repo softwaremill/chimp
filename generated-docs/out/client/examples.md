@@ -85,4 +85,4 @@ object RootsClient extends ZIOAppDefault:
     }
 ```
 
-More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/chimp).
+More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

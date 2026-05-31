@@ -26,15 +26,15 @@ classDiagram
     class StreamingStdioTransport~F~ {
         <<abstract>>
     }
-    class EffectSpecificStreaming {
-        ox, ZIO, Pekko, etc.
-    }
 
     Transport <|-- BidirectionalTransport
     Transport <|-- HttpTransport
     BidirectionalTransport <|-- StdioTransport
     BidirectionalTransport <|-- StreamingHttpTransport
     BidirectionalTransport <|-- StreamingStdioTransport
-    StreamingHttpTransport <|-- EffectSpecificStreaming
-    StreamingStdioTransport <|-- EffectSpecificStreaming
 ```
+
+## Backends
+
+- **HTTP** transports run on any [sttp](https://sttp.softwaremill.com/en/latest/) backend. The streaming HTTP transports additionally require a backend with streaming capability.
+- **STDIO** transports, on the other hand, can run using plain JDK components (synchronous), or using various libraries that support asynchronous streaming.

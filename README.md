@@ -55,8 +55,7 @@ import io.circe.Json
 
 ## Documentation
 
-Full documentation is available at **[chimp.readthedocs.io](https://chimp.readthedocs.io)**. Runnable examples live
-in [`examples/`](examples/src/main/scala/chimp).
+Full documentation is available at **[chimp.softwaremill.com](https://chimp.softwaremill.com/)**.
 
 ## Contributing
 
