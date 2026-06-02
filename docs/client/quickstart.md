@@ -5,7 +5,7 @@ Chimp ships an MCP client that connects to any MCP-compliant server. The client 
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.2.0"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.3.0"
 ```
 
 ## Example: the simplest MCP client
@@ -13,7 +13,7 @@ libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.2.0"
 Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example that connects to an MCP server over HTTP and invokes a tool:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-client:0.2.0
+//> using dep com.softwaremill.chimp::chimp-client:0.3.0
 //> using dep com.softwaremill.sttp.client4::core:4.0.23
 
 import chimp.client.*
@@ -39,5 +39,5 @@ import sttp.shared.Identity
 For streaming transports (e.g. ZIO), also add:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.2.0"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.3.0"
 ```

@@ -5,7 +5,7 @@ Chimp lets you expose MCP tools over a JSON-RPC HTTP API. Tool inputs are descri
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.2.0"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.3.0"
 ```
 
 ## Example: the simplest MCP server
@@ -13,7 +13,7 @@ libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.2.0"
 Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server:0.2.0
+//> using dep com.softwaremill.chimp::chimp-server:0.3.0
 
 import chimp.*
 import sttp.tapir.*
