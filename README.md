@@ -63,7 +63,7 @@ Contributions are welcome! Please open issues or pull requests.
 
 ## Commercial Support
 
-We offer commercial support for Tapir and related technologies, as well as development
+We offer commercial support for Chimp and related technologies, as well as development
 services. [Contact us](https://softwaremill.com) to learn more about our offer!
 
 ## Copyright
