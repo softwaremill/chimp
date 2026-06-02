@@ -68,4 +68,4 @@ services. [Contact us](https://softwaremill.com) to learn more about our offer!
 
 ## Copyright
 
-Copyright (C) 2026 SoftwareMill [https://softwaremill.com](https://softwaremill.com).
+Copyright (C) 2025-2026 SoftwareMill [https://softwaremill.com](https://softwaremill.com).
