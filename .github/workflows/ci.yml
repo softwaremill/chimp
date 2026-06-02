@@ -10,8 +10,6 @@ permissions:
   pull-requests: write   # labeler, auto-merge requirement    
 jobs:
   build:
-    # run on 1) push, 2) external PRs, 3) softwaremill-ci PRs
-    # do not run on internal, non-steward PRs since those will be run by push to branch
     if: |
       github.event_name == 'push' || 
       github.event.pull_request.head.repo.full_name != github.repository ||
@@ -44,6 +42,8 @@ jobs:
         # TODO bring this step back after first release with new project structure (client + server)
 #      - name: Verify that examples compile using Scala CLI
 #        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
+      - name: Compile documentation
+        run: sbt -v compileDocs
       - name: Unit tests
         run: sbt -v test
       - name: Client conformance tests
@@ -52,8 +52,8 @@ jobs:
         run: sbt -v "serverConformance/conformance server"
       - name: Integration tests
         run: sbt -v "testOnly -- -n Integration"
-      - uses: actions/upload-artifact@v5  # upload test results
-        if: success() || failure()        # run this step even if previous step failed
+      - uses: actions/upload-artifact@v5
+        if: success() || failure()
         with:
           name: 'tests-results'
           path: '**/test-reports/TEST*.xml'    
@@ -68,13 +68,11 @@ jobs:
       sttp-native: 1
 
   label:
-    # only for PRs by 
     if: github.event.pull_request.user.login == 'softwaremill-ci'
     uses: softwaremill/github-actions-workflows/.github/workflows/label.yml@main
     secrets: inherit
 
   auto-merge:
-    # only for PRs by softwaremill-ci
     if: github.event.pull_request.user.login == 'softwaremill-ci'
     needs: [ build, label ]
     uses: softwaremill/github-actions-workflows/.github/workflows/auto-merge.yml@main
