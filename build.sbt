@@ -5,7 +5,7 @@ import com.softwaremill.UpdateVersionInDocs
 val scalaTestV = "3.2.20"
 val circeV = "0.14.15"
 val slf4jV = "2.0.18"
-val logbackV = "1.5.33"
+val logbackV = "1.5.34"
 val tapirV = "1.13.19"
 val sttpClientV = "4.0.25"
 val zioV = "2.1.26"
@@ -210,7 +210,7 @@ lazy val clientConformance = (project in file("client-conformance"))
     Compile / mainClass := Some("chimp.conformance.client.Main"),
     assembly / assemblyJarName := "chimp-client-conformance.jar",
     libraryDependencies ++= Seq(
-      "ch.qos.logback" % "logback-classic" % "1.5.33"
+      "ch.qos.logback" % "logback-classic" % "1.5.34"
     ),
     conformance := {
       import complete.DefaultParsers.*
@@ -230,9 +230,8 @@ lazy val clientConformance = (project in file("client-conformance"))
   .dependsOn(client)
 
 val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
-compileDocs := {
+compileDocs :=
   (docs / mdoc).toTask(" --out target/chimp-docs").value
-}
 
 lazy val docs: Project = (project in file("generated-docs"))
   .enablePlugins(MdocPlugin)
