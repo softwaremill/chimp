@@ -1,4 +1,4 @@
-//> using dep com.softwaremill.chimp::chimp-client:0.2.0
+//> using dep com.softwaremill.chimp::chimp-client:0.3.0
 //> using dep com.softwaremill.sttp.client4::core:4.0.23
 //> using dep ch.qos.logback:logback-classic:1.5.32
 
