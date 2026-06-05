@@ -1,15 +1,12 @@
 package chimp.server
 
 import io.circe.Json
-import org.slf4j.LoggerFactory
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
 import sttp.model.Header
-
-private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
 
 /** Creates a Tapir endpoint description, which will handle MCP HTTP server requests, using the provided tools.
   *
@@ -19,10 +16,10 @@ private val logger = LoggerFactory.getLogger(classOf[McpHandler[_]])
   *   The path components at which to expose the MCP server.
   *
   * @tparam F
-  *   The effect type. Might be `Identity` for a endpoints with synchronous logic.
+  *   The effect type. Might be `Identity` for endpoints with synchronous logic.
   */
 def mcpEndpoint[F[_]](
-    tools: List[ServerTool[?, F]],
+    tools: List[ServerTool[?, F, ServerContext[F]]],
     path: List[String],
     name: String = "Chimp MCP server",
     version: String = "1.0.0",
