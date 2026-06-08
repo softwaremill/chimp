@@ -36,8 +36,8 @@ object ToolResult:
   def structured[A: Encoder](value: A): ToolResult = ToolResult(Nil, structuredContent = Some(value.asJson))
   def fromEither(result: Either[String, String]): ToolResult = result.fold(error, text)
 
-/** A tool's input schema, either derived from a Tapir [[Schema]] or supplied directly as raw JSON Schema (for dialects Tapir cannot express,
-  * e.g. JSON Schema 2020-12 with `additionalProperties: false`).
+/** A tool's input schema, either derived from a Tapir [[Schema]] or supplied directly as raw JSON Schema (for dialects Tapir cannot
+  * express, e.g. JSON Schema 2020-12 with `additionalProperties: false`).
   */
 enum ToolSchema:
   case Derived(schema: Schema[?])
@@ -61,7 +61,8 @@ case class PartialTool(
   def withAnnotations(ann: ToolAnnotations): PartialTool = copy(annotations = Some(ann))
 
   /** Specify the input type for the tool, providing both a Tapir Schema and a Circe Decoder. */
-  def input[I: Schema: Decoder]: Tool[I] = Tool[I](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], annotations)
+  def input[I: Schema: Decoder]: Tool[I] =
+    Tool[I](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], annotations)
 
   /** Specify the tool's input schema directly as raw JSON Schema. The tool receives its arguments as raw [[Json]]. */
   def inputJson(schema: Json): Tool[Json] = Tool[Json](name, description, ToolSchema.Raw(schema), summon[Decoder[Json]], annotations)

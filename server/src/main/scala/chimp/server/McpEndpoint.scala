@@ -8,24 +8,8 @@ import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
 import sttp.model.Header
 
-/** Creates a Tapir endpoint description, which will handle MCP HTTP server requests, using the provided tools.
-  *
-  * @param tools
-  *   The list of tools to expose.
-  * @param path
-  *   The path components at which to expose the MCP server.
-  *
-  * @tparam F
-  *   The effect type. Might be `Identity` for endpoints with synchronous logic.
-  */
-def mcpEndpoint[F[_]](
-    tools: List[ServerTool[?, F, ServerContext[F]]],
-    path: List[String],
-    name: String = "Chimp MCP server",
-    version: String = "1.0.0",
-    showJsonSchemaMetadata: Boolean = true
-): ServerEndpoint[Any, F] =
-  val mcpHandler = new McpHandler(tools, name, version, showJsonSchemaMetadata)
+private[server] def buildEndpoint[F[_]](server: McpServer[F], path: List[String]): ServerEndpoint[Any, F] =
+  val mcpHandler = new McpHandler(server)
   val e = infallibleEndpoint.post
     .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
     .in(extractFromRequest(_.headers))

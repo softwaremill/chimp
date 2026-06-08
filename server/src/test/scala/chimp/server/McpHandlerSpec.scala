@@ -24,17 +24,17 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
   val echoTool = tool("echo")
     .description("Echoes the input message.")
     .input[EchoInput]
-    .handle(in => Right(in.message))
+    .handle(in => ToolResult.text(in.message))
 
   val addTool = tool("add")
     .description("Adds two numbers.")
     .input[AddInput]
-    .handle(in => Right((in.a + in.b).toString))
+    .handle(in => ToolResult.text((in.a + in.b).toString))
 
   val errorTool = tool("fail")
     .description("Always fails.")
     .input[EchoInput]
-    .handle(_ => Left("Intentional failure"))
+    .handle(_ => ToolResult.error("Intentional failure"))
 
   // Tool that echoes the header's value for testing
   case class HeaderEchoInput(dummy: String) derives Schema, Codec
@@ -42,16 +42,44 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     .description("Echoes the header value if present.")
     .input[HeaderEchoInput]
     .handleWithHeaders { (_, headers) =>
-      if headers.isEmpty then Right("no header")
+      if headers.isEmpty then ToolResult.text("no header")
       else
-        Right(
+        ToolResult.text(
           headers
             .map(header => s"header name: ${header.name}, header value: ${header.value}")
             .mkString(", ")
         )
     }
 
-  val handler = McpHandler(List(echoTool, addTool, errorTool, headerEchoTool), "Chimp MCP server", "1.0.0", true)
+  val handler = McpHandler(McpServer(name = "Chimp MCP server", tools = List(echoTool, addTool, errorTool, headerEchoTool)))
+
+  // Feature fixtures (resources, prompts, completion, logging)
+  private val textResource = resource("test://text")
+    .name("text")
+    .mimeType("text/plain")
+    .handle(() => Right(List(ResourceContents.Text(uri = "test://text", text = "hello text", mimeType = Some("text/plain")))))
+
+  private val itemTemplate = resourceTemplate("test://item/{id}")
+    .name("item")
+    .handle((vars, uri) => Right(List(ResourceContents.Text(uri = uri, text = s"item ${vars("id")}"))))
+
+  private val greetPrompt = prompt("greet")
+    .description("Greets by name")
+    .argument("name", required = true)
+    .handle(args =>
+      GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = s"Hello ${args.getOrElse("name", "?")}"))))
+    )
+
+  private val levelRef = new java.util.concurrent.atomic.AtomicReference(Option.empty[LoggingLevel])
+
+  private val featuresServer = McpServer[Identity](name = "Features")
+    .addResource(textResource)
+    .addResourceTemplate(itemTemplate)
+    .addPrompt(greetPrompt)
+    .withCompletion((_, _, _) => Completion(values = List("Alice", "Bob")))
+    .withLogging(level => levelRef.set(Some(level)))
+
+  private val featuresHandler = McpHandler(featuresServer)
 
   def parseJson(str: String): Json = parse(str).getOrElse(throw new RuntimeException("Invalid JSON"))
 
@@ -337,9 +365,9 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     val optionalTool = tool("optionalTest")
       .description("Test tool with optional fields.")
       .input[OptionalFieldInput]
-      .handle(_ => Right("ok"))
+      .handle(_ => ToolResult.text("ok"))
 
-    val handlerWithOptional = McpHandler(List(optionalTool), "Test", "1.0.0", true)
+    val handlerWithOptional = McpHandler(McpServer(name = "Test", tools = List(optionalTool)))
 
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("opt1"))
     val json = req.asJson
@@ -375,3 +403,92 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         requiredFields should contain("requiredField")
         requiredFields should not contain "optionalField"
       case _ => fail("Expected Response")
+
+  private def featureResult(method: String, params: Option[Json], id: String): JSONRPCMessage =
+    val req: JSONRPCMessage = Request(method = method, params = params, id = RequestId(id))
+    val response = featuresHandler.handleJsonRpc(req.asJson, Seq.empty)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("Failed to decode response"))
+
+  it should "list resources" in:
+    featureResult("resources/list", None, "r1") match
+      case Response(_, _, result) =>
+        result.as[ListResourcesResult].getOrElse(fail("result")).resources.map(_.uri) shouldBe List("test://text")
+      case _ => fail("Expected Response")
+
+  it should "read a static text resource" in:
+    val params = Json.obj("uri" -> Json.fromString("test://text"))
+    featureResult("resources/read", Some(params), "r2") match
+      case Response(_, _, result) =>
+        result.as[ReadResourceResult].getOrElse(fail("result")).contents shouldBe
+          List(ResourceContents.Text(uri = "test://text", text = "hello text", mimeType = Some("text/plain")))
+      case _ => fail("Expected Response")
+
+  it should "read a templated resource, substituting variables" in:
+    val params = Json.obj("uri" -> Json.fromString("test://item/42"))
+    featureResult("resources/read", Some(params), "r3") match
+      case Response(_, _, result) =>
+        val contents = result.as[ReadResourceResult].getOrElse(fail("result")).contents
+        contents.head match
+          case ResourceContents.Text(uri, text, _, _) =>
+            uri shouldBe "test://item/42"
+            text should include("42")
+          case _ => fail("Expected text contents")
+      case _ => fail("Expected Response")
+
+  it should "return a -32602 error with data.uri for an unknown resource (sep-2164)" in:
+    val params = Json.obj("uri" -> Json.fromString("test://missing"))
+    featureResult("resources/read", Some(params), "r4") match
+      case Error(_, _, error) =>
+        error.code shouldBe InvalidParams.code
+        error.data.flatMap(_.hcursor.downField("uri").as[String].toOption) shouldBe Some("test://missing")
+      case _ => fail("Expected Error")
+
+  it should "list prompts" in:
+    featureResult("prompts/list", None, "p1") match
+      case Response(_, _, result) =>
+        result.as[ListPromptsResult].getOrElse(fail("result")).prompts.map(_.name) shouldBe List("greet")
+      case _ => fail("Expected Response")
+
+  it should "get a prompt, substituting arguments" in:
+    val params = Json.obj("name" -> Json.fromString("greet"), "arguments" -> Json.obj("name" -> Json.fromString("World")))
+    featureResult("prompts/get", Some(params), "p2") match
+      case Response(_, _, result) =>
+        result.as[GetPromptResult].getOrElse(fail("result")).messages.head.content match
+          case ToolContent.Text(_, text) => text should include("World")
+          case _                         => fail("Expected text content")
+      case _ => fail("Expected Response")
+
+  it should "return completion values" in:
+    val params = Json.obj(
+      "ref" -> Json.obj("type" -> Json.fromString("ref/prompt"), "name" -> Json.fromString("greet")),
+      "argument" -> Json.obj("name" -> Json.fromString("name"), "value" -> Json.fromString("A"))
+    )
+    featureResult("completion/complete", Some(params), "c1") match
+      case Response(_, _, result) =>
+        result.as[CompleteResult].getOrElse(fail("result")).completion.values shouldBe List("Alice", "Bob")
+      case _ => fail("Expected Response")
+
+  it should "set the logging level and return an empty result" in:
+    val params = Json.obj("level" -> Json.fromString("info"))
+    featureResult("logging/setLevel", Some(params), "l1") match
+      case Response(_, _, result) => result shouldBe Json.obj()
+      case _                      => fail("Expected Response")
+    levelRef.get() shouldBe Some(LoggingLevel.Info)
+
+  it should "advertise capabilities derived from registered features" in:
+    featureResult("initialize", None, "i1") match
+      case Response(_, _, result) =>
+        val caps = result.as[InitializeResult].getOrElse(fail("result")).capabilities
+        caps.resources.flatMap(_.subscribe) shouldBe Some(false)
+        caps.prompts.isDefined shouldBe true
+        caps.completions.isDefined shouldBe true
+        caps.logging.isDefined shouldBe true
+        caps.tools shouldBe None
+      case _ => fail("Expected Response")
+
+  it should "return MethodNotFound for a feature method that is not configured" in:
+    // featuresServer has no subscriptions handler, so resources/subscribe is not available
+    val params = Json.obj("uri" -> Json.fromString("test://text"))
+    featureResult("resources/subscribe", Some(params), "n1") match
+      case Error(_, _, error) => error.code shouldBe MethodNotFound.code
+      case _                  => fail("Expected Error")

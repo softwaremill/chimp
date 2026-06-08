@@ -23,9 +23,9 @@ import sttp.tapir.server.netty.sync.NettySyncServer
       headers.find(_.name == "test_header").map(t => s"token: ${t.value} (header name used: ${t.name})").getOrElse("no token provided")
     Right(s"The result is ${i.a + i.b} ($tokenMsg)")
 
-  val adderServerTool = adderTool.handleWithHeaders(logic)
+  val adderServerTool = adderTool.handleWithHeaders((i, headers) => ToolResult.fromEither(logic(i, headers)))
 
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
+  val mcpServerEndpoint = McpServer(tools = List(adderServerTool)).endpoint(List("mcp"))
 
   NettySyncServer()
     .port(8080)

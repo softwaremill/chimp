@@ -18,16 +18,16 @@ case class IsFibonacciInput(n: Int) derives Codec, Schema
     .input[IsPrimeInput]
     .handle(i =>
       if i.n <= 0
-      then Left("Only positive numbers can be prime-checked")
-      else Right(isPrimeWithDescription(i.n))
+      then ToolResult.error("Only positive numbers can be prime-checked")
+      else ToolResult.text(isPrimeWithDescription(i.n))
     )
 
   val isFibonacci = tool("isFibonacci")
     .description("Checks if a number is a Fibonacci number")
     .input[IsFibonacciInput]
-    .handle(i => Right(isFibonacciWithDescription(i.n)))
+    .handle(i => ToolResult.text(isFibonacciWithDescription(i.n)))
 
-  val mcpServerEndpoint = mcpEndpoint(List(isPrimeTool, isFibonacci), List("mcp"))
+  val mcpServerEndpoint = McpServer(tools = List(isPrimeTool, isFibonacci)).endpoint(List("mcp"))
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 
 private def smallestDivisor(n: Int): Int =

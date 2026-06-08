@@ -30,12 +30,13 @@ case class OpenMeteoResponse(current_weather: OpenMeteoCurrentWeather) derives C
     .description("Checks the weather in the given city")
     .input[WeatherInput]
     .handle: input =>
-      either:
-        val geocodeResult = geocodeCity(input.city, sttpBackend).ok()
-        val weatherResult = fetchWeather(geocodeResult.lat, geocodeResult.lon, sttpBackend).ok()
-        weatherDescription(geocodeResult.display_name, weatherResult.temperature, weatherResult.weathercode)
+      ToolResult.fromEither:
+        either:
+          val geocodeResult = geocodeCity(input.city, sttpBackend).ok()
+          val weatherResult = fetchWeather(geocodeResult.lat, geocodeResult.lon, sttpBackend).ok()
+          weatherDescription(geocodeResult.display_name, weatherResult.temperature, weatherResult.weathercode)
 
-  val mcpServerEndpoint = mcpEndpoint(List(weatherTool), List("mcp"))
+  val mcpServerEndpoint = McpServer(tools = List(weatherTool)).endpoint(List("mcp"))
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 
 /** Maps Open-Meteo weather codes to human-readable descriptions. */

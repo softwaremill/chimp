@@ -3,8 +3,8 @@
 - Use `tool(name)` to start defining a tool.
 - Add a description and annotations for metadata and hints.
 - Specify the input type (must have a Circe `Codec` and Tapir `Schema`).
-- Provide the server logic as a function from input to `Either[String, String]` (or a generic effect type).
+- Provide the server logic as a function from input to `ToolResult` (or a generic effect type).
   - Use `handle` to connect the tool definition with the server logic when the use of headers is not required.
   - Use `handleWithHeaders` to connect the tool definition with the server logic when headers are required.
-- Create a Tapir endpoint by providing your tools to `mcpEndpoint`.
+- Assemble your tools into an `McpServer` and call `.endpoint(path)` to create a Tapir endpoint.
 - Start an HTTP server using your preferred Tapir server interpreter.
