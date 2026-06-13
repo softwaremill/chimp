@@ -16,7 +16,7 @@ lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each ex
 
 lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   organization := "com.softwaremill.chimp",
-  scalaVersion := "3.3.7",
+  scalaVersion := "3.3.8",
   updateDocs := Def.taskDyn {
     val files = UpdateVersionInDocs(sLog.value, organization.value, version.value)
     Def.task {
