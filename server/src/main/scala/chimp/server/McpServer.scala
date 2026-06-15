@@ -23,6 +23,7 @@ case class McpServer[F[_]](
     version: String = "1.0.0",
     instructions: Option[String] = None,
     showJsonSchemaMetadata: Boolean = true,
+    originCheck: OriginCheck = OriginCheck.localhostOnly,
     tools: List[ServerTool[?, F, ServerContext[F]]] = Nil,
     prompts: List[ServerPrompt[F]] = Nil,
     resources: List[ServerResource[F]] = Nil,
@@ -35,6 +36,7 @@ case class McpServer[F[_]](
   def version(value: String): McpServer[F] = copy(version = value)
   def instructions(value: String): McpServer[F] = copy(instructions = Some(value))
   def withJsonSchemaMetadata(value: Boolean): McpServer[F] = copy(showJsonSchemaMetadata = value)
+  def withOriginCheck(value: OriginCheck): McpServer[F] = copy(originCheck = value)
 
   def addTool(t: ServerTool[?, F, ServerContext[F]]): McpServer[F] = copy(tools = tools :+ t)
   def addTools(ts: ServerTool[?, F, ServerContext[F]]*): McpServer[F] = copy(tools = tools ++ ts)
