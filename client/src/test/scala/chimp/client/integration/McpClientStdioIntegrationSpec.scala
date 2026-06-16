@@ -12,12 +12,12 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.Future
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
-abstract class StdioIntegrationSpec[F[_]]
+abstract class McpClientStdioIntegrationSpec[F[_]]
     extends AsyncFlatSpec
     with Matchers
     with IntegrationSpec
     with McpClientTests[F]
-    with BidirectionalMcpClientTests[F]:
+    with McpClientBidirectionalTests[F]:
   this: ToFuture[F] =>
 
   protected val everythingServerCommand: List[String] =

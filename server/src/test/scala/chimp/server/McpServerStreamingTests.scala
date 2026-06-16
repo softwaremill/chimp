@@ -14,10 +14,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.*
 
-/** Tests for server→client streaming behavior: notifications emitted by tool logic mid-call must reach the client over the open SSE stream
-  * before the call's final result. Run only by streaming-capable backends.
-  */
-trait StreamingMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers:
+trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
   this: ToFuture[F] =>
 
   protected def withStreamingServer(server: StreamingMcpServer[F])(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion]
@@ -26,17 +23,17 @@ trait StreamingMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers:
 
   protected def streamingServer: StreamingMcpServer[F] =
     StreamingMcpServer[F]()
-      .withLogging(_ => monad.unit(()))
+      .withLoggingLevel(_ => monad.unit(()))
       .addStreamingTool(
         tool("noisy")
           .description("Logs several messages, then returns")
           .input[NoInput]
           .streamingServerLogic[F]: (_, ctx, _) =>
-            ctx
-              .log(LoggingLevel.Info, Json.fromString("one"))
-              .flatMap(_ => ctx.log(LoggingLevel.Info, Json.fromString("two")))
-              .flatMap(_ => ctx.log(LoggingLevel.Info, Json.fromString("three")))
-              .map(_ => ToolResult.text("done"))
+            for
+              _ <- ctx.log(LoggingLevel.Info, Json.fromString("one"))
+              _ <- ctx.log(LoggingLevel.Info, Json.fromString("two"))
+              _ <- ctx.log(LoggingLevel.Info, Json.fromString("three"))
+            yield ToolResult.text("done")
       )
 
   "a streaming MCP server" should "deliver log notifications emitted during a tool call" in
@@ -47,7 +44,7 @@ trait StreamingMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers:
         case _                                         => monad.unit(())
       }
       client
-        .onServerNotification(n => listener(n))
+        .onServerNotification(notification => listener(notification))
         .flatMap(_ => client.callTool("noisy", Json.obj()))
         .flatMap: result =>
           waitUntil(messages.size >= 3).map: _ =>

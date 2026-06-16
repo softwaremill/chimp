@@ -12,7 +12,7 @@ import sttp.monad.syntax.*
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import scala.concurrent.Future
 
-trait BidirectionalMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
+trait McpClientBidirectionalTests[F[_]] extends AsyncFlatSpec with Matchers:
   this: ToFuture[F] =>
 
   protected def withBidirectionalClient(

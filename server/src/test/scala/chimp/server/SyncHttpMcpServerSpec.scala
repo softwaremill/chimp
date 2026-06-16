@@ -11,7 +11,6 @@ import sttp.tapir.server.netty.sync.NettySyncServer
 
 import scala.concurrent.Future
 
-/** Runs the generic server tests against a [[NettySyncServer]] (Identity effect), driven by the chimp synchronous HTTP client. */
 class SyncHttpMcpServerSpec extends McpServerTests[Identity] with SyncToFuture:
   private val clientInfo = Implementation("chimp-server-test", "0.0.1")
 

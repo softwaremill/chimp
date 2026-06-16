@@ -1,7 +1,7 @@
 package chimp.server.zio
 
 import chimp.protocol.JSONRPCMessage
-import chimp.server.{McpStreaming, OutboundSink}
+import chimp.server.{McpServerStreaming, OutboundSink}
 import io.circe.Json
 import io.circe.syntax.*
 import sttp.capabilities.zio.ZioStreams
@@ -13,11 +13,9 @@ import zio.{Queue, Task, ZIO}
 
 import java.nio.charset.StandardCharsets
 
-/** ZIO/zio-http implementation of [[McpStreaming]]. Each request's server→client messages are buffered through a `Queue` and drained as a
-  * chunked `text/event-stream` response, so events flush to the client as the tool logic produces them.
-  */
-object ZioMcpStreaming extends McpStreaming[Task, ZioStreams]:
+object ZioMcpServerStreaming extends McpServerStreaming[Task, ZioStreams]:
   val streams: ZioStreams = ZioStreams
+
   type EventStream = Stream[Throwable, ServerSentEvent]
 
   val sseBody: StreamBodyIO[Stream[Throwable, Byte], EventStream, ZioStreams] =
@@ -35,8 +33,8 @@ object ZioMcpStreaming extends McpStreaming[Task, ZioStreams]:
             def send(message: JSONRPCMessage): Task[Unit] =
               queue.offer(Some(ServerSentEvent(data = Some(message.asJson.noSpaces)))).unit
           _ <- handle(sink)
-            .flatMap { finalBody =>
-              ZIO.foreachDiscard(finalBody)(json => queue.offer(Some(ServerSentEvent(data = Some(json.noSpaces))))) *> queue.offer(None)
+            .flatMap { message =>
+              ZIO.foreachDiscard(message)(message => queue.offer(Some(ServerSentEvent(data = Some(message.noSpaces))))) *> queue.offer(None)
             }
             .catchAllCause(_ => queue.offer(None).unit)
             .forkDaemon

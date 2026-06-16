@@ -12,7 +12,7 @@ import sttp.monad.syntax.*
 
 import scala.concurrent.Future
 
-abstract class HttpIntegrationSpec[F[_], B]
+abstract class McpClientHttpIntegrationSpec[F[_], B]
     extends AsyncFlatSpec
     with Matchers
     with BeforeAndAfterAll
@@ -21,7 +21,7 @@ abstract class HttpIntegrationSpec[F[_], B]
   this: ToFuture[F] =>
 
   protected val network: Network = Network.newNetwork()
-  protected val mcpEverythingContainer: MCPEverythingContainer = new MCPEverythingContainer(network = Some(network))
+  protected val mcpEverythingContainer: McpEverythingContainer = new McpEverythingContainer(network = Some(network))
 
   override def beforeAll(): Unit =
     super.beforeAll()

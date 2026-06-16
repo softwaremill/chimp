@@ -4,7 +4,7 @@ import chimp.client.transport.Transport
 import chimp.client.transport.zio.ZioStreamingHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
 import chimp.protocol.{Implementation, ProtocolVersion}
-import chimp.server.{McpServer, McpServerTests, StreamingMcpServer, StreamingMcpServerTests}
+import chimp.server.{McpServer, McpServerStreamingTests, McpServerTests, StreamingMcpServer}
 import org.scalatest.Assertion
 import sttp.client4.*
 import sttp.client4.httpclient.zio.HttpClientZioBackend
@@ -14,10 +14,7 @@ import zio.{Scope, Task, ZIO}
 
 import scala.concurrent.Future
 
-/** Runs the generic server tests — including the streaming ones — against a zio-http server hosting chimp's SSE endpoint, driven by the chimp
-  * ZIO streaming client.
-  */
-class ZioStreamingMcpServerSpec extends McpServerTests[Task] with StreamingMcpServerTests[Task] with ZioToFuture:
+class ZioMcpServerStreamingSpec extends McpServerTests[Task] with McpServerStreamingTests[Task] with ZioToFuture:
   private val clientInfo = Implementation("chimp-server-test", "0.0.1")
 
   override protected def withServer(server: McpServer[Task])(test: McpClient[Task] => Task[Assertion]): Future[Assertion] =
@@ -27,7 +24,7 @@ class ZioStreamingMcpServerSpec extends McpServerTests[Task] with StreamingMcpSe
       server: StreamingMcpServer[Task]
   )(test: BidirectionalMcpClient[Task] => Task[Assertion]): Future[Assertion] =
     toFuture:
-      val routes = ZioHttpInterpreter().toHttp(server.streamingEndpoint(List("mcp"), ZioMcpStreaming))
+      val routes = ZioHttpInterpreter().toHttp(server.streamingEndpoint(List("mcp"), ZioMcpServerStreaming))
       ZIO.scoped:
         (for
           port <- Server.install(routes)

@@ -7,7 +7,7 @@ import sttp.model.Uri
 
 import java.time.Duration
 
-class MCPEverythingContainer(network: Option[Network] = None, networkAlias: String = "everything")
+class McpEverythingContainer(network: Option[Network] = None, networkAlias: String = "everything")
     extends GenericContainer(
       dockerImage = "node:24-alpine",
       exposedPorts = Seq(3001),

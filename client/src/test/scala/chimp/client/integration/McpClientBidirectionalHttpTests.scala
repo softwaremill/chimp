@@ -14,13 +14,13 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReferenc
 import scala.concurrent.Future
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
-trait BidirectionalHttpMcpClientTests[F[_]] extends AsyncFlatSpec with Matchers:
+trait McpClientBidirectionalHttpTests[F[_]] extends AsyncFlatSpec with Matchers:
   this: ToFuture[F] =>
 
   protected def withProxiedBidirectionalClient(
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       timeout: FiniteDuration = Transport.defaultTimeout
-  )(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion]
+  )(test: (McpToxiproxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion]
 
   "GET SSE stream" should "resume delivering notifications after the underlying connection is cut" in:
     val logCount = AtomicInteger(0)

@@ -1,6 +1,6 @@
 package chimp.client.transport.zio
 
-import chimp.client.integration.StreamingHttpIntegrationSpec
+import chimp.client.integration.McpClientStreamingHttpIntegrationSpec
 import chimp.client.transport.BidirectionalTransport
 import chimp.protocol.ProtocolVersion
 import sttp.capabilities.zio.ZioStreams
@@ -11,7 +11,9 @@ import zio.{Task, ZIO}
 
 import scala.concurrent.duration.FiniteDuration
 
-class ZioStreamingHttpIntegrationSpec extends StreamingHttpIntegrationSpec[Task, StreamBackend[Task, ZioStreams]] with ZioToFuture:
+class ZioMcpClientStreamingHttpIntegrationSpec
+    extends McpClientStreamingHttpIntegrationSpec[Task, StreamBackend[Task, ZioStreams]]
+    with ZioToFuture:
 
   override def usingBackend[A](use: StreamBackend[Task, ZioStreams] => Task[A]): Task[A] =
     HttpClientZioBackend().flatMap: b =>

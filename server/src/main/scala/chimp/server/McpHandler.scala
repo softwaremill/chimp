@@ -26,11 +26,11 @@ enum McpResponse:
     case JsonResponse(json)  => JsonResponse(json.deepDropNullValues)
     case EmptyAcceptResponse => this
 
-class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
+private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
   private val logger = LoggerFactory.getLogger(classOf[McpHandler[?, ?]])
-  private val toolsByName = server.tools.map(t => t.name -> t).toMap
-  private val promptsByName = server.prompts.map(p => p.definition.name -> p).toMap
-  private val resourcesByUri = server.resources.map(r => r.definition.uri -> r).toMap
+  private val toolsByName = server.tools.map(tool => tool.name -> tool).toMap
+  private val promptsByName = server.prompts.map(prompt => prompt.definition.name -> prompt).toMap
+  private val resourcesByUri = server.resources.map(resource => resource.definition.uri -> resource).toMap
   private val hasResources = server.resources.nonEmpty || server.resourceTemplates.nonEmpty
   private val toolDefinitions = server.tools.map(toolToDefinition)
 
@@ -45,135 +45,31 @@ class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
       description = tool.description,
       inputSchema = jsonSchema,
       annotations = tool.annotations
-        .map(a => ToolAnnotations(a.title, a.readOnlyHint, a.destructiveHint, a.idempotentHint, a.openWorldHint))
-    )
-
-  private def protocolError(id: RequestId, code: Int, message: String, data: Option[Json] = None): JSONRPCMessage.Error =
-    logger.debug(s"Protocol error (id=$id, code=$code): $message")
-    JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message, data = data))
-
-  private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
-
-  private def emptyResult(id: RequestId): JSONRPCMessage = JSONRPCMessage.Response(id = id, result = Json.obj())
-
-  private def decodeParams[P: Decoder](params: Option[Json], id: RequestId)(f: P => F[JSONRPCMessage])(using
-      MonadError[F]
-  ): F[JSONRPCMessage] =
-    params.flatMap(_.as[P].toOption) match
-      case Some(p) => f(p)
-      case None    => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Invalid or missing params").unit
-
-  private def handleInitialize(params: Option[Json], id: RequestId): JSONRPCMessage.Response =
-    val requested = params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
-    val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.Latest)
-    val capabilities = ServerCapabilities(
-      logging = Option.when(server.setLevel.isDefined)(Json.obj()),
-      completions = Option.when(server.completion.isDefined)(Json.obj()),
-      prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
-      resources =
-        Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
-      tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
-    )
-    val result = InitializeResult(
-      protocolVersion = negotiated.name,
-      capabilities = capabilities,
-      serverInfo = Implementation(server.name, server.version),
-      instructions = server.instructions
-    )
-    JSONRPCMessage.Response(id = id, result = result.asJson)
-
-  private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
-      MonadError[F]
-  ): F[JSONRPCMessage] =
-    val name = params.flatMap(_.hcursor.downField("name").as[String].toOption)
-    val args = params.flatMap(_.hcursor.downField("arguments").focus).getOrElse(Json.obj())
-    val progressToken = params.flatMap(_.hcursor.downField("_meta").downField("progressToken").as[ProgressToken].toOption)
-    name match
-      case Some(name) =>
-        toolsByName.get(name) match
-          case Some(tool) =>
-            tool.inputDecoder.decodeJson(args) match
-              case Right(input) =>
-                val context = makeContext(progressToken)
-                tool
-                  .logic(input, context, headers)
-                  .map: result =>
-                    JSONRPCMessage.Response(
-                      id = id,
-                      result = CallToolResult(
-                        content = result.content,
-                        structuredContent = result.structuredContent,
-                        isError = result.isError
-                      ).asJson
-                    )
-              case Left(decodingError) =>
-                val snippet = args.noSpaces.take(200)
-                protocolError(
-                  id,
-                  JSONRPCErrorCodes.InvalidParams.code,
-                  s"Invalid arguments: ${decodingError.getMessage}. Input: $snippet"
-                ).unit
-          case None => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $name").unit
-      case None =>
-        protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
-
-  private def handleResourcesRead(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
-    decodeParams[ReadResourceParams](params, id): params =>
-      resourcesByUri.get(params.uri) match
-        case Some(resource) => resource.read().map(readResponse(id, params.uri))
-        case None           =>
-          val templateMatch = server.resourceTemplates.iterator
-            .map(template => (template, template.matcher.matchUri(params.uri)))
-            .collectFirst { case (template, Some(vars)) => (template, vars) }
-          templateMatch match
-            case Some((template, vars)) => template.read(vars, params.uri).map(readResponse(id, params.uri))
-            case None                   =>
-              protocolError(
-                id,
-                JSONRPCErrorCodes.InvalidParams.code,
-                s"Resource not found: ${params.uri}",
-                Some(Json.obj("uri" -> Json.fromString(params.uri)))
-              ).unit
-
-  private def readResponse(id: RequestId, uri: String)(result: Either[ResourceError, List[ResourceContents]]): JSONRPCMessage =
-    result match
-      case Right(contents) => JSONRPCMessage.Response(id = id, result = ReadResourceResult(contents).asJson)
-      case Left(error) =>
-        protocolError(
-          id,
-          JSONRPCErrorCodes.InvalidParams.code,
-          error.message,
-          error.uri.orElse(Some(uri)).map(u => Json.obj("uri" -> Json.fromString(u)))
+        .map(annotation =>
+          ToolAnnotations(
+            annotation.title,
+            annotation.readOnlyHint,
+            annotation.destructiveHint,
+            annotation.idempotentHint,
+            annotation.openWorldHint
+          )
         )
+    )
 
-  private def handleSubscribe(params: Option[Json], id: RequestId, subscribe: Boolean)(using MonadError[F]): F[JSONRPCMessage] =
-    val subs = server.subscriptions.get
-    if subscribe then decodeParams[SubscribeParams](params, id)(p => subs.onSubscribe(p).map(_ => emptyResult(id)))
-    else decodeParams[UnsubscribeParams](params, id)(p => subs.onUnsubscribe(p).map(_ => emptyResult(id)))
+  def handleJsonRpc(request: Json, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using MonadError[F]): F[McpResponse] =
+    doHandleJsonRpc(request, headers, makeContext).map: response =>
+      logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body}")
+      response.withNullsDroppedDeep
 
-  private def handlePromptsGet(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =
-    decodeParams[GetPromptParams](params, id): p =>
-      promptsByName.get(p.name) match
-        case Some(prompt) =>
-          prompt.logic(p.arguments.getOrElse(Map.empty), headers).map(result => JSONRPCMessage.Response(id = id, result = result.asJson))
-        case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown prompt: ${p.name}").unit
-
-  private def handleComplete(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
-    val handler = server.completion.get
-    decodeParams[CompleteParams](params, id): p =>
-      handler(p.ref, p.argument, p.context).map(completion => JSONRPCMessage.Response(id = id, result = CompleteResult(completion).asJson))
-
-  private def handleSetLevel(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
-    val handler = server.setLevel.get
-    decodeParams[SetLevelParams](params, id)(p => handler(p.level).map(_ => emptyResult(id)))
+  def handleJsonRpc(request: Json, headers: Seq[Header])(using m: MonadError[F], ev: ServerContext[F] <:< C): F[McpResponse] =
+    handleJsonRpc(request, headers, _ => ev(ServerContext.noop[F]))
 
   private def doHandleJsonRpc(request: Json, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
       MonadError[F]
   ): F[McpResponse] =
     request.as[JSONRPCMessage] match
       case Left(err) =>
-        val errorResponse = protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}")
-        jsonResponse(errorResponse).unit
+        jsonResponse(protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}")).unit
       case Right(JSONRPCMessage.Request(_, method, params: Option[Json], id)) =>
         method match
           case "initialize" =>
@@ -202,8 +98,8 @@ class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
             handlePromptsGet(params, id, headers).map(jsonResponse)
           case "completion/complete" if server.completion.isDefined =>
             handleComplete(params, id).map(jsonResponse)
-          case "logging/setLevel" if server.setLevel.isDefined =>
-            handleSetLevel(params, id).map(jsonResponse)
+          case "logging/setLevel" if server.loggingLevel.isDefined =>
+            handleSetLoggingLevel(params, id).map(jsonResponse)
           case other =>
             jsonResponse(protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")).unit
       case Right(notification: JSONRPCMessage.Notification) =>
@@ -213,10 +109,127 @@ class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
         jsonResponse(protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type")).unit
   end doHandleJsonRpc
 
-  def handleJsonRpc(request: Json, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using MonadError[F]): F[McpResponse] =
-    doHandleJsonRpc(request, headers, makeContext).map: response =>
-      logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body}")
-      response.withNullsDroppedDeep
+  private def protocolError(id: RequestId, code: Int, message: String, data: Option[Json] = None): JSONRPCMessage.Error =
+    logger.debug(s"Protocol error (id=$id, code=$code): $message")
+    JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message, data = data))
 
-  def handleJsonRpc(request: Json, headers: Seq[Header])(using m: MonadError[F], ev: ServerContext[F] <:< C): F[McpResponse] =
-    handleJsonRpc(request, headers, _ => ev(ServerContext.noop[F]))
+  private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
+
+  private def handleInitialize(params: Option[Json], id: RequestId): JSONRPCMessage.Response =
+    val requested = params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
+    val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.Latest)
+    val capabilities = ServerCapabilities(
+      logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
+      completions = Option.when(server.completion.isDefined)(Json.obj()),
+      prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
+      resources =
+        Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
+      tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
+    )
+    val result = InitializeResult(
+      protocolVersion = negotiated.name,
+      capabilities = capabilities,
+      serverInfo = Implementation(server.name, server.version),
+      instructions = server.instructions
+    )
+    JSONRPCMessage.Response(id = id, result = result.asJson)
+
+  private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
+      MonadError[F]
+  ): F[JSONRPCMessage] =
+    val name = params.flatMap(_.hcursor.downField("name").as[String].toOption)
+    val arguments = params.flatMap(_.hcursor.downField("arguments").focus).getOrElse(Json.obj())
+    val progressToken = params.flatMap(_.hcursor.downField("_meta").downField("progressToken").as[ProgressToken].toOption)
+    name match
+      case Some(name) =>
+        toolsByName.get(name) match
+          case Some(tool) =>
+            tool.inputDecoder.decodeJson(arguments) match
+              case Right(input) =>
+                val context = makeContext(progressToken)
+                tool
+                  .logic(input, context, headers)
+                  .map: result =>
+                    toolCallResponse(id, result)
+              case Left(decodingError) =>
+                val snippet = arguments.noSpaces.take(200)
+                protocolError(
+                  id,
+                  JSONRPCErrorCodes.InvalidParams.code,
+                  s"Invalid arguments: ${decodingError.getMessage}. Input: $snippet"
+                ).unit
+          case None => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $name").unit
+      case None =>
+        protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
+
+  private def toolCallResponse(id: RequestId, result: ToolResult): JSONRPCMessage =
+    JSONRPCMessage.Response(
+      id = id,
+      result = CallToolResult(
+        content = result.content,
+        structuredContent = result.structuredContent,
+        isError = result.isError
+      ).asJson
+    )
+
+  private def handleResourcesRead(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+    decodeParams[ReadResourceParams](params, id): params =>
+      resourcesByUri.get(params.uri) match
+        case Some(resource) => resource.read().map(resourceReadResponse(id, params.uri))
+        case None           =>
+          val templateMatch = server.resourceTemplates.iterator
+            .map(template => (template, template.matcher.matchUri(params.uri)))
+            .collectFirst { case (template, Some(vars)) => (template, vars) }
+          templateMatch match
+            case Some((template, vars)) => template.read(vars, params.uri).map(resourceReadResponse(id, params.uri))
+            case None                   =>
+              protocolError(
+                id,
+                JSONRPCErrorCodes.InvalidParams.code,
+                s"Resource not found: ${params.uri}",
+                Some(Json.obj("uri" -> Json.fromString(params.uri)))
+              ).unit
+
+  private def decodeParams[P: Decoder](params: Option[Json], id: RequestId)(f: P => F[JSONRPCMessage])(using
+      MonadError[F]
+  ): F[JSONRPCMessage] =
+    params.flatMap(_.as[P].toOption) match
+      case Some(params) => f(params)
+      case None         => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Invalid or missing params").unit
+
+  private def resourceReadResponse(id: RequestId, uri: String)(result: Either[ResourceError, List[ResourceContents]]): JSONRPCMessage =
+    result match
+      case Right(contents) => JSONRPCMessage.Response(id = id, result = ReadResourceResult(contents).asJson)
+      case Left(error)     =>
+        protocolError(
+          id,
+          JSONRPCErrorCodes.InvalidParams.code,
+          error.message,
+          error.uri.orElse(Some(uri)).map(uri => Json.obj("uri" -> Json.fromString(uri)))
+        )
+
+  private def handleSubscribe(params: Option[Json], id: RequestId, subscribe: Boolean)(using MonadError[F]): F[JSONRPCMessage] =
+    val subs = server.subscriptions.get
+    if subscribe then decodeParams[SubscribeParams](params, id)(params => subs.onSubscribe(params).map(_ => emptyResult(id)))
+    else decodeParams[UnsubscribeParams](params, id)(params => subs.onUnsubscribe(params).map(_ => emptyResult(id)))
+
+  private def emptyResult(id: RequestId): JSONRPCMessage = JSONRPCMessage.Response(id = id, result = Json.obj())
+
+  private def handlePromptsGet(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =
+    decodeParams[GetPromptParams](params, id): params =>
+      promptsByName.get(params.name) match
+        case Some(prompt) =>
+          prompt
+            .logic(params.arguments.getOrElse(Map.empty), headers)
+            .map(result => JSONRPCMessage.Response(id = id, result = result.asJson))
+        case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown prompt: ${params.name}").unit
+
+  private def handleComplete(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+    val handler = server.completion.get
+    decodeParams[CompleteParams](params, id): params =>
+      handler(params.ref, params.argument, params.context)
+        .map(completion => JSONRPCMessage.Response(id = id, result = CompleteResult(completion).asJson))
+
+  private def handleSetLoggingLevel(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+    val handler = server.loggingLevel.get
+    decodeParams[SetLevelParams](params, id)(params => handler(params.level).map(_ => emptyResult(id)))

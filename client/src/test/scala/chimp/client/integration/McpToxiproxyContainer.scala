@@ -8,7 +8,7 @@ import sttp.model.Uri
 
 import scala.jdk.CollectionConverters.*
 
-class MCPProxyContainer(network: Network, upstreamAlias: String, upstreamPort: Int)
+class McpToxiproxyContainer(network: Network, upstreamAlias: String, upstreamPort: Int)
     extends ToxiproxyContainer(DockerImageName.parse("ghcr.io/shopify/toxiproxy:2.12.0")):
   container.withNetwork(network)
 

@@ -10,13 +10,13 @@ import sttp.monad.syntax.*
 import scala.concurrent.Future
 import scala.concurrent.duration.FiniteDuration
 
-abstract class StreamingHttpIntegrationSpec[F[_], B]
-    extends HttpIntegrationSpec[F, B]
-    with BidirectionalMcpClientTests[F]
-    with BidirectionalHttpMcpClientTests[F]:
+abstract class McpClientStreamingHttpIntegrationSpec[F[_], B]
+    extends McpClientHttpIntegrationSpec[F, B]
+    with McpClientBidirectionalTests[F]
+    with McpClientBidirectionalHttpTests[F]:
   this: ToFuture[F] =>
 
-  private val proxyContainer: MCPProxyContainer = new MCPProxyContainer(network, mcpEverythingContainer.alias, 3001)
+  private val proxyContainer: McpToxiproxyContainer = new McpToxiproxyContainer(network, mcpEverythingContainer.alias, 3001)
 
   override def beforeAll(): Unit =
     super.beforeAll()
@@ -50,7 +50,7 @@ abstract class StreamingHttpIntegrationSpec[F[_], B]
   override protected def withProxiedBidirectionalClient(
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       timeout: FiniteDuration = Transport.defaultTimeout
-  )(test: (MCPProxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion] =
+  )(test: (McpToxiproxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion] =
     proxyContainer.restoreConnections()
     proxyContainer.clearToxics()
     toFuture(
