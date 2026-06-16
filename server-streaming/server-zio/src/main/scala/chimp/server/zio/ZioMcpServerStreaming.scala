@@ -28,16 +28,19 @@ object ZioMcpServerStreaming extends McpServerStreaming[Task, ZioStreams]:
     ZIO.succeed {
       ZStream.unwrap {
         for
-          queue <- Queue.unbounded[Option[ServerSentEvent]]
+          queue <- Queue.unbounded[Outbound]
           sink = new OutboundSink[Task]:
             def send(message: JSONRPCMessage): Task[Unit] =
-              queue.offer(Some(ServerSentEvent(data = Some(message.asJson.noSpaces)))).unit
+              queue.offer(Outbound.Message(message.asJson)).unit
           _ <- handle(sink)
-            .flatMap { message =>
-              ZIO.foreachDiscard(message)(message => queue.offer(Some(ServerSentEvent(data = Some(message.noSpaces))))) *> queue.offer(None)
-            }
-            .catchAllCause(_ => queue.offer(None).unit)
+            .flatMap(response => ZIO.foreachDiscard(response)(json => queue.offer(Outbound.Message(json))))
+            .ensuring(queue.offer(Outbound.Close))
+            .catchAllCause(_ => ZIO.unit)
             .forkDaemon
-        yield ZStream.fromQueue(queue).takeWhile(_.isDefined).collectSome
+        yield ZStream.fromQueue(queue).collectWhile { case Outbound.Message(json) => ServerSentEvent(data = Some(json.noSpaces)) }
       }
     }
+
+  private enum Outbound:
+    case Message(json: Json)
+    case Close
