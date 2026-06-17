@@ -9,7 +9,7 @@ abstract class McpServerStreaming[F[_], S]:
   val streams: Streams[S]
   type EventStream
   def sseBody: StreamBodyIO[streams.BinaryStream, EventStream, S]
-  def emptyEvents: EventStream
+  def emptyStream: EventStream
   def eventStream(handle: OutboundSink[F] => F[Option[Json]]): F[EventStream]
 
 trait OutboundSink[F[_]]:

@@ -29,7 +29,7 @@ private[server] def buildStreamingEndpoint[F[_], S](
       given MonadError[F] = me
       val host = headers.find(_.name.equalsIgnoreCase(HeaderNames.Host)).map(_.value)
       val origin = headers.find(_.name.equalsIgnoreCase(HeaderNames.Origin)).map(_.value)
-      if !server.originCheck.validate(host, origin) then me.unit(Right((StatusCode.Forbidden, streaming.emptyEvents)))
+      if !server.originCheck.validate(host, origin) then me.unit(Right((StatusCode.Forbidden, streaming.emptyStream)))
       else
         streaming
           .eventStream { sink =>

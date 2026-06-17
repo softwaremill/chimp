@@ -22,7 +22,7 @@ object ZioMcpServerStreaming extends McpServerStreaming[Task, ZioStreams]:
     streamTextBody(ZioStreams)(CodecFormat.TextEventStream(), Some(StandardCharsets.UTF_8))
       .map(ZioServerSentEvents.parseBytesToSSE)(ZioServerSentEvents.serialiseSSEToBytes)
 
-  val emptyEvents: EventStream = ZStream.empty
+  val emptyStream: EventStream = ZStream.empty
 
   def eventStream(handle: OutboundSink[Task] => Task[Option[Json]]): Task[EventStream] =
     ZIO.succeed {
