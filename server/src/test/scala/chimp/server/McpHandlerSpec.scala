@@ -56,12 +56,12 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   private val itemTemplate = resourceTemplate("test://item/{id}")
     .name("item")
-    .serverLogic[Identity]((vars, uri) => Right(List(ResourceContents.Text(uri = uri, text = s"item ${vars("id")}"))))
+    .handle((vars, uri) => Right(List(ResourceContents.Text(uri = uri, text = s"item ${vars("id")}"))))
 
   private val greetPrompt = prompt("greet")
     .description("Greets by name")
     .argument("name", required = true)
-    .serverLogic[Identity](args =>
+    .handle(args =>
       GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = s"Hello ${args.getOrElse("name", "?")}"))))
     )
 

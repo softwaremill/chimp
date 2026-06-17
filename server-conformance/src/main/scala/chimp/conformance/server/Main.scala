@@ -123,28 +123,26 @@ object Main:
   private val dataTemplate = resourceTemplate("test://template/{id}/data")
     .name("data-template")
     .mimeType("text/plain")
-    .serverLogic[Identity]((vars, uri) =>
+    .handle((vars, uri) =>
       Right(List(ResourceContents.Text(uri = uri, text = s"data for ${vars.getOrElse("id", "?")}", mimeType = Some("text/plain"))))
     )
 
   private val simplePrompt = prompt("test_simple_prompt")
     .description("A simple prompt")
-    .serverLogic[Identity](_ =>
-      GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = "This is a simple prompt."))))
-    )
+    .handle(_ => GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = "This is a simple prompt.")))))
 
   private val argsPrompt = prompt("test_prompt_with_arguments")
     .description("A prompt with arguments")
     .argument("arg1", required = true)
     .argument("arg2", required = true)
-    .serverLogic[Identity]: args =>
+    .handle: args =>
       val text = s"arg1=${args.getOrElse("arg1", "")}, arg2=${args.getOrElse("arg2", "")}"
       GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = text))))
 
   private val embeddedResourcePrompt = prompt("test_prompt_with_embedded_resource")
     .description("A prompt embedding a resource")
     .argument("resourceUri", required = true)
-    .serverLogic[Identity]: args =>
+    .handle: args =>
       val uri = args.getOrElse("resourceUri", "test://example-resource")
       GetPromptResult(messages =
         List(
@@ -159,9 +157,7 @@ object Main:
 
   private val imagePrompt = prompt("test_prompt_with_image")
     .description("A prompt with an image")
-    .serverLogic[Identity](_ =>
-      GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Image(data = pngData, mimeType = "image/png"))))
-    )
+    .handle(_ => GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Image(data = pngData, mimeType = "image/png")))))
 
   private val server = McpServer[Identity](name = "chimp-conformance-server", version = "0.1.0")
     .addTools(addNumbers, simpleText, errorTool, imageTool, audioTool, mixedTool, embeddedResourceTool, jsonSchemaTool)

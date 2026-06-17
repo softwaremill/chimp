@@ -29,14 +29,14 @@ trait McpServerTests[F[_]] extends AsyncFlatSpec with Matchers:
       .addResource(
         resource("test://greeting")
           .mimeType("text/plain")
-          .read[F](() =>
+          .serverLogic[F](_ =>
             monad.unit(Right(List(ResourceContents.Text(uri = "test://greeting", text = "hello", mimeType = Some("text/plain")))))
           )
       )
       .addPrompt(
         prompt("greet")
           .argument("name", required = true)
-          .serverLogic[F](args =>
+          .serverLogic[F]((args, _) =>
             monad.unit(
               GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = s"Hi ${args.getOrElse("name", "?")}"))))
             )

@@ -87,7 +87,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
               JSONRPCMessage.Response(id = id, result = ListResourceTemplatesResult(server.resourceTemplates.map(_.definition)).asJson)
             ).unit
           case "resources/read" if hasResources =>
-            handleResourcesRead(params, id).map(jsonResponse)
+            handleResourcesRead(params, id, headers).map(jsonResponse)
           case "resources/subscribe" if server.subscriptions.isDefined =>
             handleSubscribe(params, id, subscribe = true).map(jsonResponse)
           case "resources/unsubscribe" if server.subscriptions.isDefined =>
@@ -172,16 +172,16 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       ).asJson
     )
 
-  private def handleResourcesRead(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+  private def handleResourcesRead(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =
     decodeParams[ReadResourceParams](params, id): params =>
       resourcesByUri.get(params.uri) match
-        case Some(resource) => resource.read().map(resourceReadResponse(id, params.uri))
+        case Some(resource) => resource.read(headers).map(resourceReadResponse(id, params.uri))
         case None           =>
           val templateMatch = server.resourceTemplates.iterator
             .map(template => (template, template.matcher.matchUri(params.uri)))
             .collectFirst { case (template, Some(vars)) => (template, vars) }
           templateMatch match
-            case Some((template, vars)) => template.read(vars, params.uri).map(resourceReadResponse(id, params.uri))
+            case Some((template, vars)) => template.read(vars, params.uri, headers).map(resourceReadResponse(id, params.uri))
             case None                   =>
               protocolError(
                 id,
