@@ -14,7 +14,10 @@ import java.nio.charset.StandardCharsets
 /** A synchronous implementation of MCP server using stdio transport. Exchanges line-delimited JSON-RPC messages over its standard input and
   * output.
   *
-  * // TODO describe params
+  * @param in
+  *   Server input stream.
+  * @param out
+  *   Server output stream.
   */
 final class StdioServerTransport(in: InputStream = System.in, out: OutputStream = System.out)
     extends ServerTransport[Identity, Unit]
