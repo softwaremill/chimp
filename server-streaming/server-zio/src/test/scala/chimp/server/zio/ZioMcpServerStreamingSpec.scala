@@ -24,7 +24,7 @@ class ZioMcpServerStreamingSpec extends McpServerTests[Task] with McpServerStrea
       server: StreamingMcpServer[Task]
   )(test: BidirectionalMcpClient[Task] => Task[Assertion]): Future[Assertion] =
     toFuture:
-      val routes = ZioHttpInterpreter().toHttp(server.streamingEndpoint(List("mcp"), ZioMcpServerStreaming))
+      val routes = ZioHttpInterpreter().toHttp(ZioStreamingHttpServerTransport(List("mcp")).serve(server))
       ZIO.scoped:
         (for
           port <- Server.install(routes)
