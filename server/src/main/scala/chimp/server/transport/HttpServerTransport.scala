@@ -9,12 +9,12 @@ import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
 
-/** Implementation of unidirectional MCP server using Streamable HTTP.
-  * Responds to JSON-RPC messages from an MCP client with a single JSON-RPC message response. 
+/** Implementation of unidirectional MCP server using Streamable HTTP. Responds to JSON-RPC messages from an MCP client with a single
+  * JSON-RPC message response.
   *
   * @param path
   *   The MCP endpoint path.
-  **/
+  */
 final case class HttpServerTransport[F[_]](path: List[String]) extends ServerTransport[F, ServerEndpoint[Any, F]]:
   def serve(server: McpServer[F]): ServerEndpoint[Any, F] =
     val handler = new McpHandler(server)

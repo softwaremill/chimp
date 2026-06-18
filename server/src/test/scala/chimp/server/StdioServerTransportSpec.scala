@@ -2,7 +2,7 @@ package chimp.server
 
 import chimp.protocol.LoggingLevel
 import chimp.server.transport.StdioServerTransport
-import io.circe.{Codec, Json, parser}
+import io.circe.{parser, Codec, Json}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 import sttp.tapir.Schema
@@ -50,7 +50,9 @@ class StdioServerTransportSpec extends AnyFlatSpec with Matchers:
     def readResponse(): Json = parser.parse(reader.readLine()).toOption.get
 
     try
-      send("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}""")
+      send(
+        """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"""
+      )
       val init = readResponse()
       init.hcursor.downField("id").as[Int] shouldBe Right(1)
       init.hcursor.downField("result").downField("serverInfo").downField("name").as[String].isRight shouldBe true

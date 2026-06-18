@@ -11,16 +11,15 @@ import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
 
-/** Abstract base for bidirectional MCP server using Streamable HTTP.
-  * Responds to JSON-RPC messages from an MCP client with a Server-Sent-Event stream.
-  * Messages in the stream are interleaved with the final response on that stream.
-  * 
-  * The extra type parameter `S` carries the streaming capability evidence required by the Tapir
-  * [[sttp.tapir.server.ServerEndpoint]] to produce asynchronous stream of Server-Sent Events as response.
+/** Abstract base for bidirectional MCP server using Streamable HTTP. Responds to JSON-RPC messages from an MCP client with a
+  * Server-Sent-Event stream. Messages in the stream are interleaved with the final response on that stream.
+  *
+  * The extra type parameter `S` carries the streaming capability evidence required by the Tapir [[sttp.tapir.server.ServerEndpoint]] to
+  * produce asynchronous stream of Server-Sent Events as response.
   *
   * @param path
   *   The MCP endpoint path.
-  **/
+  */
 abstract class StreamingHttpServerTransport[F[_], S](path: List[String]) extends StreamingServerTransport[F, ServerEndpoint[S, F]]:
   val streams: Streams[S]
   type EventStream

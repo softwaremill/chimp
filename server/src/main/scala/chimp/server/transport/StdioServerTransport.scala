@@ -11,8 +11,8 @@ import sttp.shared.Identity
 import java.io.{BufferedReader, BufferedWriter, InputStream, InputStreamReader, OutputStream, OutputStreamWriter}
 import java.nio.charset.StandardCharsets
 
-/** A synchronous implementation of MCP server using stdio transport.
-  * Exchanges line-delimited JSON-RPC messages over its standard input and output.
+/** A synchronous implementation of MCP server using stdio transport. Exchanges line-delimited JSON-RPC messages over its standard input and
+  * output.
   *
   * // TODO describe params
   */
