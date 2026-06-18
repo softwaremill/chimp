@@ -15,7 +15,7 @@ import sttp.tapir.server.ServerEndpoint
   * @param path
   *   The MCP endpoint path.
   */
-final case class HttpServerTransport[F[_]](path: List[String]) extends ServerTransport[F, ServerEndpoint[Any, F]]:
+final case class ServerHttpTransport[F[_]](path: List[String]) extends ServerTransport[F, ServerEndpoint[Any, F]]:
   def serve(server: McpServer[F]): ServerEndpoint[Any, F] =
     val handler = new McpHandler(server)
     val endpoint = infallibleEndpoint.post

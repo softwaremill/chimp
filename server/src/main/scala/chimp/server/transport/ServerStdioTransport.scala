@@ -19,11 +19,11 @@ import java.nio.charset.StandardCharsets
   * @param out
   *   Server output stream.
   */
-final class StdioServerTransport(in: InputStream = System.in, out: OutputStream = System.out)
+final class ServerStdioTransport(in: InputStream = System.in, out: OutputStream = System.out)
     extends ServerTransport[Identity, Unit]
     with StreamingServerTransport[Identity, Unit]:
 
-  private val log = LoggerFactory.getLogger(classOf[StdioServerTransport])
+  private val log = LoggerFactory.getLogger(classOf[ServerStdioTransport])
 
   def serve(server: McpServer[Identity]): Unit = serve(server.streaming)
 

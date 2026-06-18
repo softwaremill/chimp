@@ -1,7 +1,7 @@
 package chimp.server
 
 import chimp.protocol.*
-import chimp.server.transport.HttpServerTransport
+import chimp.server.transport.ServerHttpTransport
 import sttp.tapir.server.ServerEndpoint
 
 type CompletionHandler[F[_]] = (CompleteRef, CompleteArgument, Option[CompleteContext]) => F[Completion]
@@ -89,7 +89,7 @@ case class McpServer[F[_]](
   def withSubscriptions(handler: ResourceSubscriptions[F]): McpServer[F] =
     copy(subscriptions = Some(handler))
 
-  def endpoint(path: List[String]): ServerEndpoint[Any, F] = HttpServerTransport(path).serve(this)
+  def endpoint(path: List[String]): ServerEndpoint[Any, F] = ServerHttpTransport(path).serve(this)
 
   def streaming: StreamingMcpServer[F] =
     StreamingMcpServer(

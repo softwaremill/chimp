@@ -20,7 +20,7 @@ import sttp.tapir.server.ServerEndpoint
   * @param path
   *   The MCP endpoint path.
   */
-abstract class StreamingHttpServerTransport[F[_], S](path: List[String]) extends StreamingServerTransport[F, ServerEndpoint[S, F]]:
+abstract class ServerStreamingHttpTransport[F[_], S](path: List[String]) extends StreamingServerTransport[F, ServerEndpoint[S, F]]:
   val streams: Streams[S]
   type EventStream
   def sseBody: StreamBodyIO[streams.BinaryStream, EventStream, S]

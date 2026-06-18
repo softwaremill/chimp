@@ -1,7 +1,7 @@
 package chimp.server
 
 import chimp.protocol.{JSONRPCErrorCodes, LoggingLevel}
-import chimp.server.transport.StdioServerTransport
+import chimp.server.transport.ServerStdioTransport
 import io.circe.{parser, Codec, Json}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -11,7 +11,7 @@ import sttp.tapir.Schema
 import java.io.*
 import java.nio.charset.StandardCharsets
 
-class StdioServerTransportSpec extends AnyFlatSpec with Matchers:
+class ServerStdioTransportSpec extends AnyFlatSpec with Matchers:
   private case class EchoInput(message: String) derives Codec, Schema
   private case class NoInput() derives Codec, Schema
 
@@ -36,7 +36,7 @@ class StdioServerTransportSpec extends AnyFlatSpec with Matchers:
     val fromServer = PipedInputStream()
     val serverOut = PipedOutputStream(fromServer)
 
-    val thread = Thread(() => StdioServerTransport(serverIn, serverOut).serve(server))
+    val thread = Thread(() => ServerStdioTransport(serverIn, serverOut).serve(server))
     thread.setDaemon(true)
     thread.start()
 

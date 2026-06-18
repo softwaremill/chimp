@@ -2,7 +2,7 @@ package chimp.server.zio
 
 import chimp.protocol.JSONRPCMessage
 import chimp.server.OutboundSink
-import chimp.server.transport.StreamingHttpServerTransport
+import chimp.server.transport.ServerStreamingHttpTransport
 import io.circe.Json
 import io.circe.syntax.*
 import sttp.capabilities.zio.ZioStreams
@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets
 /** ZIO implementation of the streaming HTTP server transport: the SSE stream is a `ZStream` of `ServerSentEvent`, and outbound messages are
   * interleaved with the final response through an unbounded queue drained by a daemon fiber.
   */
-final class ZioServerHttpTransport(path: List[String]) extends StreamingHttpServerTransport[Task, ZioStreams](path):
+final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHttpTransport[Task, ZioStreams](path):
   val streams: ZioStreams = ZioStreams
 
   type EventStream = Stream[Throwable, ServerSentEvent]
