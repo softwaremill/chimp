@@ -25,14 +25,14 @@ import scala.jdk.CollectionConverters.*
   * @param timeout
   *   Maximum time to wait for a response to each request before raising an [[chimp.client.McpTimeoutException]].
   */
-final class StdioTransport(
+final class ClientStdioTransport(
     command: List[String],
     env: Map[String, String] = Map.empty,
     workDir: Option[File] = None,
-    timeout: FiniteDuration = Transport.defaultTimeout
-) extends BidirectionalTransport[Identity]:
+    timeout: FiniteDuration = ClientTransport.defaultTimeout
+) extends ClientBidirectionalTransport[Identity]:
 
-  private val log = LoggerFactory.getLogger(classOf[StdioTransport])
+  private val log = LoggerFactory.getLogger(classOf[ClientStdioTransport])
 
   given monad: MonadError[Identity] = IdentityMonad
 
@@ -68,7 +68,7 @@ final class StdioTransport(
       var line: String = reader.readLine()
       while line != null do
         if line.nonEmpty then
-          Transport.decode(line) match
+          ClientTransport.decode(line) match
             case Right(msg) => dispatch(msg)
             case Left(e)    => log.warn(s"Failed to parse JSON-RPC line: ${e.getMessage}; raw: $line")
         line = reader.readLine()
@@ -104,7 +104,7 @@ final class StdioTransport(
 
   private def writeLine(msg: JSONRPCMessage): Unit =
     writer.synchronized:
-      writer.write(Transport.encode(msg))
+      writer.write(ClientTransport.encode(msg))
       writer.newLine()
       writer.flush()
 

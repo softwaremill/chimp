@@ -1,6 +1,6 @@
 package chimp.client.transport
 
-import chimp.client.transport.HttpTransport.HttpOutcome
+import chimp.client.transport.ClientHttpTransport.HttpOutcome
 import chimp.client.{McpAuthorizationException, McpProtocolException, McpSessionNotFoundException, McpTransportException}
 import chimp.protocol.{JSONRPCMessage, ProtocolVersion}
 import sttp.client4.{basicRequest, Backend, Request, Response}
@@ -21,22 +21,22 @@ import scala.util.chaining.*
   * @param protocolVersion
   *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
   */
-final class HttpTransport[F[_]](
+final class ClientHttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
     protocolVersion: ProtocolVersion = ProtocolVersion.Latest
-) extends Transport[F]:
+) extends ClientTransport[F]:
 
   given monad: MonadError[F] = backend.monad
 
   private val sessionId = AtomicReference[Option[String]](None)
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
-    HttpTransport.basePostRequest(uri, protocolVersion, sessionId.get(), Transport.encode(msg)).send(backend).flatMap(interpret)
+    ClientHttpTransport.basePostRequest(uri, protocolVersion, sessionId.get(), ClientTransport.encode(msg)).send(backend).flatMap(interpret)
 
   private def interpret(response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
     response.header("Mcp-Session-Id").foreach(s => sessionId.set(Some(s)))
-    HttpTransport.resolveResponse(response, sessionId.get()) match
+    ClientHttpTransport.resolveResponse(response, sessionId.get()) match
       case Left(error: McpSessionNotFoundException) =>
         sessionId.set(None)
         monad.error(error)
@@ -48,12 +48,12 @@ final class HttpTransport[F[_]](
           case Right(body) =>
             val payload = kind match
               case HttpOutcome.JsonBody => if body.isEmpty then None else Some(body)
-              case HttpOutcome.SseBody  => HttpTransport.extractSingleSseData(body)
+              case HttpOutcome.SseBody  => ClientHttpTransport.extractSingleSseData(body)
               case HttpOutcome.NoBody   => None
             payload match
               case None       => monad.unit(None)
               case Some(json) =>
-                Transport.decode(json) match
+                ClientTransport.decode(json) match
                   case Right(message) => monad.unit(Some(message))
                   case Left(error)    =>
                     monad.error(McpProtocolException(s"Failed to decode response body: ${error.getMessage}, payload $json"))
@@ -63,9 +63,9 @@ final class HttpTransport[F[_]](
       case None     => monad.unit(())
       case Some(id) =>
         sessionId.set(None)
-        HttpTransport.baseDeleteRequest(uri, protocolVersion, id).send(backend).map(_ => ())
+        ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id).send(backend).map(_ => ())
 
-object HttpTransport:
+object ClientHttpTransport:
   enum HttpOutcome:
     case NoBody
     case JsonBody

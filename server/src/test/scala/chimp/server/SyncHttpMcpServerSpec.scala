@@ -1,7 +1,7 @@
 package chimp.server
 
 import chimp.client.McpClient
-import chimp.client.transport.HttpTransport
+import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.Implementation
 import org.scalatest.Assertion
 import ox.supervised
@@ -21,7 +21,7 @@ class SyncHttpMcpServerSpec extends McpServerTests[Identity] with SyncToFuture:
         try
           val backend = DefaultSyncBackend()
           try
-            val transport = HttpTransport[Identity](backend, uri"http://localhost:${binding.port}/mcp")
+            val transport = ClientHttpTransport[Identity](backend, uri"http://localhost:${binding.port}/mcp")
             try test(McpClient(transport, clientInfo))
             finally transport.close()
           finally backend.close()

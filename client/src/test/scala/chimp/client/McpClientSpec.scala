@@ -1,6 +1,6 @@
 package chimp.client
 
-import chimp.client.transport.HttpTransport
+import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.*
 import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
@@ -30,7 +30,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
       (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
 
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(responseEnvelope)
-    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
+    val client = McpClient[Identity](ClientHttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
     client.serverInfo.name shouldBe "test-server"
 
   it should "call a tool and decode the result after initialization" in:
@@ -53,7 +53,7 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
       .whenAnyRequest
       .thenRespondAdjust("", StatusCode.Accepted)
 
-    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
+    val client = McpClient[Identity](ClientHttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
     val result = client.callTool("echo", io.circe.Json.obj("message" -> io.circe.Json.fromString("hi")))
     result.isError shouldBe false
     result.content.head shouldBe ToolContent.Text("text", "hi")
@@ -67,11 +67,11 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
     val initEnvelope =
       (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust(initEnvelope)
-    val client = McpClient[Identity](HttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
+    val client = McpClient[Identity](ClientHttpTransport[Identity](backend, mcpUri), clientInfo, ProtocolVersion.Latest)
     val ex = intercept[McpProtocolException](client.callTool("anything", io.circe.Json.obj()))
     ex.getMessage should include("Server did not negotiate the capability required for tools/call")
 
   it should "fail construction when no initialize response is received" in:
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust("")
-    val t = HttpTransport[Identity](backend, mcpUri)
+    val t = ClientHttpTransport[Identity](backend, mcpUri)
     intercept[McpTransportException](McpClient[Identity](t, clientInfo, ProtocolVersion.Latest))

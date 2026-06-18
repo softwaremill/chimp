@@ -1,6 +1,6 @@
 package chimp.client
 
-import chimp.client.transport.HttpTransport
+import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.*
 import io.circe.Json
 import io.circe.syntax.*
@@ -11,7 +11,7 @@ import sttp.client4.testing.SyncBackendStub
 import sttp.model.StatusCode
 import sttp.shared.Identity
 
-class HttpTransportSpec extends AnyFlatSpec with Matchers:
+class ClientHttpTransportSpec extends AnyFlatSpec with Matchers:
 
   private val mcpUri = sttp.model.Uri.parse("http://localhost/mcp").toOption.get
 
@@ -22,7 +22,7 @@ class HttpTransportSpec extends AnyFlatSpec with Matchers:
       StatusCode.Ok
     )
 
-    val transport = HttpTransport[Identity](backend, mcpUri)
+    val transport = ClientHttpTransport[Identity](backend, mcpUri)
     val request: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
     transport.send(request) match
       case Some(JSONRPCMessage.Response(_, _, result)) => Assertions.succeed
@@ -30,13 +30,13 @@ class HttpTransportSpec extends AnyFlatSpec with Matchers:
 
   it should "return none for 202 Accepted (notification ack)" in:
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust("", StatusCode.Accepted)
-    val transport = HttpTransport[Identity](backend, mcpUri)
+    val transport = ClientHttpTransport[Identity](backend, mcpUri)
     val notification: JSONRPCMessage = JSONRPCMessage.Notification(method = "notifications/initialized")
     transport.send(notification) shouldBe None
 
   it should "fail with McpAuthorizationException on 401" in:
     val backend = SyncBackendStub.whenAnyRequest.thenRespondAdjust("", StatusCode.Unauthorized)
-    val transport = HttpTransport[Identity](backend, mcpUri)
+    val transport = ClientHttpTransport[Identity](backend, mcpUri)
     val request: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
     val ex = intercept[McpAuthorizationException](transport.send(request))
     ex.statusCode shouldBe 401

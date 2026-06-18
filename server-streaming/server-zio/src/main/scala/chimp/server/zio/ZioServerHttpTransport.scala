@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets
 /** ZIO implementation of the streaming HTTP server transport: the SSE stream is a `ZStream` of `ServerSentEvent`, and outbound messages are
   * interleaved with the final response through an unbounded queue drained by a daemon fiber.
   */
-final class ZioStreamingHttpServerTransport(path: List[String]) extends StreamingHttpServerTransport[Task, ZioStreams](path):
+final class ZioServerHttpTransport(path: List[String]) extends StreamingHttpServerTransport[Task, ZioStreams](path):
   val streams: ZioStreams = ZioStreams
 
   type EventStream = Stream[Throwable, ServerSentEvent]

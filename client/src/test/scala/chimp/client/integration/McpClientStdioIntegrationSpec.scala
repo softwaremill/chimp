@@ -1,6 +1,6 @@
 package chimp.client.integration
 
-import chimp.client.transport.{BidirectionalTransport, Transport}
+import chimp.client.transport.{ClientBidirectionalTransport, ClientTransport}
 import chimp.client.{BidirectionalMcpClient, McpClient, McpTimeoutException}
 import chimp.protocol.*
 import org.scalatest.Assertion
@@ -23,7 +23,7 @@ abstract class McpClientStdioIntegrationSpec[F[_]]
   protected val everythingServerCommand: List[String] =
     List("npx", "-y", "@modelcontextprotocol/server-everything@2026.1.26")
 
-  def usingTransport[A](command: List[String], timeout: FiniteDuration)(use: BidirectionalTransport[F] => F[A]): F[A]
+  def usingTransport[A](command: List[String], timeout: FiniteDuration)(use: ClientBidirectionalTransport[F] => F[A]): F[A]
 
   private val clientInfo = Implementation(name = "chimp-integration", version = "0.0.1")
 
@@ -36,7 +36,7 @@ abstract class McpClientStdioIntegrationSpec[F[_]]
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None
   )(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion] =
     toFuture(
-      usingTransport(everythingServerCommand, Transport.defaultTimeout): transport =>
+      usingTransport(everythingServerCommand, ClientTransport.defaultTimeout): transport =>
         McpClient
           .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
           .flatMap: client =>

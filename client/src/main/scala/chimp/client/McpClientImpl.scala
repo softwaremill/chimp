@@ -2,7 +2,7 @@ package chimp.client
 
 import chimp.client.internal.{Correlator, UUIDCorrelator}
 import chimp.client.notifications.{ServerNotification, ServerNotificationListener}
-import chimp.client.transport.{BidirectionalTransport, Transport}
+import chimp.client.transport.{ClientBidirectionalTransport, ClientTransport}
 import chimp.protocol.*
 import io.circe.syntax.*
 import io.circe.{Decoder, Json}
@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 object McpClientImpl:
   def create[F[_]](
-      transport: Transport[F],
+      transport: ClientTransport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion,
       correlator: Correlator = UUIDCorrelator()
@@ -24,7 +24,7 @@ object McpClientImpl:
       new Impl[F](transport, clientInfo, protocolVersion, clientCapabilities, correlator, initResult)
 
   def createBidirectional[F[_]](
-      transport: BidirectionalTransport[F],
+      transport: ClientBidirectionalTransport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion,
       rootsHandler: Option[() => F[ListRootsResult]],
@@ -57,7 +57,7 @@ object McpClientImpl:
           )
 
   private def initialize[F[_]](
-      transport: Transport[F],
+      transport: ClientTransport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion,
       clientCapabilities: ClientCapabilities,
@@ -121,7 +121,7 @@ object McpClientImpl:
     entries.toMap
 
   private def buildIncomingHandler[F[_]](
-      transport: BidirectionalTransport[F],
+      transport: ClientBidirectionalTransport[F],
       serverInitiatedRequestHandlers: Map[String, Json => F[Json]],
       serverNotificationListeners: AtomicReference[List[ServerNotificationListener[F]]]
   )(using monad: MonadError[F]): JSONRPCMessage => F[Unit] =
@@ -156,7 +156,7 @@ object McpClientImpl:
       monad.unit(())
 
   private class Impl[F[_]](
-      protected val transport: Transport[F],
+      protected val transport: ClientTransport[F],
       protected val clientInfo: Implementation,
       protected val protocolVersion: ProtocolVersion,
       protected val clientCapabilities: ClientCapabilities,
@@ -249,7 +249,7 @@ object McpClientImpl:
       transport.send(notification).map(_ => ())
 
   private final class BidirectionalImpl[F[_]](
-      bidiTransport: BidirectionalTransport[F],
+      bidiTransport: ClientBidirectionalTransport[F],
       clientInfo: Implementation,
       protocolVersion: ProtocolVersion,
       clientCapabilities: ClientCapabilities,

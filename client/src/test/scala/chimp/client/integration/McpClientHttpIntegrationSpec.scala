@@ -1,7 +1,7 @@
 package chimp.client.integration
 
 import chimp.client.McpClient
-import chimp.client.transport.Transport
+import chimp.client.transport.ClientTransport
 import chimp.protocol.{Implementation, ProtocolVersion}
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
@@ -34,7 +34,7 @@ abstract class McpClientHttpIntegrationSpec[F[_], B]
       finally super.afterAll()
 
   def usingBackend[A](use: B => F[A]): F[A]
-  def usingTransport[A](backend: B, uri: Uri)(use: Transport[F] => F[A]): F[A]
+  def usingTransport[A](backend: B, uri: Uri)(use: ClientTransport[F] => F[A]): F[A]
 
   private val clientInfo = Implementation(name = "chimp-integration", version = "0.0.1")
 

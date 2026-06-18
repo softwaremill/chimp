@@ -1,6 +1,6 @@
 package chimp.client.integration
 
-import chimp.client.transport.{BidirectionalTransport, Transport}
+import chimp.client.transport.{ClientBidirectionalTransport, ClientTransport}
 import chimp.client.{BidirectionalMcpClient, McpClient}
 import chimp.protocol.*
 import org.scalatest.Assertion
@@ -26,10 +26,10 @@ abstract class McpClientStreamingHttpIntegrationSpec[F[_], B]
     try proxyContainer.stop()
     finally super.afterAll()
 
-  def usingBidirectionalTransport[A](b: B, uri: Uri, timeout: FiniteDuration)(use: BidirectionalTransport[F] => F[A]): F[A]
+  def usingBidirectionalTransport[A](b: B, uri: Uri, timeout: FiniteDuration)(use: ClientBidirectionalTransport[F] => F[A]): F[A]
 
-  override def usingTransport[A](backend: B, uri: Uri)(use: Transport[F] => F[A]): F[A] =
-    usingBidirectionalTransport(backend, uri, Transport.defaultTimeout)(use)
+  override def usingTransport[A](backend: B, uri: Uri)(use: ClientTransport[F] => F[A]): F[A] =
+    usingBidirectionalTransport(backend, uri, ClientTransport.defaultTimeout)(use)
 
   private val clientInfo = Implementation(name = "chimp-integration", version = "0.0.1")
 
@@ -40,7 +40,7 @@ abstract class McpClientStreamingHttpIntegrationSpec[F[_], B]
   )(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion] =
     toFuture(
       usingBackend: backend =>
-        usingBidirectionalTransport(backend, mcpEverythingContainer.mcpUri, Transport.defaultTimeout): transport =>
+        usingBidirectionalTransport(backend, mcpEverythingContainer.mcpUri, ClientTransport.defaultTimeout): transport =>
           McpClient
             .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
             .flatMap: client =>
@@ -49,7 +49,7 @@ abstract class McpClientStreamingHttpIntegrationSpec[F[_], B]
 
   override protected def withProxiedBidirectionalClient(
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
-      timeout: FiniteDuration = Transport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout
   )(test: (McpToxiproxyContainer, BidirectionalMcpClient[F]) => F[Assertion]): Future[Assertion] =
     proxyContainer.restoreConnections()
     proxyContainer.clearToxics()

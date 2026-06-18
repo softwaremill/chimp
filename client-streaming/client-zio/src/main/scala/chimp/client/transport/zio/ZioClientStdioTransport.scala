@@ -1,6 +1,6 @@
 package chimp.client.transport.zio
 
-import chimp.client.transport.{StreamingStdioTransport, Transport}
+import chimp.client.transport.{ClientStreamingStdioTransport, ClientTransport}
 import chimp.protocol.JSONRPCMessage
 import org.slf4j.LoggerFactory
 import sttp.client4.impl.zio.RIOMonadAsyncError
@@ -13,7 +13,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import scala.concurrent.duration.FiniteDuration
 
-final class ZioStreamingStdioTransport private (
+final class ZioClientStdioTransport private (
     command: List[String],
     env: Map[String, String],
     workDir: Option[File],
@@ -23,9 +23,9 @@ final class ZioStreamingStdioTransport private (
     writeQueue: Queue[JSONRPCMessage],
     pending: ZioPendingRequests,
     incomingRef: Ref[JSONRPCMessage => Task[Unit]]
-) extends StreamingStdioTransport[Task](command, env, workDir):
+) extends ClientStreamingStdioTransport[Task](command, env, workDir):
 
-  private val log = LoggerFactory.getLogger(classOf[ZioStreamingStdioTransport])
+  private val log = LoggerFactory.getLogger(classOf[ZioClientStdioTransport])
 
   override given monad: MonadError[Task] = new RIOMonadAsyncError[Any]
 
@@ -54,7 +54,7 @@ final class ZioStreamingStdioTransport private (
     val drain = process.stdout.linesStream
       .filter(_.nonEmpty)
       .mapZIO: line =>
-        Transport.decode(line) match
+        ClientTransport.decode(line) match
           case Right(msg) => dispatch(msg)
           case Left(err)  => ZIO.succeed(log.warn(s"Failed to parse JSON-RPC line: ${err.getMessage}, raw: $line"))
       .runDrain
@@ -68,14 +68,14 @@ final class ZioStreamingStdioTransport private (
       .forkIn(scope)
       .unit
 
-object ZioStreamingStdioTransport:
+object ZioClientStdioTransport:
 
   def apply(
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = Transport.defaultTimeout
-  ): Task[ZioStreamingStdioTransport] =
+      timeout: FiniteDuration = ClientTransport.defaultTimeout
+  ): Task[ZioClientStdioTransport] =
     for
       scope <- Scope.make
       writeQueue <- Queue.bounded[JSONRPCMessage](256)
@@ -83,14 +83,14 @@ object ZioStreamingStdioTransport:
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
       stdinBytes = ZStream
         .fromQueue(writeQueue)
-        .map(msg => Chunk.fromArray((Transport.encode(msg) + "\n").getBytes(StandardCharsets.UTF_8)))
+        .map(msg => Chunk.fromArray((ClientTransport.encode(msg) + "\n").getBytes(StandardCharsets.UTF_8)))
         .flattenChunks
       baseCmd = Command(command.head, command.tail*)
       withEnv = if env.isEmpty then baseCmd else baseCmd.env(env)
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
       cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes, flushChunksEagerly = true))
       process <- cmd.run.provideEnvironment(zio.ZEnvironment(scope))
-      transport = new ZioStreamingStdioTransport(command, env, workDir, timeout, scope, process, writeQueue, pending, incomingRef)
+      transport = new ZioClientStdioTransport(command, env, workDir, timeout, scope, process, writeQueue, pending, incomingRef)
       _ <- transport.startReader
       _ <- transport.startStderr
     yield transport
@@ -99,14 +99,14 @@ object ZioStreamingStdioTransport:
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = Transport.defaultTimeout
-  ): ZIO[Scope, Throwable, ZioStreamingStdioTransport] =
+      timeout: FiniteDuration = ClientTransport.defaultTimeout
+  ): ZIO[Scope, Throwable, ZioClientStdioTransport] =
     ZIO.acquireRelease(apply(command, env, workDir, timeout))(_.close().ignore)
 
   def layer(
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = Transport.defaultTimeout
-  ): ZLayer[Any, Throwable, ZioStreamingStdioTransport] =
+      timeout: FiniteDuration = ClientTransport.defaultTimeout
+  ): ZLayer[Any, Throwable, ZioClientStdioTransport] =
     ZLayer.scoped(scoped(command, env, workDir, timeout))
