@@ -5,7 +5,7 @@ Chimp ships an MCP client that connects to any MCP-compliant server. The client 
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.2.0"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.3.0"
 ```
 
 ## Example: the simplest MCP client
@@ -13,9 +13,6 @@ libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.2.0"
 Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example that connects to an MCP server over HTTP and invokes a tool:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-client:0.2.0
-//> using dep com.softwaremill.sttp.client4::core:4.0.23
-
 import chimp.client.*
 import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.*
@@ -24,20 +21,21 @@ import sttp.client4.DefaultSyncBackend
 import sttp.model.Uri.UriContext
 import sttp.shared.Identity
 
-@main def mcpClient(): Unit =
-val backend = DefaultSyncBackend()
-val transport = ClientHttpTransport[Identity](backend, uri"http://localhost:8080/mcp")
-val client = McpClient[Identity](transport, Implementation("my-client", "0.1.0"))
+object QuickstartClient:
+  def main(args: Array[String]): Unit =
+    val backend = DefaultSyncBackend()
+    val transport = ClientHttpTransport[Identity](backend, uri"http://localhost:8080/mcp")
+    val client = McpClient[Identity](transport, Implementation("my-client", "0.1.0"))
 
-val result = client.callTool("adder", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
-result.content.collect { case ToolContent.Text(_, text) => println(text) }
+    val result = client.callTool("adder", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
+    result.content.collect { case ToolContent.Text(_, text) => text }.foreach(println)
 
-client.close()
-backend.close()
+    client.close()
+    backend.close()
 ```
 
 For streaming transports (e.g. ZIO), also add:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.2.0"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.3.0"
 ```

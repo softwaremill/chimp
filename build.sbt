@@ -262,7 +262,8 @@ lazy val docs: Project = (project in file("generated-docs"))
     ),
     mdocOut := file("generated-docs/out"),
     mdocExtraArguments := Seq("--clean-target", "--exclude", ".venv", "--exclude", "_build"),
+    libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
     publishArtifact := false,
     name := "docs"
   )
-  .dependsOn(core, server, client, clientZio)
+  .dependsOn(core, server, serverZio, client, clientZio)
