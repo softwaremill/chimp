@@ -3,8 +3,7 @@ package chimp.client.transport
 import java.io.File
 import scala.concurrent.duration.FiniteDuration
 
-/** Abstract base for streaming stdio transports that should consume the subprocess's stdout as an asynchronous stream. Concrete
-  * implementations live in effect-specific modules.
+/** Abstract base for streaming stdio transports that should consume the subprocess's stdout as an asynchronous stream.
   */
 abstract class StreamingStdioTransport[F[_]](
     protected val command: List[String],
