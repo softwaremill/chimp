@@ -1,15 +1,12 @@
 server:
-  # Streaming / bidirectional — Phase 2/3 followup
   - tools-call-with-progress
   - tools-call-with-logging
   - tools-call-sampling
   - tools-call-elicitation
   - elicitation-sep1034-defaults
   - elicitation-sep1330-enums
-  # SSE polish — Phase 4 followup
   - server-sse-polling
   - server-sse-multiple-streams
-  # Gated to an older/draft protocol version (out of scope — latest protocol only)
   - json-schema-2020-12
   - sep-2164-resource-not-found
 client:
