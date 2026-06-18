@@ -17,8 +17,6 @@ object ServerContext:
 trait StreamingServerContext[F[_]] extends ServerContext[F]:
   def reportProgress(progress: Double, total: Option[Double] = None, message: Option[String] = None): F[Unit]
   def log(level: LoggingLevel, data: Json, logger: Option[String] = None): F[Unit]
-  def sample(params: CreateMessageParams): F[CreateMessageResult]
-  def elicit(params: ElicitParams): F[ElicitResult]
 
 private[server] final class SinkStreamingServerContext[F[_]](sink: OutboundSink[F], progressToken: Option[ProgressToken])(using
     m: MonadError[F]
@@ -41,9 +39,3 @@ private[server] final class SinkStreamingServerContext[F[_]](sink: OutboundSink[
     sink.send(
       JSONRPCMessage.Notification(method = "notifications/message", params = Some(LoggingMessageParams(level, data, logger).asJson))
     )
-
-  def sample(params: CreateMessageParams): F[CreateMessageResult] =
-    m.error(UnsupportedOperationException("server client sampling is not yet supported"))
-
-  def elicit(params: ElicitParams): F[ElicitResult] =
-    m.error(UnsupportedOperationException("server client elicitation is not yet supported"))

@@ -6,7 +6,6 @@ Tool logic runs with a **server context**. There are two:
 - `StreamingServerContext[F]` — extends it with server→client interactions emitted while a tool runs:
   - `reportProgress` — [progress](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress) notifications, auto-wired to the request's progress token.
   - `log` — [logging](https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging) notifications.
-  - `sample` / `elicit` — server-initiated [sampling](https://modelcontextprotocol.io/specification/2025-11-25/client/sampling) and [elicitation](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation) requests (planned).
 
 ```{note}
 Pushing to the client requires an open stream, so `StreamingServerContext` is only available over a **streaming transport**. A tool that uses it is registered with `addStreamingTool` on a `StreamingMcpServer`, and will not compile on the plain request/response endpoint.
