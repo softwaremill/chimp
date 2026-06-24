@@ -19,4 +19,8 @@ project/metals.sbt
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Local Sphinx build artifacts
+generated-docs/out/.venv/
+generated-docs/out/_build/ 

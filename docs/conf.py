@@ -15,7 +15,10 @@
 import os
 
 # Define the canonical URL if you are using a custom domain on Read the Docs
-html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
+html_baseurl = os.environ.get(
+    "READTHEDOCS_CANONICAL_URL",
+    "https://chimp.softwaremill.com/",
+)
 
 # Tell Jinja2 templates the build is running on Read the Docs
 if os.environ.get("READTHEDOCS", "") == "True":
@@ -28,9 +31,13 @@ if os.environ.get("READTHEDOCS", "") == "True":
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['myst_parser', 'sphinx_rtd_theme', 'sphinxcontrib.mermaid']
+extensions = ['myst_parser', 'sphinx_rtd_theme', 'sphinxcontrib.mermaid', 'sphinx_llms_txt']
 
 myst_enable_extensions = ['attrs_block']
+
+llms_txt_title = "chimp"
+llms_txt_summary = "SDK for building MCP (Model Context Protocol) servers and clients in Scala 3"
+llms_txt_full_file = True
 
 # The suffix(es) of source filenames.
 source_suffix = {
@@ -60,7 +67,16 @@ language = 'en'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', 'README.md', '.venv']
+exclude_patterns = [
+    '_build', 'Thumbs.db', '.DS_Store',
+    '.venv', 'venv', 'env',
+    '**/site-packages/**',
+    '**/node_modules/**',
+    '_templates',
+    'requirements.txt',
+    'README.md',
+    'includes/*',
+]
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'default'
