@@ -10,7 +10,7 @@ val tapirV = "1.13.23"
 val sttpClientV = "4.0.25"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
-val testcontainersScalaV = "0.41.8"
+val testcontainersScalaV = "0.44.1"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
