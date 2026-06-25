@@ -3,7 +3,7 @@ import com.softwaremill.SbtSoftwareMillCommon.commonSmlBuildSettings
 import com.softwaremill.UpdateVersionInDocs
 
 val scalaTestV = "3.2.20"
-val circeV = "0.14.15"
+val circeV = "0.14.16"
 val slf4jV = "2.0.18"
 val logbackV = "1.5.34"
 val tapirV = "1.13.23"
