@@ -6,7 +6,9 @@
 - Provide the server logic:
   - `handle` — synchronous logic from input to `ToolResult`.
   - `handleWithHeaders` — synchronous logic that also receives the request headers.
-  - `serverLogic` — effectful logic, with access to the [server context](capabilities.md) and headers.
+  - `serverLogic` — effectful logic, with the request headers.
+
+  A tool that pushes to the client while running (progress, logging) instead uses `streamingServerLogic` — see [server capabilities](capabilities.md).
 - Assemble tools into an `McpServer` and call `.endpoint(path)` to create a Tapir endpoint.
 
 ```scala

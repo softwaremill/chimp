@@ -220,10 +220,6 @@ object McpClientImpl:
       val params = ProgressParams(progressToken = token, progress = progress, total = total, message = message).asJson
       sendNotification("notifications/progress", Some(params))
 
-    override def sendCancelled(requestId: RequestId, reason: Option[String]): F[Unit] =
-      val params = CancelledParams(requestId = requestId, reason = reason).asJson
-      sendNotification("notifications/cancelled", Some(params))
-
     protected def requireServerCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
       if present(serverCapabilities) then action
       else monad.error(McpProtocolException(s"Server did not negotiate the capability required for $method"))

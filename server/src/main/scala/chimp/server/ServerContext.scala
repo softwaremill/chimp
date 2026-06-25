@@ -5,14 +5,10 @@ import io.circe.Json
 import io.circe.syntax.*
 import sttp.monad.MonadError
 
-trait ServerContext[F[_]]:
-  def isCancelled: F[Boolean]
-  def onCancel(action: F[Unit]): F[Unit]
+trait ServerContext[F[_]]
 
 object ServerContext:
-  def noop[F[_]](using m: MonadError[F]): ServerContext[F] = new ServerContext[F]:
-    def isCancelled: F[Boolean] = m.unit(false)
-    def onCancel(action: F[Unit]): F[Unit] = m.unit(())
+  def noop[F[_]]: ServerContext[F] = new ServerContext[F] {}
 
 trait StreamingServerContext[F[_]] extends ServerContext[F]:
   def reportProgress(progress: Double, total: Option[Double] = None, message: Option[String] = None): F[Unit]
@@ -21,9 +17,6 @@ trait StreamingServerContext[F[_]] extends ServerContext[F]:
 private[server] final class SinkStreamingServerContext[F[_]](sink: OutboundSink[F], progressToken: Option[ProgressToken])(using
     m: MonadError[F]
 ) extends StreamingServerContext[F]:
-  def isCancelled: F[Boolean] = m.unit(false)
-  def onCancel(action: F[Unit]): F[Unit] = m.unit(())
-
   def reportProgress(progress: Double, total: Option[Double] = None, message: Option[String] = None): F[Unit] =
     progressToken match
       case Some(token) =>

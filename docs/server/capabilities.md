@@ -1,17 +1,13 @@
 # Server capabilities
 
-Tool logic runs with a **server context**. There are two:
+Most tools just answer a request, so `serverLogic`/`handle` expose no context. A tool that needs to **push to the client while it runs** uses `streamingServerLogic`, which receives a `StreamingServerContext[F]`:
 
-- `ServerContext[F]` — available on every server; exposes cancellation observation (`isCancelled`, `onCancel`).
-- `StreamingServerContext[F]` — extends it with server→client interactions emitted while a tool runs:
-  - `reportProgress` — [progress](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress) notifications, auto-wired to the request's progress token.
-  - `log` — [logging](https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging) notifications.
+- `reportProgress` — [progress](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress) notifications, auto-wired to the request's progress token.
+- `log` — [logging](https://modelcontextprotocol.io/specification/2025-11-25/server/utilities/logging) notifications.
 
 ```{note}
-Pushing to the client requires an open stream, so `StreamingServerContext` is only available over a **streaming transport**. A tool that uses it is registered with `addStreamingTool` on a `StreamingMcpServer`, and will not compile on the plain request/response endpoint.
+Pushing to the client requires an open stream, so a `streamingServerLogic` tool is registered with `addStreamingTool` on a `StreamingMcpServer`, and will not compile on the plain request/response endpoint.
 ```
-
-Use `serverLogic` for a tool that only needs the base context, and `streamingServerLogic` for one that pushes to the client:
 
 ```scala mdoc:compile-only
 import chimp.server.*

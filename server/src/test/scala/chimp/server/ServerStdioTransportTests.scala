@@ -30,7 +30,7 @@ trait ServerStdioTransportTests[F[_]] extends AnyFlatSpec with Matchers:
   private def server: StreamingMcpServer[F] =
     StreamingMcpServer[F]()
       .withLoggingLevel(_ => monad.unit(()))
-      .addTool(tool("echo").input[EchoInput].serverLogic[F]((in, _, _) => monad.unit(ToolResult.text(in.message))))
+      .addTool(tool("echo").input[EchoInput].serverLogic[F]((in, _) => monad.unit(ToolResult.text(in.message))))
       .addStreamingTool(
         tool("noisy")
           .input[NoInput]

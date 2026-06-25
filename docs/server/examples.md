@@ -36,7 +36,7 @@ import zio.http.Server
 case class ZioAddInput(a: Int, b: Int) derives Codec, Schema
 
 object HttpZioServer extends ZIOAppDefault:
-  val adder = tool("adder").description("Adds two numbers").input[ZioAddInput].serverLogic[[X] =>> RIO[Any, X]]: (in, _, _) =>
+  val adder = tool("adder").description("Adds two numbers").input[ZioAddInput].serverLogic[[X] =>> RIO[Any, X]]: (in, _) =>
     ZIO.succeed(ToolResult.text(s"The result is ${in.a + in.b}"))
   val endpoint = McpServer(tools = List(adder)).endpoint(List("mcp"))
   override def run = Server.serve(ZioHttpInterpreter().toHttp(endpoint)).provide(Server.default)
@@ -83,7 +83,7 @@ import zio.{Task, ZIO, ZIOAppDefault}
 case class EchoInput(message: String) derives Codec, Schema
 
 object StdioZioServer extends ZIOAppDefault:
-  val echo = tool("echo").input[EchoInput].serverLogic[Task]((in, _, _) => ZIO.succeed(ToolResult.text(in.message)))
+  val echo = tool("echo").input[EchoInput].serverLogic[Task]((in, _) => ZIO.succeed(ToolResult.text(in.message)))
   val server = StreamingMcpServer[Task]().addTool(echo)
   override def run = ZioServerStdioTransport().serve(server)
 ```

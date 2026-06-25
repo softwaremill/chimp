@@ -94,15 +94,6 @@ trait McpClient[F[_]]:
     */
   def sendProgress(token: ProgressToken, progress: Double, total: Option[Double] = None, message: Option[String] = None): F[Unit]
 
-  /** Sends a `cancelled` notification, asking the server to stop processing a previously issued request.
-    *
-    * @param requestId
-    *   Identifier of the request to cancel.
-    * @param reason
-    *   Optional human-readable explanation.
-    */
-  def sendCancelled(requestId: RequestId, reason: Option[String] = None): F[Unit]
-
 /** An [[McpClient]] used over a [[chimp.client.transport.ClientBidirectionalTransport]], which additionally supports server-initiated
   * interactions: subscribing to resource updates, notifying the server about changes to the client's roots, and handling notifications
   * pushed by the server.

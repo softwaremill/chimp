@@ -3,7 +3,9 @@
 - Use `resource(uri)` for a fixed [resource](https://modelcontextprotocol.io/specification/2025-11-25/server/resources), or `resourceTemplate(uriTemplate)` for a `{variable}` URI template.
 - Add metadata: `name`, `title`, `description`, `mimeType`, `size`.
 - Provide the read logic, returning `Either[ResourceError, List[ResourceContents]]`:
-  - `handle` — synchronous; `handleWithHeaders` — synchronous, with headers; `serverLogic` — effectful.
+  - `handle` — synchronous read logic.
+  - `handleWithHeaders` — synchronous read logic that also receives the request headers.
+  - `serverLogic` — effectful read logic, with the request headers.
 - Register with `.addResource` / `.addResourceTemplate`. Subscriptions are wired with `.withSubscriptions`.
 
 ```scala

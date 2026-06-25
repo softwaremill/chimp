@@ -77,9 +77,9 @@ case class Tool[I](
     inputDecoder: Decoder[I],
     annotations: Option[ToolAnnotations]
 ):
-  /** Attaches effectful logic with access to the base [[ServerContext]]. */
-  def serverLogic[F[_]](logic: (I, ServerContext[F], Seq[Header]) => F[ToolResult]): ServerTool[I, F, ServerContext[F]] =
-    ServerTool(name, description, inputSchema, inputDecoder, annotations, logic)
+  /** Attaches effectful logic, with access to the request headers. */
+  def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult]): ServerTool[I, F, ServerContext[F]] =
+    ServerTool(name, description, inputSchema, inputDecoder, annotations, (input, _, headers) => logic(input, headers))
 
   /** Attaches effectful logic with access to the [[StreamingServerContext]]; usable only on a streaming server. */
   def streamingServerLogic[F[_]](

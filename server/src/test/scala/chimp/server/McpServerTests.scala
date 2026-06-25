@@ -24,7 +24,7 @@ trait McpServerTests[F[_]] extends AsyncFlatSpec with Matchers:
         tool("echo")
           .description("Echoes a message")
           .input[EchoInput]
-          .serverLogic[F]((in, _, _) => monad.unit(ToolResult.text(in.message)))
+          .serverLogic[F]((in, _) => monad.unit(ToolResult.text(in.message)))
       )
       .addResource(
         resource("test://greeting")

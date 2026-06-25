@@ -3,7 +3,9 @@
 - Use `prompt(name)` to start defining a [prompt](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts).
 - Add a description and declare the arguments it accepts.
 - Provide the logic that turns the supplied argument values into a `GetPromptResult`:
-  - `handle` — synchronous; `handleWithHeaders` — synchronous, with headers; `serverLogic` — effectful.
+  - `handle` — synchronous logic from the argument values to `GetPromptResult`.
+  - `handleWithHeaders` — synchronous logic that also receives the request headers.
+  - `serverLogic` — effectful logic, with the request headers.
 - Register prompts with `.addPrompt` / `.addPrompts`.
 
 ```scala
