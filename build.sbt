@@ -11,6 +11,7 @@ val sttpClientV = "4.0.25"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
 val zioHttpV = "3.8.0"
+val oxV = "1.0.5"
 val testcontainersScalaV = "0.41.8"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
@@ -36,7 +37,7 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val root = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, server, serverZio, client, clientZio, examples, serverConformance, clientConformance)
+  .aggregate(core, server, serverZio, serverOx, client, clientZio, clientOx, examples, serverConformance, clientConformance)
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
@@ -85,6 +86,18 @@ lazy val serverZio: Project = (project in file("server-streaming/server-zio"))
   )
   .dependsOn(server % "compile->compile;test->test", clientZio % "test->compile")
 
+lazy val serverOx: Project = (project in file("server-streaming/server-ox"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-server-ox",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
+      "com.softwaremill.ox" %% "core" % oxV
+    )
+  )
+  .dependsOn(server % "compile->compile;test->test", clientOx % "test->compile")
+
 lazy val client: Project = (project in file("client"))
   .settings(commonSettings: _*)
   .settings(
@@ -113,6 +126,18 @@ lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
   )
   .dependsOn(client % "compile->compile;test->test")
 
+lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-client-ox",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
+      "com.softwaremill.ox" %% "core" % oxV
+    )
+  )
+  .dependsOn(client % "compile->compile;test->test")
+
 lazy val examples = (project in file("examples"))
   .settings(commonSettings: _*)
   .settings(
@@ -126,7 +151,7 @@ lazy val examples = (project in file("examples"))
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
-  .dependsOn(server, client)
+  .dependsOn(server, serverOx, client)
 
 import sbtassembly.AssemblyPlugin.autoImport.*
 
@@ -266,4 +291,4 @@ lazy val docs: Project = (project in file("generated-docs"))
     publishArtifact := false,
     name := "docs"
   )
-  .dependsOn(core, server, serverZio, client, clientZio)
+  .dependsOn(core, server, serverZio, serverOx, client, clientZio, clientOx)

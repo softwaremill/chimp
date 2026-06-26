@@ -36,4 +36,16 @@ case class AdderInput(a: Int, b: Int) derives io.circe.Codec, Schema
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()
 ```
 
+For a streaming server that pushes progress and log notifications over SSE, add the dependency for your effect system — ZIO:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-zio" % "0.3.0"
+```
+
+or direct-style Ox:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-ox" % "0.3.0"
+```
+
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

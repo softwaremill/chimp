@@ -78,4 +78,33 @@ object RootsClient extends ZIOAppDefault:
     }
 ```
 
+## Roots over an Ox streaming transport
+
+The same bidirectional client in direct style, using `OxClientHttpTransport`. Its background SSE listener runs as a fork in the surrounding `supervised` scope, so the transport is created and used inside `supervised`:
+
+```scala
+import chimp.client.*
+import chimp.client.transport.ox.OxClientHttpTransport
+import chimp.protocol.*
+import ox.supervised
+import sttp.client4.DefaultSyncBackend
+import sttp.model.Uri.UriContext
+import sttp.shared.Identity
+
+object RootsOxClient:
+  def main(args: Array[String]): Unit =
+    supervised:
+      val backend = DefaultSyncBackend()
+      val transport = OxClientHttpTransport(backend, uri"http://localhost:8080/mcp")
+      val client = McpClient.bidirectional[Identity](
+        transport,
+        clientInfo = Implementation("my-client", "0.1.0"),
+        rootsHandler = Some(() => ListRootsResult(roots = List(Root("file:///workspace", Some("workspace")))))
+      )
+      val tools = client.listTools()
+      println(s"server exposes ${tools.tools.size} tools")
+      client.close()
+      backend.close()
+```
+
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).
