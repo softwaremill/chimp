@@ -39,9 +39,8 @@ jobs:
         run: sbt -v scalafmtCheckAll
       - name: Compile
         run: sbt -v compile
-        # TODO bring this step back after first release with new project structure (client + server)
-#      - name: Verify that examples compile using Scala CLI
-#        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
+      - name: Verify that examples compile using Scala CLI
+        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
       - name: Compile documentation
         run: sbt -v compileDocs
       - name: Unit tests

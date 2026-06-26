@@ -8,8 +8,8 @@ package examples.server
 import chimp.server.*
 import io.circe.Codec
 import io.circe.parser.decode
-import ox.either
-import ox.either.ok
+import _root_.ox.either
+import _root_.ox.either.ok
 import sttp.client4.*
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
