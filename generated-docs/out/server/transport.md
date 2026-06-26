@@ -5,7 +5,7 @@ A transport exposes an `McpServer` over a particular medium. `serve(server)` pro
 - **Unidirectional** (`ServerTransport[F, A]`) — request/response only. Enough for tools, resources, prompts, completion.
 - **Bidirectional** (`StreamingServerTransport[F, A]`) — additionally lets the server push messages to the client (progress and logging notifications). Required for [streaming server capabilities](capabilities.md).
 
-The streaming transports are abstract; their concrete, effect-specific implementations live in separate modules (e.g. ZIO).
+The streaming transports are abstract; their concrete, effect-specific implementations live in separate modules (e.g. ZIO and Ox).
 
 ```{mermaid}
 classDiagram
@@ -42,6 +42,9 @@ The streaming transports have concrete implementations per effect system, in sep
 | Integration | Streaming HTTP | STDIO |
 |---|---|---|
 | ZIO | `ZioServerHttpTransport` | `ZioServerStdioTransport` |
+| Ox (direct style) | `OxServerHttpTransport` | `OxServerStdioTransport` |
+
+The Ox implementations are direct-style (`F = Identity`); `OxServerHttpTransport` serves Server-Sent Events with `tapir-netty-server-sync` and its `OxStreams` capability.
 
 ## Medium
 

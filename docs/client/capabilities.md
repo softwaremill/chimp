@@ -9,7 +9,7 @@ Beyond calling tools, an MCP client can advertise capabilities that let the serv
 - [Notifications](https://modelcontextprotocol.io/specification/2025-11-25/basic/index#notifications) — receiving server-pushed events such as resource updates and list changes.
 
 ```{note}
-All of these require the server to push messages to the client, so they only work over a **bidirectional, streaming transport** (e.g. `ZioClientHttpTransport`). They are unavailable on the plain `ClientHttpTransport`.
+All of these require the server to push messages to the client, so they only work over a **bidirectional, streaming transport** (e.g. `ZioClientHttpTransport` or the direct-style `OxClientHttpTransport`). They are unavailable on the plain `ClientHttpTransport`.
 ```
 
 Create the client with `McpClient.bidirectional`, providing a handler for each capability you want to enable — only capabilities backed by a handler are advertised to the server:
