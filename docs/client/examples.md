@@ -78,4 +78,37 @@ object RootsClient extends ZIOAppDefault:
     }
 ```
 
+## Bidirectional client over an Ox streaming transport
+
+The same bidirectional client in direct style, using `OxClientHttpTransport`. Capabilities such as [roots](https://modelcontextprotocol.io/specification/2025-11-25/client/roots) are advertised by passing a handler that the server invokes during the session. The transport's background SSE listener runs as a fork in the surrounding `supervised` scope, so the transport is created and used inside `supervised`:
+
+```scala mdoc:compile-only
+import chimp.client.*
+import chimp.client.notifications.ServerNotification
+import chimp.client.transport.ox.OxClientHttpTransport
+import chimp.protocol.*
+import ox.supervised
+import sttp.client4.DefaultSyncBackend
+import sttp.model.Uri.UriContext
+import sttp.shared.Identity
+
+object BidirectionalOxClient:
+  def main(args: Array[String]): Unit =
+    supervised:
+      val backend = DefaultSyncBackend()
+      val transport = OxClientHttpTransport(backend, uri"http://localhost:8080/mcp")
+      val client = McpClient.bidirectional[Identity](
+        transport,
+        clientInfo = Implementation("my-client", "0.1.0"),
+        // the server calls back into this handler when it needs the client's roots
+        rootsHandler = Some(() => ListRootsResult(roots = List(Root("file:///workspace", Some("workspace")))))
+      )
+      // react to server-pushed notifications delivered over the SSE stream
+      client.onServerNotification:
+        case ServerNotification.ResourceUpdated(params) => println(s"resource changed: ${params.uri}")
+        case _                                          => ()
+      client.close()
+      backend.close()
+```
+
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

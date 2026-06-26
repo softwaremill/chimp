@@ -5,7 +5,7 @@ A transport carries JSON-RPC messages between the client and the server. There a
 - **Unidirectional** (`ClientTransport[F]`) — the client sends a message and optionally gets a response back. Enough for calling tools, listing resources, etc.
 - **Bidirectional** (`ClientBidirectionalTransport[F]`) — additionally lets the server push messages to the client (server-initiated requests and notifications). Required for [client capabilities](capabilities.md).
 
-The streaming transports are abstract; their concrete, effect-specific implementations live in separate modules (e.g. ZIO).
+The streaming transports are abstract; their concrete, effect-specific implementations live in separate modules (e.g. ZIO and Ox).
 
 ```{mermaid}
 classDiagram
@@ -41,6 +41,9 @@ The streaming transports have concrete implementations per effect system, in sep
 | Integration | Streaming HTTP | STDIO |
 |---|---|---|
 | ZIO | `ZioClientHttpTransport` | `ZioClientStdioTransport` |
+| Ox (direct style) | `OxClientHttpTransport` | `OxClientStdioTransport` |
+
+The Ox implementations are direct-style (`F = Identity`). As sttp has no `StreamBackend` for Ox streams, `OxClientHttpTransport` extends `ClientBidirectionalTransport` directly: it runs on a plain `SyncBackend` and consumes Server-Sent Event responses by reading the response body as an `InputStream`, draining it on Ox forks.
 
 ## Backends
 
