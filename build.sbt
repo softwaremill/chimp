@@ -151,7 +151,7 @@ lazy val examples = (project in file("examples"))
     ),
     verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
   )
-  .dependsOn(server, serverOx, client)
+  .dependsOn(server, serverOx, client, clientOx)
 
 import sbtassembly.AssemblyPlugin.autoImport.*
 
