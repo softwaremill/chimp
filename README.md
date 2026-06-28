@@ -24,9 +24,9 @@ case class AdderInput(a: Int, b: Int) derives Codec, Schema
 
 @main def server(): Unit =
   val adder = tool("adder").description("Adds two numbers").input[AdderInput]
-    .handle(i => Right(s"Result: ${i.a + i.b}"))
+    .handle(i => ToolResult.text(s"Result: ${i.a + i.b}"))
 
-  NettySyncServer().port(8080).addEndpoint(mcpEndpoint(List(adder), List("mcp"))).startAndWait()
+  NettySyncServer().port(8080).addEndpoint(McpServer(tools = List(adder)).endpoint(List("mcp"))).startAndWait()
 ```
 
 Connect and invoke the tool as an MCP client:

@@ -5,7 +5,7 @@ Chimp lets you expose MCP tools over a JSON-RPC HTTP API. Tool inputs are descri
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.2.0"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.3.0"
 ```
 
 ## Example: the simplest MCP server
@@ -13,7 +13,7 @@ libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.2.0"
 Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server:0.2.0
+//> using dep com.softwaremill.chimp::chimp-server:0.3.0
 
 import chimp.*
 import sttp.tapir.*
@@ -27,10 +27,10 @@ case class AdderInput(a: Int, b: Int) derives io.circe.Codec, Schema
   val adderTool = tool("adder").description("Adds two numbers").input[AdderInput]
 
   // combine the tool description with the server-side logic
-  val adderServerTool = adderTool.handle(i => Right(s"The result is ${i.a + i.b}"))
+  val adderServerTool = adderTool.handle(i => ToolResult.text(s"The result is ${i.a + i.b}"))
 
   // create the MCP server endpoint; it will be available at http://localhost:8080/mcp
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
+  val mcpServerEndpoint = McpServer(tools = List(adderServerTool)).endpoint(List("mcp"))
 
   // start the server
   NettySyncServer().port(8080).addEndpoint(mcpServerEndpoint).startAndWait()

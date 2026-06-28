@@ -10,6 +10,7 @@ val tapirV = "1.13.25"
 val sttpClientV = "4.0.25"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
+val zioHttpV = "3.8.0"
 val testcontainersScalaV = "0.41.8"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
@@ -35,7 +36,7 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 lazy val root = (project in file("."))
   .settings(commonSettings: _*)
   .settings(publishArtifact := false, name := "chimp")
-  .aggregate(core, server, client, clientZio, examples, serverConformance, clientConformance)
+  .aggregate(core, server, serverZio, client, clientZio, examples, serverConformance, clientConformance)
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
@@ -62,10 +63,27 @@ lazy val server: Project = (project in file("server"))
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
-      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10"
+      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.11.10",
+      "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV % Test,
+      "com.softwaremill.sttp.client4" %% "core" % sttpClientV % Test
     )
   )
-  .dependsOn(core)
+  .dependsOn(core, client % "test->compile")
+
+lazy val serverZio: Project = (project in file("server-streaming/server-zio"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-server-zio",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "dev.zio" %% "zio" % zioV,
+      "dev.zio" %% "zio-streams" % zioV,
+      "com.softwaremill.sttp.tapir" %% "tapir-zio" % tapirV,
+      "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
+      "dev.zio" %% "zio-http" % zioHttpV
+    )
+  )
+  .dependsOn(server % "compile->compile;test->test", clientZio % "test->compile")
 
 lazy val client: Project = (project in file("client"))
   .settings(commonSettings: _*)
@@ -244,7 +262,8 @@ lazy val docs: Project = (project in file("generated-docs"))
     ),
     mdocOut := file("generated-docs/out"),
     mdocExtraArguments := Seq("--clean-target", "--exclude", ".venv", "--exclude", "_build"),
+    libraryDependencies += "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV,
     publishArtifact := false,
     name := "docs"
   )
-  .dependsOn(core, server, client, clientZio)
+  .dependsOn(core, server, serverZio, client, clientZio)

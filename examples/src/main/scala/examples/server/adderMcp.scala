@@ -19,9 +19,9 @@ case class Input(a: Int, b: Int) derives Codec, Schema
 
   def logic(i: Input): Either[String, String] = Right(s"The result is ${i.a + i.b}")
 
-  val adderServerTool = adderTool.handle(logic)
+  val adderServerTool = adderTool.handle(i => ToolResult.fromEither(logic(i)))
 
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
+  val mcpServerEndpoint = McpServer(tools = List(adderServerTool)).endpoint(List("mcp"))
 
   NettySyncServer()
     .port(8080)
