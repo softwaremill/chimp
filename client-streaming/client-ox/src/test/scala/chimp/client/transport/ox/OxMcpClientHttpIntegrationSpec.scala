@@ -11,14 +11,14 @@ import scala.concurrent.duration.FiniteDuration
 
 class OxMcpClientHttpIntegrationSpec extends McpClientStreamingHttpIntegrationSpec[Identity, SyncBackend] with SyncToFuture:
 
-  override def usingBackend[A](use: SyncBackend => Identity[A]): Identity[A] =
+  override def usingBackend[A](use: SyncBackend => Identity[A]): A =
     val backend = DefaultSyncBackend()
     try use(backend)
     finally backend.close()
 
   override def usingBidirectionalTransport[A](b: SyncBackend, uri: Uri, timeout: FiniteDuration)(
-      use: ClientBidirectionalTransport[Identity] => Identity[A]
-  ): Identity[A] =
+      use: ClientBidirectionalTransport[Identity] => A
+  ): A =
     supervised:
       val transport = OxClientHttpTransport(b, uri, timeout = timeout)
       try use(transport)
