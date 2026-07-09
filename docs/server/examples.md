@@ -88,4 +88,50 @@ object StdioZioServer extends ZIOAppDefault:
   override def run = ZioServerStdioTransport().serve(server)
 ```
 
+## Streaming HTTP server (Ox)
+
+The same streaming server in direct style, served with `OxServerHttpTransport` on `tapir-netty-server-sync`:
+
+```scala mdoc:compile-only
+import chimp.server.{StreamingMcpServer, ToolResult, tool}
+import chimp.server.ox.OxServerHttpTransport
+import chimp.protocol.LoggingLevel
+import io.circe.{Codec, Json}
+import sttp.shared.Identity
+import sttp.tapir.*
+import sttp.tapir.server.netty.sync.NettySyncServer
+
+case class OxProgressInput(steps: Int) derives Codec, Schema
+
+object StreamingOxServer:
+  def main(args: Array[String]): Unit =
+    val work = tool("work").input[OxProgressInput].streamingServerLogic[Identity]: (_, ctx, _) =>
+      ctx.reportProgress(0.5, total = Some(1.0))
+      ctx.log(LoggingLevel.Info, Json.fromString("halfway"))
+      ToolResult.text("done")
+    val server = StreamingMcpServer[Identity]().withLoggingLevel(_ => ()).addStreamingTool(work)
+    val endpoint = OxServerHttpTransport(List("mcp")).serve(server)
+    NettySyncServer().port(8080).addEndpoint(endpoint).startAndWait()
+```
+
+## STDIO server (Ox)
+
+A direct-style server exchanging line-delimited JSON-RPC over stdin/stdout, served with `OxServerStdioTransport`:
+
+```scala mdoc:compile-only
+import chimp.server.{StreamingMcpServer, ToolResult, tool}
+import chimp.server.ox.OxServerStdioTransport
+import io.circe.Codec
+import sttp.shared.Identity
+import sttp.tapir.*
+
+case class OxEchoInput(message: String) derives Codec, Schema
+
+object StdioOxServer:
+  def main(args: Array[String]): Unit =
+    val echo = tool("echo").input[OxEchoInput].handle(in => ToolResult.text(in.message))
+    val server = StreamingMcpServer[Identity]().addTool(echo)
+    OxServerStdioTransport().serve(server)
+```
+
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

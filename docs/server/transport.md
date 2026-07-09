@@ -42,6 +42,9 @@ The streaming transports have concrete implementations per effect system, in sep
 | Integration | Streaming HTTP | STDIO |
 |---|---|---|
 | ZIO | `ZioServerHttpTransport` | `ZioServerStdioTransport` |
+| Ox (direct style) | `OxServerHttpTransport` | `OxServerStdioTransport` |
+
+The Ox implementations are direct-style (`F = Identity`); `OxServerHttpTransport` serves Server-Sent Events with `tapir-netty-server-sync` and its `OxStreams` capability.
 
 ## Medium
 

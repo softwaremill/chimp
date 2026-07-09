@@ -34,8 +34,14 @@ object QuickstartClient:
     backend.close()
 ```
 
-For streaming transports (e.g. ZIO), also add:
+For streaming transports, also add the dependency for your effect system — ZIO:
 
 ```scala
 libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.3.0"
+```
+
+or direct-style Ox:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-ox" % "0.3.0"
 ```

@@ -34,5 +34,5 @@ Commit both `docs/` (the source) and `generated-docs/` (the mdoc output) — if 
 
 ## Notes
 
-- `0.3.0+22-cb3e0e1c+20260625-0956-SNAPSHOT` and other mdoc variables are **not** substituted in the local watch mode. For a fully-rendered preview, run `sbt docs/mdoc` from the repo root and serve `generated-docs/out/` instead.
+- `0.3.0+50-cb889dff-SNAPSHOT` and other mdoc variables are **not** substituted in the local watch mode. For a fully-rendered preview, run `sbt docs/mdoc` from the repo root and serve `generated-docs/out/` instead.
 - Scala code snippets are verified by `sbt compileDocs` (also runs in CI).
