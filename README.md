@@ -5,7 +5,8 @@
 
 An SDK for building [MCP](https://modelcontextprotocol.io/specification) (Model Context Protocol) servers and
 clients in Scala 3 using boilerplate-less, type-safe APIs based on [Tapir](https://tapir.softwaremill.com/)
-and [sttp](https://github.com/softwaremill/sttp), supporting the variety of the Scala ecosystem.
+and [sttp](https://github.com/softwaremill/sttp), supporting the variety of the Scala ecosystem. Both servers
+and clients can communicate over **Streamable HTTP** or **stdio**.
 
 ### Quickstart
 
@@ -36,14 +37,14 @@ Connect and invoke the tool as an MCP client:
 //> using dep com.softwaremill.sttp.client4::core:4.0.24
 
 import chimp.client.*
-import chimp.client.transport.HttpTransport
+import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.*
 import sttp.client4.*
 import io.circe.Json
 
 @main def client(): Unit =
   val backend = DefaultSyncBackend()
-  val transport = HttpTransport(backend, uri"http://localhost:8080/mcp")
+  val transport = ClientHttpTransport(backend, uri"http://localhost:8080/mcp")
   val client = McpClient(transport, Implementation("my-client", "0.1.0"))
 
   val result = client.callTool("adder", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
