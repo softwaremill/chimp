@@ -26,7 +26,6 @@ final class OxClientHttpTransport private (
     uri: Uri,
     protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
-    scope: Ox,
     sessionId: AtomicReference[Option[String]],
     pending: SyncPendingRequests,
     incoming: AtomicReference[JSONRPCMessage => Unit],
@@ -34,10 +33,10 @@ final class OxClientHttpTransport private (
     closing: AtomicBoolean,
     sessionReady: CountDownLatch,
     openStreams: java.util.Set[InputStream]
-) extends ClientBidirectionalTransport[Identity]:
+)(using Ox)
+    extends ClientBidirectionalTransport[Identity]:
 
   private val log = LoggerFactory.getLogger(classOf[OxClientHttpTransport])
-  private given Ox = scope
 
   given monad: MonadError[Identity] = IdentityMonad
 
@@ -231,7 +230,6 @@ object OxClientHttpTransport:
       uri,
       protocolVersion,
       timeout,
-      summon[Ox],
       AtomicReference[Option[String]](None),
       SyncPendingRequests(),
       AtomicReference[JSONRPCMessage => Unit](_ => ()),
