@@ -7,6 +7,8 @@ import chimp.client.{McpProtocolException, McpSessionNotFoundException, McpTrans
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.slf4j.LoggerFactory
 import ox.*
+import ox.resilience.{retry, RetryConfig}
+import ox.scheduling.Schedule
 import sttp.client4.{asInputStreamUnsafe, basicRequest, Response, SyncBackend}
 import sttp.model.sse.ServerSentEvent
 import sttp.model.{MediaType, StatusCode, Uri}
@@ -142,22 +144,16 @@ final class OxClientHttpTransport private (
 
   private def getListenerLoop(): Unit =
     sessionReady.await()
-    var attempt = 0
-    var continue = !closing.get()
-    while continue do
-      var reconnect = true
-      try
-        openGetSseStream(lastEventId.get()) match
-          case None         => reconnect = false
-          case Some(stream) =>
-            attempt = 0
-            try drainSse(stream, id => lastEventId.set(Some(id)))
-            finally untrack(stream)
-      catch case e: Exception => if !closing.get() then log.warn(s"GET SSE listener error: ${e.getMessage}")
-      if !reconnect || closing.get() then continue = false
-      else
-        attempt += 1
-        sleep(reconnectDelay(attempt))
+    val onFailure: (Int, Either[Throwable, Unit]) => Unit = (_, result) =>
+      result match
+        case Left(t)  => if !closing.get() then log.warn(s"GET SSE listener error: ${t.getMessage}")
+        case Right(_) => ()
+    val schedule = Schedule.exponentialBackoff(100.millis).jitter().maxInterval(30.seconds)
+    retry(RetryConfig[Throwable, Unit](schedule).afterAttempt(onFailure)):
+      if !closing.get() then
+        openGetSseStream(lastEventId.get()).foreach: stream =>
+          try drainSse(stream, id => lastEventId.set(Some(id)))
+          finally untrack(stream)
 
   private def openGetSseStream(lastEvent: Option[String]): Option[InputStream] =
     val base = basicRequest
@@ -212,9 +208,6 @@ final class OxClientHttpTransport private (
   private def closeQuietly(stream: InputStream): Unit =
     try stream.close()
     catch case _: Exception => ()
-
-  private def reconnectDelay(attempt: Int): FiniteDuration =
-    math.min(100L * (1L << math.min(attempt - 1, 8)), 30000L).millis
 
   private def cancelled(id: RequestId): JSONRPCMessage.Error =
     JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = JSONRPCErrorCodes.InvocationError.code, message = "Request cancelled"))
