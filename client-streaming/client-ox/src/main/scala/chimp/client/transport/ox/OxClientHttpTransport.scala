@@ -7,6 +7,7 @@ import chimp.client.{McpProtocolException, McpSessionNotFoundException, McpTrans
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.slf4j.LoggerFactory
 import ox.*
+import ox.channels.{Actor, ActorRef}
 import ox.resilience.{retry, RetryConfig}
 import ox.scheduling.Schedule
 import sttp.client4.{asInputStreamUnsafe, basicRequest, Response, SyncBackend}
@@ -17,7 +18,6 @@ import sttp.shared.Identity
 
 import java.io.{BufferedReader, InputStream, InputStreamReader}
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import java.util.concurrent.{ConcurrentHashMap, CountDownLatch}
 import scala.concurrent.duration.{FiniteDuration, *}
 
@@ -26,11 +26,7 @@ final class OxClientHttpTransport private (
     uri: Uri,
     protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
-    sessionId: AtomicReference[Option[String]],
     pending: SyncPendingRequests,
-    incoming: AtomicReference[JSONRPCMessage => Unit],
-    lastEventId: AtomicReference[Option[String]],
-    closing: AtomicBoolean,
     sessionReady: CountDownLatch,
     openStreams: java.util.Set[InputStream]
 )(using Ox)
@@ -38,10 +34,29 @@ final class OxClientHttpTransport private (
 
   private val log = LoggerFactory.getLogger(classOf[OxClientHttpTransport])
 
+  private final class State:
+    var sessionId: Option[String] = None
+    var incoming: JSONRPCMessage => Unit = _ => ()
+    var lastEventId: Option[String] = None
+    var closing: Boolean = false
+
+    def beginClosing(): Boolean =
+      if closing then false
+      else
+        closing = true
+        true
+
+    def takeSessionId(): Option[String] =
+      val id = sessionId
+      sessionId = None
+      id
+
+  private val state: ActorRef[State] = Actor.create(new State)
+
   given monad: MonadError[Identity] = IdentityMonad
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
-    if closing.get() then throw McpTransportException("HTTP transport is closed")
+    if state.ask(_.closing) then throw McpTransportException("HTTP transport is closed")
     msg match
       case request: JSONRPCMessage.Request =>
         val await = pending.register(request.id, timeout)
@@ -49,13 +64,13 @@ final class OxClientHttpTransport private (
         finally { val _ = pending.complete(request.id, cancelled(request.id)) }
       case other => sendNonRequest(other)
 
-  override def onIncoming(handler: JSONRPCMessage => Identity[Unit]): Identity[Unit] = incoming.set(handler)
+  override def onIncoming(handler: JSONRPCMessage => Identity[Unit]): Identity[Unit] = state.tell(_.incoming = handler)
 
   override def close(): Identity[Unit] =
-    if closing.compareAndSet(false, true) then
+    if state.ask(_.beginClosing()) then
       sessionReady.countDown()
       openStreams.forEach(closeQuietly)
-      sessionId.getAndSet(None) match
+      state.ask(_.takeSessionId()) match
         case Some(id) =>
           try drainBody(ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id).response(asInputStreamUnsafe).send(backend))
           catch case _: Exception => ()
@@ -65,8 +80,8 @@ final class OxClientHttpTransport private (
   private def sendRequest(request: JSONRPCMessage.Request, await: () => JSONRPCMessage): Option[JSONRPCMessage] =
     val response = post(request)
     captureSession(response)
-    ClientHttpTransport.resolveResponse(response, sessionId.get()) match
-      case Left(err: McpSessionNotFoundException) => sessionId.set(None); throw err
+    ClientHttpTransport.resolveResponse(response, state.ask(_.sessionId)) match
+      case Left(err: McpSessionNotFoundException) => state.tell(_.sessionId = None); throw err
       case Left(err)                              => throw err
       case Right(HttpOutcome.NoBody)              =>
         drainBody(response)
@@ -83,8 +98,8 @@ final class OxClientHttpTransport private (
   private def sendNonRequest(msg: JSONRPCMessage): Option[JSONRPCMessage] =
     val response = post(msg)
     captureSession(response)
-    ClientHttpTransport.resolveResponse(response, sessionId.get()) match
-      case Left(err: McpSessionNotFoundException) => sessionId.set(None); throw err
+    ClientHttpTransport.resolveResponse(response, state.ask(_.sessionId)) match
+      case Left(err: McpSessionNotFoundException) => state.tell(_.sessionId = None); throw err
       case Left(err)                              => throw err
       case Right(HttpOutcome.NoBody)              => drainBody(response); None
       case Right(HttpOutcome.JsonBody)            => drainBody(response); None
@@ -95,12 +110,12 @@ final class OxClientHttpTransport private (
 
   private def post(msg: JSONRPCMessage): Response[Either[String, InputStream]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion, sessionId.get(), ClientTransport.encode(msg))
+      .basePostRequest(uri, protocolVersion, state.ask(_.sessionId), ClientTransport.encode(msg))
       .response(asInputStreamUnsafe)
       .send(backend)
 
   private def captureSession(response: Response[?]): Unit =
-    response.header("Mcp-Session-Id").foreach(id => sessionId.set(Some(id)))
+    response.header("Mcp-Session-Id").foreach(id => state.tell(_.sessionId = Some(id)))
     sessionReady.countDown()
 
   private def collectBody(response: Response[Either[String, InputStream]]): String =
@@ -127,7 +142,7 @@ final class OxClientHttpTransport private (
     track(stream)
     forkDiscard:
       try drainSse(stream, _ => ())
-      catch case e: Exception => if !closing.get() then log.warn(s"SSE drain error: ${e.getMessage}")
+      catch case e: Exception => if !state.ask(_.closing) then log.warn(s"SSE drain error: ${e.getMessage}")
       finally
         requestId.foreach { id =>
           val _ = pending.complete(id, sseEnded(id))
@@ -137,7 +152,7 @@ final class OxClientHttpTransport private (
   private def routeMessage(msg: JSONRPCMessage): Unit = msg match
     case response: JSONRPCMessage.Response => val _ = pending.complete(response.id, response)
     case err: JSONRPCMessage.Error         => val _ = pending.complete(err.id, err)
-    case other                             => incoming.get()(other)
+    case other                             => state.ask(_.incoming)(other)
 
   private[ox] def startGetListener(): Unit = forkDiscard(getListenerLoop())
 
@@ -145,13 +160,13 @@ final class OxClientHttpTransport private (
     sessionReady.await()
     val onFailure: (Int, Either[Throwable, Unit]) => Unit = (_, result) =>
       result match
-        case Left(t)  => if !closing.get() then log.warn(s"GET SSE listener error: ${t.getMessage}")
+        case Left(t)  => if !state.ask(_.closing) then log.warn(s"GET SSE listener error: ${t.getMessage}")
         case Right(_) => ()
     val schedule = Schedule.exponentialBackoff(100.millis).jitter().maxInterval(30.seconds)
     retry(RetryConfig[Throwable, Unit](schedule).afterAttempt(onFailure)):
-      if !closing.get() then
-        openGetSseStream(lastEventId.get()).foreach: stream =>
-          try drainSse(stream, id => lastEventId.set(Some(id)))
+      if !state.ask(_.closing) then
+        openGetSseStream(state.ask(_.lastEventId)).foreach: stream =>
+          try drainSse(stream, id => state.tell(_.lastEventId = Some(id)))
           finally untrack(stream)
 
   private def openGetSseStream(lastEvent: Option[String]): Option[InputStream] =
@@ -160,7 +175,7 @@ final class OxClientHttpTransport private (
       .header("Accept", MediaType.TextEventStream.toString)
       .header("MCP-Protocol-Version", protocolVersion.name)
       .response(asInputStreamUnsafe)
-    val withSession = sessionId.get().fold(base)(s => base.header("Mcp-Session-Id", s))
+    val withSession = state.ask(_.sessionId).fold(base)(s => base.header("Mcp-Session-Id", s))
     val withLastEvent = lastEvent.fold(withSession)(id => withSession.header("Last-Event-ID", id))
     val response = withLastEvent.send(backend)
     response.code match
@@ -230,11 +245,7 @@ object OxClientHttpTransport:
       uri,
       protocolVersion,
       timeout,
-      AtomicReference[Option[String]](None),
       SyncPendingRequests(),
-      AtomicReference[JSONRPCMessage => Unit](_ => ()),
-      AtomicReference[Option[String]](None),
-      AtomicBoolean(false),
       CountDownLatch(1),
       ConcurrentHashMap.newKeySet[InputStream]()
     )
