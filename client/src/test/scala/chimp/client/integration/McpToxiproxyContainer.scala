@@ -26,6 +26,10 @@ class McpToxiproxyContainer(network: Network, upstreamAlias: String, upstreamPor
 
   def restoreConnections(): Unit = containerProxy.foreach(_.setConnectionCut(false))
 
+  def dropConnections(): Unit = containerProxy.foreach: p =>
+    val _ = p.toxics().timeout("timeout_down", ToxicDirection.DOWNSTREAM, 1)
+    val _ = p.toxics().timeout("timeout_up", ToxicDirection.UPSTREAM, 1)
+
   def addLatencyMs(durationMs: Long): Unit = containerProxy.foreach: p =>
     val _ = p.toxics().latency("latency_down", ToxicDirection.DOWNSTREAM, durationMs)
     val _ = p.toxics().latency("latency_up", ToxicDirection.UPSTREAM, durationMs)

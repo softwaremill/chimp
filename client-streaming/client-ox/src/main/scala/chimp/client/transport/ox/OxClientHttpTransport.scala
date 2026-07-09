@@ -145,17 +145,19 @@ final class OxClientHttpTransport private (
     var attempt = 0
     var continue = !closing.get()
     while continue do
-      openGetSseStream(lastEventId.get()) match
-        case None         => continue = false
-        case Some(stream) =>
-          attempt = 0
-          try drainSse(stream, id => lastEventId.set(Some(id)))
-          catch case e: Exception => if !closing.get() then log.warn(s"GET SSE listener error: ${e.getMessage}")
-          finally untrack(stream)
-          if closing.get() then continue = false
-          else
-            attempt += 1
-            sleep(reconnectDelay(attempt))
+      var reconnect = true
+      try
+        openGetSseStream(lastEventId.get()) match
+          case None         => reconnect = false
+          case Some(stream) =>
+            attempt = 0
+            try drainSse(stream, id => lastEventId.set(Some(id)))
+            finally untrack(stream)
+      catch case e: Exception => if !closing.get() then log.warn(s"GET SSE listener error: ${e.getMessage}")
+      if !reconnect || closing.get() then continue = false
+      else
+        attempt += 1
+        sleep(reconnectDelay(attempt))
 
   private def openGetSseStream(lastEvent: Option[String]): Option[InputStream] =
     val base = basicRequest

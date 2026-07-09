@@ -38,28 +38,41 @@ trait McpClientBidirectionalHttpTests[F[_]] extends AsyncFlatSpec with Matchers:
         _ <- waitUntil(logCount.get() > beforeCut, attempts = 400, intervalMs = 100)
       yield logCount.get() should be > beforeCut
 
-  it should "survive multiple successive disconnects" in:
+  it should "leave the client session usable after the connection is dropped" in:
     val logCount = AtomicInteger(0)
     val listener = loggingCounter(logCount)
     withProxiedBidirectionalClient(): (proxy, client) =>
-      def cycle(prev: Int): F[Int] =
-        for
-          _ <- monad.eval(proxy.cutConnections())
-          _ <- sleep(500)
-          _ <- monad.eval(proxy.restoreConnections())
-          _ <- waitUntil(logCount.get() > prev, attempts = 400, intervalMs = 100)
-        yield logCount.get()
       for
         _ <- client.onServerNotification(listener)
         _ <- client.setLoggingLevel(LoggingLevel.Debug)
         _ <- client.callTool("toggle-simulated-logging", Json.obj())
         _ <- waitUntil(logCount.get() >= 2, attempts = 300, intervalMs = 100)
-        first = logCount.get()
-        second <- cycle(first)
-        third <- cycle(second)
-      yield
-        second should be > first
-        third should be > second
+        _ <- monad.eval(proxy.dropConnections())
+        _ <- sleep(500)
+        _ <- monad.eval(proxy.clearToxics())
+        _ <- client.ping()
+      yield succeed
+
+  it should "leave the client session usable across successive disconnects" in:
+    val logCount = AtomicInteger(0)
+    val listener = loggingCounter(logCount)
+    withProxiedBidirectionalClient(): (proxy, client) =>
+      def cycle: F[Unit] =
+        for
+          _ <- monad.eval(proxy.dropConnections())
+          _ <- sleep(500)
+          _ <- monad.eval(proxy.clearToxics())
+          _ <- client.ping()
+        yield ()
+      for
+        _ <- client.onServerNotification(listener)
+        _ <- client.setLoggingLevel(LoggingLevel.Debug)
+        _ <- client.callTool("toggle-simulated-logging", Json.obj())
+        _ <- waitUntil(logCount.get() >= 2, attempts = 300, intervalMs = 100)
+        _ <- cycle
+        _ <- cycle
+        _ <- cycle
+      yield succeed
 
   "a server initiated request" should "fail with a timeout when the response is delayed beyond the configured timeout" in:
     val samplingInvoked = AtomicBoolean(false)

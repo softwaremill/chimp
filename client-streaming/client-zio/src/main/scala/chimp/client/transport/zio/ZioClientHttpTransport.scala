@@ -189,20 +189,28 @@ final class ZioClientHttpTransport private (
       def loop(stream: Stream[Throwable, Byte]): Task[Unit] =
         drainSseStream(stream, lastEventIdRef)
           .catchAll(t => ZIO.succeed(log.warn(s"SSE drain error: ${t.getMessage}")))
-          .flatMap: _ =>
-            shouldContinue.flatMap:
-              case false => ZIO.unit
-              case true  =>
-                driver
-                  .next(())
-                  .foldZIO(
-                    _ => ZIO.unit,
-                    _ =>
-                      lastEventIdRef.get.flatMap: lastEventId =>
-                        openGetSseStream(lastEventId).flatMap:
-                          case Some(stream) => loop(stream)
-                          case None         => ZIO.unit
-                  )
+          .flatMap(_ => reconnect)
+
+      def reconnect: Task[Unit] =
+        shouldContinue.flatMap:
+          case false => ZIO.unit
+          case true  =>
+            driver
+              .next(())
+              .foldZIO(
+                _ => ZIO.unit,
+                _ =>
+                  lastEventIdRef.get
+                    .flatMap(openGetSseStream)
+                    .foldZIO(
+                      t => ZIO.succeed(log.warn(s"GET SSE reconnect failed: ${t.getMessage}")) *> reconnect,
+                      {
+                        case Some(stream) => loop(stream)
+                        case None         => ZIO.unit
+                      }
+                    )
+              )
+
       loop(stream)
 
   private def drainSseStream(
