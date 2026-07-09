@@ -1,7 +1,7 @@
 package chimp.conformance.client
 
 import chimp.client.McpClient
-import chimp.client.transport.HttpTransport
+import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.*
 import io.circe.Json
 import sttp.client4.DefaultSyncBackend
@@ -28,7 +28,7 @@ object Main:
       .getOrElse(ProtocolVersion.Latest)
 
     val backend = DefaultSyncBackend()
-    val transport = HttpTransport[Identity](backend, serverUrl, protocolVersion)
+    val transport = ClientHttpTransport[Identity](backend, serverUrl, protocolVersion)
 
     val rc: Int =
       try

@@ -66,3 +66,4 @@ enum JSONRPCErrorCodes(val code: Int):
   case InvalidParams extends JSONRPCErrorCodes(-32602)
   case InternalError extends JSONRPCErrorCodes(-32603)
   case InvocationError extends JSONRPCErrorCodes(-32000)
+  case ResourceNotFound extends JSONRPCErrorCodes(-32002)

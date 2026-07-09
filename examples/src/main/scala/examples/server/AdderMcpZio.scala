@@ -24,9 +24,9 @@ object Main extends ZIOAppDefault:
   // note that here we need to explicitly state the effect type, as the Tapir-ZIO integration requires a `RIO[R, A]`
   // effect (with the error channel fixed to `Throwable`)
   val adderServerTool = adderTool.serverLogic[[X] =>> RIO[Any, X]]: (input, _) =>
-    ZIO.succeed(Right(s"The result is ${input.a + input.b}"))
+    ZIO.succeed(ToolResult.text(s"The result is ${input.a + input.b}"))
 
-  val mcpServerEndpoint = mcpEndpoint(List(adderServerTool), List("mcp"))
+  val mcpServerEndpoint = McpServer(tools = List(adderServerTool)).endpoint(List("mcp"))
 
   val routes = ZioHttpInterpreter().toHttp(mcpServerEndpoint)
 

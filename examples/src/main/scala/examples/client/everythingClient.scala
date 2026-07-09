@@ -8,7 +8,7 @@
 package examples.client
 
 import chimp.client.*
-import chimp.client.transport.HttpTransport
+import chimp.client.transport.ClientHttpTransport
 import chimp.protocol.*
 import io.circe.Json
 import sttp.client4.DefaultSyncBackend
@@ -17,7 +17,7 @@ import sttp.shared.Identity
 
 @main def everythingClient(): Unit =
   val backend = DefaultSyncBackend()
-  val transport = HttpTransport[Identity](backend, uri"http://localhost:3001/mcp")
+  val transport = ClientHttpTransport[Identity](backend, uri"http://localhost:3001/mcp")
   val client = McpClient[Identity](
     transport,
     clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0"),

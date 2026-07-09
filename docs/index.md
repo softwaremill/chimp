@@ -10,9 +10,12 @@ and [sttp](https://github.com/softwaremill/sttp), supporting the variety of the 
    :caption: Server
 
    server/quickstart
-   server/protocol
+   server/transport
    server/tools
-   server/zio
+   server/prompts
+   server/resources
+   server/capabilities
+   server/examples
 
 .. toctree::
    :maxdepth: 2

@@ -1,6 +1,6 @@
 package chimp.client
 
-import chimp.client.transport.BidirectionalTransport
+import chimp.client.transport.ClientBidirectionalTransport
 import chimp.protocol.JSONRPCMessage
 import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
@@ -8,7 +8,7 @@ import sttp.shared.Identity
 import java.util.concurrent.atomic.AtomicReference
 import scala.collection.mutable
 
-final class InMemoryTransport extends BidirectionalTransport[Identity]:
+final class InMemoryTransport extends ClientBidirectionalTransport[Identity]:
   given monad: MonadError[Identity] = IdentityMonad
 
   private val incomingHandler = AtomicReference[JSONRPCMessage => Identity[Unit]](_ => ())
