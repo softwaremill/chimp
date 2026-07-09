@@ -27,7 +27,7 @@ final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHt
 
   def eventStream(handle: OutboundSink[Task] => Task[Option[Json]]): Task[EventStream] =
     ZIO.succeed {
-      ZStream.unwrap {
+      ZStream.unwrapScoped {
         for
           queue <- Queue.unbounded[Outbound]
           sink = new OutboundSink[Task]:
@@ -37,7 +37,7 @@ final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHt
             .flatMap(response => ZIO.foreachDiscard(response)(json => queue.offer(Outbound.Message(json))))
             .ensuring(queue.offer(Outbound.Close))
             .catchAllCause(_ => ZIO.unit)
-            .forkDaemon
+            .forkScoped
         yield ZStream.fromQueue(queue).collectWhile { case Outbound.Message(json) => ServerSentEvent(data = Some(json.noSpaces)) }
       }
     }
