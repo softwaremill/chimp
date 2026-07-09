@@ -6,13 +6,13 @@ import chimp.client.transport.{ClientStreamingStdioTransport, ClientTransport}
 import chimp.protocol.JSONRPCMessage
 import org.slf4j.LoggerFactory
 import ox.*
+import ox.channels.{Actor, ActorRef}
 import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
 
 import java.io.{BufferedReader, BufferedWriter, File, InputStreamReader, OutputStreamWriter}
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.CollectionConverters.*
 
@@ -22,19 +22,30 @@ final class OxClientStdioTransport private (
     workDir: Option[File],
     timeout: FiniteDuration,
     process: Process,
-    pending: SyncPendingRequests,
-    incoming: AtomicReference[JSONRPCMessage => Unit],
-    closed: AtomicBoolean
-) extends ClientStreamingStdioTransport[Identity](command, env, workDir, timeout):
+    pending: SyncPendingRequests
+)(using Ox)
+    extends ClientStreamingStdioTransport[Identity](command, env, workDir, timeout):
 
   private val log = LoggerFactory.getLogger(classOf[OxClientStdioTransport])
+
+  private final class State:
+    var incoming: JSONRPCMessage => Unit = _ => ()
+    var closed: Boolean = false
+
+    def beginClosing(): Boolean =
+      if closed then false
+      else
+        closed = true
+        true
+
+  private val state: ActorRef[State] = Actor.create(new State)
 
   given monad: MonadError[Identity] = IdentityMonad
 
   private val writer = BufferedWriter(OutputStreamWriter(process.getOutputStream, StandardCharsets.UTF_8))
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
-    if closed.get() then throw McpTransportException("Stdio transport is closed")
+    if state.ask(_.closed) then throw McpTransportException("Stdio transport is closed")
     msg match
       case request: JSONRPCMessage.Request =>
         val await = pending.register(request.id, timeout)
@@ -44,10 +55,10 @@ final class OxClientStdioTransport private (
         writeLine(other)
         None
 
-  override def onIncoming(handler: JSONRPCMessage => Identity[Unit]): Identity[Unit] = incoming.set(handler)
+  override def onIncoming(handler: JSONRPCMessage => Identity[Unit]): Identity[Unit] = state.tell(_.incoming = handler)
 
   override def close(): Identity[Unit] =
-    if closed.compareAndSet(false, true) then
+    if state.ask(_.beginClosing()) then
       try writer.close()
       catch case _: Exception => ()
       if process.isAlive then
@@ -64,7 +75,7 @@ final class OxClientStdioTransport private (
   private def dispatch(msg: JSONRPCMessage): Unit = msg match
     case response: JSONRPCMessage.Response => val _ = pending.complete(response.id, response)
     case err: JSONRPCMessage.Error         => val _ = pending.complete(err.id, err)
-    case other                             => incoming.get()(other)
+    case other                             => state.ask(_.incoming)(other)
 
   private def readLoop(reader: BufferedReader): Unit =
     try
@@ -75,7 +86,7 @@ final class OxClientStdioTransport private (
             case Right(msg) => dispatch(msg)
             case Left(e)    => log.warn(s"Failed to parse JSON-RPC line: ${e.getMessage}; raw: $line")
         line = reader.readLine()
-    catch case e: Exception => if !closed.get() then log.warn(s"Reader loop ended: ${e.getMessage}")
+    catch case e: Exception => if !state.ask(_.closed) then log.warn(s"Reader loop ended: ${e.getMessage}")
     finally pending.closeAll("Transport closed")
 
   private def drainStderr(errReader: BufferedReader): Unit =
@@ -104,16 +115,7 @@ object OxClientStdioTransport:
     pb.redirectErrorStream(false)
     val process = pb.start()
 
-    val transport = new OxClientStdioTransport(
-      command,
-      env,
-      workDir,
-      timeout,
-      process,
-      SyncPendingRequests(),
-      AtomicReference[JSONRPCMessage => Unit](_ => ()),
-      AtomicBoolean(false)
-    )
+    val transport = new OxClientStdioTransport(command, env, workDir, timeout, process, SyncPendingRequests())
 
     val reader = BufferedReader(InputStreamReader(process.getInputStream, StandardCharsets.UTF_8))
     val errReader = BufferedReader(InputStreamReader(process.getErrorStream, StandardCharsets.UTF_8))
