@@ -409,11 +409,11 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
           case _ => fail("Expected text contents")
       case _ => fail("Expected Response")
 
-  it should "return a -32602 error with data.uri for an unknown resource (sep-2164)" in:
+  it should "return a -32002 Resource not found error with data.uri for an unknown resource" in:
     val params = Json.obj("uri" -> Json.fromString("test://missing"))
     featureResult("resources/read", Some(params), "r4") match
       case Error(_, _, error) =>
-        error.code shouldBe InvalidParams.code
+        error.code shouldBe ResourceNotFound.code
         error.data.flatMap(_.hcursor.downField("uri").as[String].toOption) shouldBe Some("test://missing")
       case _ => fail("Expected Error")
 

@@ -185,7 +185,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
             case None                   =>
               protocolError(
                 id,
-                JSONRPCErrorCodes.InvalidParams.code,
+                JSONRPCErrorCodes.ResourceNotFound.code,
                 s"Resource not found: ${params.uri}",
                 Some(Json.obj("uri" -> Json.fromString(params.uri)))
               ).unit
@@ -203,7 +203,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case Left(error)     =>
         protocolError(
           id,
-          JSONRPCErrorCodes.InvalidParams.code,
+          JSONRPCErrorCodes.ResourceNotFound.code,
           error.message,
           error.uri.orElse(Some(uri)).map(uri => Json.obj("uri" -> Json.fromString(uri)))
         )
