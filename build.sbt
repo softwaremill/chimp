@@ -5,9 +5,9 @@ import com.softwaremill.UpdateVersionInDocs
 val scalaTestV = "3.2.20"
 val circeV = "0.14.16"
 val slf4jV = "2.0.18"
-val logbackV = "1.5.36"
-val tapirV = "1.13.23"
-val sttpClientV = "4.0.25"
+val logbackV = "1.5.37"
+val tapirV = "1.13.26"
+val sttpClientV = "4.0.26"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
 val zioHttpV = "3.8.0"
@@ -51,7 +51,7 @@ lazy val core: Project = (project in file("core"))
       "io.circe" %% "circe-generic" % circeV,
       "io.circe" %% "circe-parser" % circeV,
       "org.slf4j" % "slf4j-api" % slf4jV,
-      "com.networknt" % "json-schema-validator" % "3.0.5" % Test
+      "com.networknt" % "json-schema-validator" % "3.0.6" % Test
     )
   )
 
@@ -253,7 +253,7 @@ lazy val clientConformance = (project in file("client-conformance"))
     Compile / mainClass := Some("chimp.conformance.client.Main"),
     assembly / assemblyJarName := "chimp-client-conformance.jar",
     libraryDependencies ++= Seq(
-      "ch.qos.logback" % "logback-classic" % "1.5.36"
+      "ch.qos.logback" % "logback-classic" % "1.5.37"
     ),
     conformance := {
       import complete.DefaultParsers.*

@@ -1,6 +1,6 @@
 # Examples
 
-Each example builds an `McpServer` (or `StreamingMcpServer`) and serves it over a transport. The sync HTTP example uses `chimp-server`; the ZIO examples additionally use `chimp-server-zio`, and the direct-style Ox examples use `chimp-server-ox`.
+Each example builds an `McpServer` (or `StreamingMcpServer`) and serves it over a transport. The sync HTTP example uses `chimp-server`; the ZIO examples additionally use `chimp-server-zio`.
 
 ## HTTP server
 
