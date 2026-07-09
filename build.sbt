@@ -19,12 +19,6 @@ lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each ex
 lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   organization := "com.softwaremill.chimp",
   scalaVersion := "3.3.7",
-  updateDocs := Def.taskDyn {
-    val files = UpdateVersionInDocs(sLog.value, organization.value, version.value)
-    Def.task {
-      files
-    }
-  }.value,
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
   Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
@@ -36,7 +30,17 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
 lazy val root = (project in file("."))
   .settings(commonSettings: _*)
-  .settings(publishArtifact := false, name := "chimp")
+  .settings(
+    publishArtifact := false,
+    name := "chimp",
+    updateDocs := Def.taskDyn {
+      val files = UpdateVersionInDocs(sLog.value, organization.value, version.value)
+      Def.task {
+        (docs / mdoc).toTask("").value
+        files ++ Seq(file("generated-docs/out"))
+      }
+    }.value
+  )
   .aggregate(core, server, serverZio, serverOx, client, clientZio, clientOx, examples, serverConformance, clientConformance)
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
