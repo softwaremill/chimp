@@ -10,7 +10,7 @@ val tapirV = "1.13.27"
 val sttpClientV = "4.0.26"
 val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
-val zioHttpV = "3.8.1"
+val zioHttpV = "3.11.3"
 val oxV = "1.0.5"
 val testcontainersScalaV = "0.41.8"
 
