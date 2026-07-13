@@ -1,4 +1,4 @@
-//> using dep com.softwaremill.chimp::chimp-server:0.3.0
+//> using dep com.softwaremill.chimp::chimp-server:0.4.0
 //> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.11.50
 //> using dep ch.qos.logback:logback-classic:1.5.20
 

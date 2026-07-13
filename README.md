@@ -13,7 +13,7 @@ and clients can communicate over **Streamable HTTP** or **stdio**.
 Run a basic MCP server with Netty exposing a simple _adder_ tool:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server:0.3.0
+//> using dep com.softwaremill.chimp::chimp-server:0.4.0
 //> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.13.19
 
 import chimp.server.*
@@ -33,7 +33,7 @@ case class AdderInput(a: Int, b: Int) derives Codec, Schema
 Connect and invoke the tool as an MCP client:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-client:0.3.0
+//> using dep com.softwaremill.chimp::chimp-client:0.4.0
 //> using dep com.softwaremill.sttp.client4::core:4.0.24
 
 import chimp.client.*
