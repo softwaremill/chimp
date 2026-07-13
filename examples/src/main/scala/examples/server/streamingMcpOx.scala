@@ -1,4 +1,4 @@
-//> using dep com.softwaremill.chimp::chimp-server-ox:0.3.0
+//> using dep com.softwaremill.chimp::chimp-server-ox:0.4.0
 //> using dep ch.qos.logback:logback-classic:1.5.37
 
 package examples.server
