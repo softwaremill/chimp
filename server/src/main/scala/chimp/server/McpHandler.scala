@@ -58,7 +58,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   def handleJsonRpc(request: Json, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using MonadError[F]): F[McpResponse] =
     doHandleJsonRpc(request, headers, makeContext).map: response =>
-      logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body}")
+      logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body.getOrElse(Json.Null)}")
       response.withNullsDroppedDeep
 
   def handleJsonRpc(request: Json, headers: Seq[Header])(using m: MonadError[F], ev: ServerContext[F] <:< C): F[McpResponse] =
