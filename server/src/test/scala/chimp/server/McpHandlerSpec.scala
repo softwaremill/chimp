@@ -334,6 +334,51 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.content.head shouldBe ToolContent.Text("text", "no header")
       case _ => fail("Expected Response")
 
+  it should "not advertise an outputSchema for a tool that does not declare one" in:
+    listedTools(handler).find(_.name == "echo").get.outputSchema shouldBe None
+
+  it should "advertise the derived outputSchema of a tool that declares its output type" in:
+    case class OutputItem(label: String, value: Long) derives Schema, Codec
+    case class DerivedOutput(total: Long, items: List[OutputItem]) derives Schema, Codec
+
+    val outputTool = tool("derivedOutput")
+      .description("Test tool declaring its output type.")
+      .input[EchoInput]
+      .output[DerivedOutput]
+      .handle(_ => ToolResult.structured(DerivedOutput(1, List(OutputItem("a", 1)))))
+
+    val outputSchema = listedTools(McpHandler(McpServer(tools = List(outputTool))))
+      .find(_.name == "derivedOutput")
+      .get
+      .outputSchema
+      .getOrElse(fail("outputSchema not advertised"))
+
+    val cursor = outputSchema.hcursor
+    cursor.downField("type").as[String] shouldBe Right("object")
+    cursor.downField("required").as[List[String]] shouldBe Right(List("total"))
+    cursor.downField("properties").downField("items").downField("type").as[String] shouldBe Right("array")
+    // nested types are referenced, with their definitions carried along in the same schema
+    cursor.downField("$defs").downField("OutputItem").downField("required").as[List[String]] shouldBe Right(List("label", "value"))
+
+  it should "advertise a raw outputSchema as given" in:
+    val rawSchema = Json.obj(
+      "type" -> Json.fromString("object"),
+      "properties" -> Json.obj("total" -> Json.obj("type" -> Json.fromString("integer")))
+    )
+    val rawOutputTool = tool("rawOutput")
+      .description("Test tool with a raw output schema.")
+      .input[EchoInput]
+      .outputJson(rawSchema)
+      .handle(_ => ToolResult.structured(Json.obj("total" -> Json.fromInt(1))))
+
+    listedTools(McpHandler(McpServer(tools = List(rawOutputTool)))).find(_.name == "rawOutput").get.outputSchema shouldBe Some(rawSchema)
+
+  private def listedTools(h: McpHandler[Identity, ServerContext[Identity]]): List[ToolDefinition] =
+    val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("list"))
+    extractJsonFromResponse(h.handleJsonRpc(req.asJson, Seq.empty)).as[JSONRPCMessage] match
+      case Right(Response(_, _, result)) => result.as[ListToolsResponse].getOrElse(fail("Failed to decode result")).tools
+      case _                             => fail("Expected Response")
+
   it should "not use type arrays for optional fields in JSON schema" in:
     case class OptionalFieldInput(requiredField: String, optionalField: Option[Long]) derives Schema, Codec
     val optionalTool = tool("optionalTest")

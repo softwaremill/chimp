@@ -36,7 +36,7 @@ object ToolResult:
   def structured[A: Encoder](value: A): ToolResult = ToolResult(Nil, structuredContent = Some(value.asJson))
   def fromEither(result: Either[String, String]): ToolResult = result.fold(error, text)
 
-/** A tool's input schema: either derived from a Scala type or supplied as raw JSON Schema. */
+/** A tool's input or output schema: either derived from a Scala type or supplied as raw JSON Schema. */
 enum ToolSchema:
   case Derived(schema: Schema[?])
   case Raw(json: Json)
@@ -64,10 +64,10 @@ case class PartialTool(
 
   /** Fixes the input type, deriving its JSON Schema and decoder from the given instances. */
   def input[I: Schema: Decoder]: Tool[I] =
-    Tool[I](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], annotations)
+    Tool[I](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], None, annotations)
 
   /** Fixes the input as raw JSON, validated against the given JSON Schema. */
-  def inputJson(schema: Json): Tool[Json] = Tool[Json](name, description, ToolSchema.Raw(schema), summon[Decoder[Json]], annotations)
+  def inputJson(schema: Json): Tool[Json] = Tool[Json](name, description, ToolSchema.Raw(schema), summon[Decoder[Json]], None, annotations)
 
 /** A tool with a known input type `I`, ready to be given its handling logic. */
 case class Tool[I](
@@ -75,21 +75,28 @@ case class Tool[I](
     description: Option[String],
     inputSchema: ToolSchema,
     inputDecoder: Decoder[I],
+    outputSchema: Option[ToolSchema],
     annotations: Option[ToolAnnotations]
 ):
+  /** Declares the structured output, deriving its JSON Schema from the given instance. */
+  def output[O: Schema]: Tool[I] = copy(outputSchema = Some(ToolSchema.Derived(summon[Schema[O]])))
+
+  /** Declares the structured output, described by the given raw JSON Schema. */
+  def outputJson(schema: Json): Tool[I] = copy(outputSchema = Some(ToolSchema.Raw(schema)))
+
   /** Attaches effectful logic, with access to the request headers. */
   def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult]): ServerTool[I, F, ServerContext[F]] =
-    ServerTool(name, description, inputSchema, inputDecoder, annotations, (input, _, headers) => logic(input, headers))
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (input, _, headers) => logic(input, headers))
 
   /** Attaches effectful logic with access to the [[StreamingServerContext]]; usable only on a streaming server. */
   def streamingServerLogic[F[_]](
       logic: (I, StreamingServerContext[F], Seq[Header]) => F[ToolResult]
   ): ServerTool[I, F, StreamingServerContext[F]] =
-    ServerTool(name, description, inputSchema, inputDecoder, annotations, logic)
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
 
   /** Attaches synchronous logic that also receives the request headers. */
   def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult): ServerTool[I, Identity, ServerContext[Identity]] =
-    ServerTool(name, description, inputSchema, inputDecoder, annotations, (i, _, headers) => logic(i, headers))
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (i, _, headers) => logic(i, headers))
 
   /** Attaches synchronous logic over just the decoded input. */
   def handle(logic: I => ToolResult): ServerTool[I, Identity, ServerContext[Identity]] =
@@ -101,6 +108,7 @@ case class ServerTool[I, F[_], -C <: ServerContext[F]](
     description: Option[String],
     inputSchema: ToolSchema,
     inputDecoder: Decoder[I],
+    outputSchema: Option[ToolSchema],
     annotations: Option[ToolAnnotations],
     logic: (I, C, Seq[Header]) => F[ToolResult]
 )
