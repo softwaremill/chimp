@@ -40,7 +40,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       (if server.showJsonSchemaMetadata then base else base.copy($schema = None)).asJson
     case ToolSchema.Raw(json) => json
 
-  private def toolToDefinition(tool: ServerTool[?, F, C]): ToolDefinition =
+  private def toolToDefinition(tool: ServerTool[?, ?, F, C]): ToolDefinition =
     ToolDefinition(
       name = tool.name,
       description = tool.description,
@@ -164,7 +164,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case None =>
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
-  private def toolCallResponse(id: RequestId, result: ToolResult): JSONRPCMessage =
+  private def toolCallResponse(id: RequestId, result: ToolResult[?]): JSONRPCMessage =
     JSONRPCMessage.Response(
       id = id,
       result = CallToolResult(

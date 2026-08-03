@@ -168,15 +168,14 @@ import sttp.shared.Identity
 
 ### Structured output
 
-Next to its input, a tool can declare the shape of the structured data it returns. The schema is advertised to clients as the tool's
-`outputSchema`, so the `structuredContent` of a result becomes a contract they can validate against:
+Next to its input, a tool can specify the type of the structured data it returns. The derived schema is advertised to clients as the tool's
+`outputSchema`, and the type carries into the logic, which returns a `ToolResult[SumOutput]`:
 
 ```scala
 //> using dep com.softwaremill.chimp::chimp-server:0.4.0
 
 import chimp.server.*
 import io.circe.Codec
-import io.circe.syntax.*
 import sttp.tapir.*
 
 case class SumInput(a: Int, b: Int) derives Codec, Schema
@@ -186,7 +185,7 @@ val adder = tool("adder")
   .description("Adds two numbers")
   .input[SumInput]
   .output[SumOutput]
-  .handle(i => ToolResult.text(s"Result: ${i.a + i.b}").withStructured(SumOutput(i.a + i.b).asJson))
+  .handle(i => ToolResult.text(s"Result: ${i.a + i.b}").withStructured(SumOutput(i.a + i.b)))
 ```
 
 Use `.outputJson(schema)` to supply a raw JSON Schema instead, mirroring `.inputJson(schema)`.

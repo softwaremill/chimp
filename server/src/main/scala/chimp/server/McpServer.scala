@@ -19,7 +19,7 @@ sealed trait McpServerDef[F[_], C <: ServerContext[F]]:
   def instructions: Option[String]
   def showJsonSchemaMetadata: Boolean
   def originCheck: OriginCheck
-  def tools: List[ServerTool[?, F, C]]
+  def tools: List[ServerTool[?, ?, F, C]]
   def prompts: List[ServerPrompt[F]]
   def resources: List[ServerResource[F]]
   def resourceTemplates: List[ServerResourceTemplate[F]]
@@ -33,7 +33,7 @@ case class McpServer[F[_]](
     instructions: Option[String] = None,
     showJsonSchemaMetadata: Boolean = true,
     originCheck: OriginCheck = OriginCheck.localhostOnly,
-    tools: List[ServerTool[?, F, ServerContext[F]]] = Nil,
+    tools: List[ServerTool[?, ?, F, ServerContext[F]]] = Nil,
     prompts: List[ServerPrompt[F]] = Nil,
     resources: List[ServerResource[F]] = Nil,
     resourceTemplates: List[ServerResourceTemplate[F]] = Nil,
@@ -56,10 +56,10 @@ case class McpServer[F[_]](
   def withOriginCheck(value: OriginCheck): McpServer[F] =
     copy(originCheck = value)
 
-  def addTool(tool: ServerTool[?, F, ServerContext[F]]): McpServer[F] =
+  def addTool(tool: ServerTool[?, ?, F, ServerContext[F]]): McpServer[F] =
     copy(tools = tools :+ tool)
 
-  def addTools(tools: ServerTool[?, F, ServerContext[F]]*): McpServer[F] =
+  def addTools(tools: ServerTool[?, ?, F, ServerContext[F]]*): McpServer[F] =
     copy(tools = this.tools ++ tools)
 
   def addPrompt(prompt: ServerPrompt[F]): McpServer[F] =
@@ -113,7 +113,7 @@ case class StreamingMcpServer[F[_]](
     instructions: Option[String] = None,
     showJsonSchemaMetadata: Boolean = true,
     originCheck: OriginCheck = OriginCheck.localhostOnly,
-    tools: List[ServerTool[?, F, StreamingServerContext[F]]] = Nil,
+    tools: List[ServerTool[?, ?, F, StreamingServerContext[F]]] = Nil,
     prompts: List[ServerPrompt[F]] = Nil,
     resources: List[ServerResource[F]] = Nil,
     resourceTemplates: List[ServerResourceTemplate[F]] = Nil,
@@ -136,16 +136,16 @@ case class StreamingMcpServer[F[_]](
   def withOriginCheck(value: OriginCheck): StreamingMcpServer[F] =
     copy(originCheck = value)
 
-  def addTool(tool: ServerTool[?, F, ServerContext[F]]): StreamingMcpServer[F] =
+  def addTool(tool: ServerTool[?, ?, F, ServerContext[F]]): StreamingMcpServer[F] =
     copy(tools = tools :+ tool)
 
-  def addTools(tools: ServerTool[?, F, ServerContext[F]]*): StreamingMcpServer[F] =
+  def addTools(tools: ServerTool[?, ?, F, ServerContext[F]]*): StreamingMcpServer[F] =
     copy(tools = this.tools ++ tools)
 
-  def addStreamingTool(tool: ServerTool[?, F, StreamingServerContext[F]]): StreamingMcpServer[F] =
+  def addStreamingTool(tool: ServerTool[?, ?, F, StreamingServerContext[F]]): StreamingMcpServer[F] =
     copy(tools = tools :+ tool)
 
-  def addStreamingTools(tools: ServerTool[?, F, StreamingServerContext[F]]*): StreamingMcpServer[F] =
+  def addStreamingTools(tools: ServerTool[?, ?, F, StreamingServerContext[F]]*): StreamingMcpServer[F] =
     copy(tools = this.tools ++ tools)
 
   def addPrompt(prompt: ServerPrompt[F]): StreamingMcpServer[F] =

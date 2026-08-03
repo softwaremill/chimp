@@ -3,8 +3,7 @@
 - Use `tool(name)` to start defining a [tool](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
 - Add a description and annotations for metadata and hints.
 - Specify the input type (must have a Circe `Codec` and Tapir `Schema`), or use `.inputJson(schema)` for a raw JSON Schema.
-- Optionally declare the structured output type with `.output[O]` (needs a Tapir `Schema`), or `.outputJson(schema)` for a raw JSON
-  Schema. This is advertised as the tool's `outputSchema`, so clients can validate the `structuredContent` it returns.
+- Optionally specify the structured output type (must have a Tapir `Schema`), or use `.outputJson(schema)` for a raw JSON Schema.
 - Provide the server logic:
   - `handle` — synchronous logic from input to `ToolResult`.
   - `handleWithHeaders` — synchronous logic that also receives the request headers.
@@ -33,13 +32,12 @@ A `ToolResult` can carry text, images, audio, embedded resources and structured 
 
 ## Structured output
 
-A tool declaring its output type advertises the derived JSON Schema as `outputSchema`, so the `structuredContent` of a result becomes a
-contract clients can validate against:
+A tool that returns structured data can specify its type, which is advertised to clients as the tool's `outputSchema` — the contract for the
+`structuredContent` of each result:
 
 ```scala mdoc:compile-only
 import chimp.server.*
 import io.circe.Codec
-import io.circe.syntax.*
 import sttp.tapir.*
 
 case class SumInput(a: Int, b: Int) derives Codec, Schema
@@ -49,8 +47,9 @@ val adder = tool("adder")
   .description("Adds two numbers")
   .input[SumInput]
   .output[SumOutput]
-  .handle(in => ToolResult.text(s"The result is ${in.a + in.b}").withStructured(SumOutput(in.a + in.b).asJson))
+  .handle(in => ToolResult.text(s"The result is ${in.a + in.b}").withStructured(SumOutput(in.a + in.b)))
 ```
 
-Both content and structured output are returned above; the text is for clients that don't read `structuredContent`. A result carrying only
-structured output can be built with `ToolResult.structured(value)`.
+The output type is part of the tool's type: `.output[SumOutput]` gives a `Tool[SumInput, SumOutput]`, whose logic returns a
+`ToolResult[SumOutput]` — `withStructured` adds structured output to content blocks, `ToolResult.structured` returns it alone. Without
+`.output` a tool is a `Tool[I, NoOutput]`, returning content only; `ToolResult.error` is valid either way.

@@ -18,6 +18,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   case class EchoInput(message: String) derives Schema, Codec
   case class AddInput(a: Int, b: Int) derives Schema, Codec
+  case class SumOutput(sum: Int) derives Schema, Codec
 
   val echoTool = tool("echo")
     .description("Echoes the input message.")
@@ -372,6 +373,38 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
       .handle(_ => ToolResult.structured(Json.obj("total" -> Json.fromInt(1))))
 
     listedTools(McpHandler(McpServer(tools = List(rawOutputTool)))).find(_.name == "rawOutput").get.outputSchema shouldBe Some(rawSchema)
+
+  it should "return structured output next to the content, when the output type is declared" in:
+    val bothTool = tool("both")
+      .description("Test tool returning content and structured output.")
+      .input[AddInput]
+      .output[SumOutput]
+      .handle(in => ToolResult.text((in.a + in.b).toString).withStructured(SumOutput(in.a + in.b)))
+
+    val params = Json.obj(
+      "name" -> Json.fromString("both"),
+      "arguments" -> Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3))
+    )
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("both1"))
+
+    val response = McpHandler(McpServer(tools = List(bothTool))).handleJsonRpc(req.asJson, Seq.empty)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("Failed to decode response")) match
+      case Response(_, _, result) =>
+        val resultObj = result.as[CallToolResult].getOrElse(fail("Failed to decode result"))
+        resultObj.content.head shouldBe ToolContent.Text("text", "5")
+        resultObj.structuredContent shouldBe Some(SumOutput(5).asJson)
+      case _ => fail("Expected Response")
+
+  it should "accept only results matching the declared output type" in:
+    // a tool that declares no output type returns content only
+    assertCompiles("""tool("t").input[AddInput].handle(in => ToolResult.text(in.a.toString))""")
+    assertDoesNotCompile("""tool("t").input[AddInput].handle(in => ToolResult.structured(SumOutput(in.a + in.b)))""")
+
+    // a tool that declares one must return it, and can always fail instead
+    assertCompiles("""tool("t").input[AddInput].output[SumOutput].handle(in => ToolResult.structured(SumOutput(in.a + in.b)))""")
+    assertCompiles("""tool("t").input[AddInput].output[SumOutput].handle(_ => ToolResult.error("boom"))""")
+    assertDoesNotCompile("""tool("t").input[AddInput].output[SumOutput].handle(in => ToolResult.text(in.a.toString))""")
+    assertDoesNotCompile("""tool("t").input[AddInput].output[SumOutput].handle(_ => ToolResult.structured(EchoInput("nope")))""")
 
   private def listedTools(h: McpHandler[Identity, ServerContext[Identity]]): List[ToolDefinition] =
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("list"))
