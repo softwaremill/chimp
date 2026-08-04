@@ -50,6 +50,5 @@ val adder = tool("adder")
   .handle(in => ToolResult.text(s"The result is ${in.a + in.b}").withStructured(SumOutput(in.a + in.b)))
 ```
 
-The output type is part of the tool's type: `.output[SumOutput]` gives a `Tool[SumInput, SumOutput]`, whose logic returns a
-`ToolResult[SumOutput]` — `withStructured` adds structured output to content blocks, `ToolResult.structured` returns it alone. Without
-`.output` a tool is a `Tool[I, NoOutput]`, returning content only; `ToolResult.error` is valid either way.
+The output type carries into the logic, which returns a `ToolResult[SumOutput]`; `ToolResult.error` is accepted whatever the output type. A
+result with structured output but no content is also sent as serialized JSON text, as the spec recommends.

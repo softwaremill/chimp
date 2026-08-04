@@ -395,6 +395,27 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.structuredContent shouldBe Some(SumOutput(5).asJson)
       case _ => fail("Expected Response")
 
+  it should "serialize structured output into a text block, when the tool returns no content" in:
+    val structuredOnlyTool = tool("structuredOnly")
+      .description("Test tool returning structured output only.")
+      .input[AddInput]
+      .output[SumOutput]
+      .handle(in => ToolResult.structured(SumOutput(in.a + in.b)))
+
+    val params = Json.obj(
+      "name" -> Json.fromString("structuredOnly"),
+      "arguments" -> Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3))
+    )
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("structured1"))
+
+    val response = McpHandler(McpServer(tools = List(structuredOnlyTool))).handleJsonRpc(req.asJson, Seq.empty)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("Failed to decode response")) match
+      case Response(_, _, result) =>
+        val resultObj = result.as[CallToolResult].getOrElse(fail("Failed to decode result"))
+        resultObj.content shouldBe List(ToolContent.Text("text", """{"sum":5}"""))
+        resultObj.structuredContent shouldBe Some(SumOutput(5).asJson)
+      case _ => fail("Expected Response")
+
   it should "accept only results matching the declared output type" in:
     // a tool that declares no output type returns content only
     assertCompiles("""tool("t").input[AddInput].handle(in => ToolResult.text(in.a.toString))""")

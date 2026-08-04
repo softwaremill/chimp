@@ -165,10 +165,14 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
   private def toolCallResponse(id: RequestId, result: ToolResult[?]): JSONRPCMessage =
+    // for backwards compatibility, structured output is serialized into a text block, unless the tool returned content of its own
+    val content = result.structuredContent match
+      case Some(json) if result.content.isEmpty => List(ToolContent.Text(text = json.noSpaces))
+      case _                                    => result.content
     JSONRPCMessage.Response(
       id = id,
       result = CallToolResult(
-        content = result.content,
+        content = content,
         structuredContent = result.structuredContent,
         isError = result.isError
       ).asJson

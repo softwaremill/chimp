@@ -19,10 +19,10 @@ case class ToolAnnotations(
 /** The structured output type of a tool that returns none. A distinct type rather than `Unit`, which value discarding would let any
   * structured result conform to.
   */
-sealed trait NoOutput
+sealed trait NoStructuredOutput
 
 /** The result of a tool call: content blocks, optional structured output, and whether the call failed. `O` is the type of the structured
-  * output, [[NoOutput]] when there is none.
+  * output, [[NoStructuredOutput]] when there is none.
   */
 case class ToolResult[+O](
     content: List[ToolContent],
@@ -36,17 +36,17 @@ case class ToolResult[+O](
 
 /** Constructors for the common [[ToolResult]] shapes. An error is a valid result whatever the output type, hence `ToolResult[Nothing]`. */
 object ToolResult:
-  def text(text: String): ToolResult[NoOutput] = ToolResult(List(ToolContent.Text(text = text)))
+  def text(text: String): ToolResult[NoStructuredOutput] = ToolResult(List(ToolContent.Text(text = text)))
   def error(message: String): ToolResult[Nothing] = ToolResult(List(ToolContent.Text(text = message)), isError = true)
-  def image(data: String, mimeType: String): ToolResult[NoOutput] =
+  def image(data: String, mimeType: String): ToolResult[NoStructuredOutput] =
     ToolResult(List(ToolContent.Image(data = data, mimeType = mimeType)))
-  def audio(data: String, mimeType: String): ToolResult[NoOutput] =
+  def audio(data: String, mimeType: String): ToolResult[NoStructuredOutput] =
     ToolResult(List(ToolContent.Audio(data = data, mimeType = mimeType)))
-  def embedded(resource: ResourceContents): ToolResult[NoOutput] =
+  def embedded(resource: ResourceContents): ToolResult[NoStructuredOutput] =
     ToolResult(List(ToolContent.ResourceContent(resource = resource)))
-  def content(content: ToolContent*): ToolResult[NoOutput] = ToolResult(content.toList)
+  def content(content: ToolContent*): ToolResult[NoStructuredOutput] = ToolResult(content.toList)
   def structured[O: Encoder](value: O): ToolResult[O] = ToolResult(Nil, structuredContent = Some(value.asJson))
-  def fromEither(result: Either[String, String]): ToolResult[NoOutput] = result.fold(error, text)
+  def fromEither(result: Either[String, String]): ToolResult[NoStructuredOutput] = result.fold(error, text)
 
 /** A tool's input or output schema: either derived from a Scala type or supplied as raw JSON Schema. */
 enum ToolSchema:
@@ -75,12 +75,12 @@ case class PartialTool(
     copy(annotations = Some(ann))
 
   /** Fixes the input type, deriving its JSON Schema and decoder from the given instances. */
-  def input[I: Schema: Decoder]: Tool[I, NoOutput] =
-    Tool[I, NoOutput](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], None, annotations)
+  def input[I: Schema: Decoder]: Tool[I, NoStructuredOutput] =
+    Tool[I, NoStructuredOutput](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], None, annotations)
 
   /** Fixes the input as raw JSON, validated against the given JSON Schema. */
-  def inputJson(schema: Json): Tool[Json, NoOutput] =
-    Tool[Json, NoOutput](name, description, ToolSchema.Raw(schema), summon[Decoder[Json]], None, annotations)
+  def inputJson(schema: Json): Tool[Json, NoStructuredOutput] =
+    Tool[Json, NoStructuredOutput](name, description, ToolSchema.Raw(schema), summon[Decoder[Json]], None, annotations)
 
 /** A tool with a known input type `I` and structured output type `O`, ready to be given its handling logic. */
 case class Tool[I, O](
