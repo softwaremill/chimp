@@ -34,16 +34,18 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   private val hasResources = server.resources.nonEmpty || server.resourceTemplates.nonEmpty
   private val toolDefinitions = server.tools.map(toolToDefinition)
 
-  private def toolToDefinition(tool: ServerTool[?, F, C]): ToolDefinition =
-    val jsonSchema = tool.inputSchema match
-      case ToolSchema.Derived(schema) =>
-        val base = TapirSchemaToJsonSchema(schema, markOptionsAsNullable = false)
-        (if server.showJsonSchemaMetadata then base else base.copy($schema = None)).asJson
-      case ToolSchema.Raw(json) => json
+  private def toJsonSchema(toolSchema: ToolSchema): Json = toolSchema match
+    case ToolSchema.Derived(schema) =>
+      val base = TapirSchemaToJsonSchema(schema, markOptionsAsNullable = false)
+      (if server.showJsonSchemaMetadata then base else base.copy($schema = None)).asJson
+    case ToolSchema.Raw(json) => json
+
+  private def toolToDefinition(tool: ServerTool[?, ?, F, C]): ToolDefinition =
     ToolDefinition(
       name = tool.name,
       description = tool.description,
-      inputSchema = jsonSchema,
+      inputSchema = toJsonSchema(tool.inputSchema),
+      outputSchema = tool.outputSchema.map(toJsonSchema),
       annotations = tool.annotations
         .map(annotation =>
           ToolAnnotations(
@@ -162,11 +164,15 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case None =>
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
-  private def toolCallResponse(id: RequestId, result: ToolResult): JSONRPCMessage =
+  private def toolCallResponse(id: RequestId, result: ToolResult[?]): JSONRPCMessage =
+    // for backwards compatibility, structured output is serialized into a text block, unless the tool returned content of its own
+    val content = result.structuredContent match
+      case Some(json) if result.content.isEmpty => List(ToolContent.Text(text = json.noSpaces))
+      case _                                    => result.content
     JSONRPCMessage.Response(
       id = id,
       result = CallToolResult(
-        content = result.content,
+        content = content,
         structuredContent = result.structuredContent,
         isError = result.isError
       ).asJson

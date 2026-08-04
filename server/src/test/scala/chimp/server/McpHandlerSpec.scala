@@ -18,6 +18,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   case class EchoInput(message: String) derives Schema, Codec
   case class AddInput(a: Int, b: Int) derives Schema, Codec
+  case class SumOutput(sum: Int) derives Schema, Codec
 
   val echoTool = tool("echo")
     .description("Echoes the input message.")
@@ -333,6 +334,104 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         resultObj.isError shouldBe false
         resultObj.content.head shouldBe ToolContent.Text("text", "no header")
       case _ => fail("Expected Response")
+
+  it should "not advertise an outputSchema for a tool that does not declare one" in:
+    listedTools(handler).find(_.name == "echo").get.outputSchema shouldBe None
+
+  it should "advertise the derived outputSchema of a tool that declares its output type" in:
+    case class OutputItem(label: String, value: Long) derives Schema, Codec
+    case class DerivedOutput(total: Long, items: List[OutputItem]) derives Schema, Codec
+
+    val outputTool = tool("derivedOutput")
+      .description("Test tool declaring its output type.")
+      .input[EchoInput]
+      .output[DerivedOutput]
+      .handle(_ => ToolResult.structured(DerivedOutput(1, List(OutputItem("a", 1)))))
+
+    val outputSchema = listedTools(McpHandler(McpServer(tools = List(outputTool))))
+      .find(_.name == "derivedOutput")
+      .get
+      .outputSchema
+      .getOrElse(fail("outputSchema not advertised"))
+
+    val cursor = outputSchema.hcursor
+    cursor.downField("type").as[String] shouldBe Right("object")
+    cursor.downField("required").as[List[String]] shouldBe Right(List("total"))
+    cursor.downField("properties").downField("items").downField("type").as[String] shouldBe Right("array")
+    // nested types are referenced, with their definitions carried along in the same schema
+    cursor.downField("$defs").downField("OutputItem").downField("required").as[List[String]] shouldBe Right(List("label", "value"))
+
+  it should "advertise a raw outputSchema as given" in:
+    val rawSchema = Json.obj(
+      "type" -> Json.fromString("object"),
+      "properties" -> Json.obj("total" -> Json.obj("type" -> Json.fromString("integer")))
+    )
+    val rawOutputTool = tool("rawOutput")
+      .description("Test tool with a raw output schema.")
+      .input[EchoInput]
+      .outputJson(rawSchema)
+      .handle(_ => ToolResult.structured(Json.obj("total" -> Json.fromInt(1))))
+
+    listedTools(McpHandler(McpServer(tools = List(rawOutputTool)))).find(_.name == "rawOutput").get.outputSchema shouldBe Some(rawSchema)
+
+  it should "return structured output next to the content, when the output type is declared" in:
+    val bothTool = tool("both")
+      .description("Test tool returning content and structured output.")
+      .input[AddInput]
+      .output[SumOutput]
+      .handle(in => ToolResult.text((in.a + in.b).toString).withStructured(SumOutput(in.a + in.b)))
+
+    val params = Json.obj(
+      "name" -> Json.fromString("both"),
+      "arguments" -> Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3))
+    )
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("both1"))
+
+    val response = McpHandler(McpServer(tools = List(bothTool))).handleJsonRpc(req.asJson, Seq.empty)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("Failed to decode response")) match
+      case Response(_, _, result) =>
+        val resultObj = result.as[CallToolResult].getOrElse(fail("Failed to decode result"))
+        resultObj.content.head shouldBe ToolContent.Text("text", "5")
+        resultObj.structuredContent shouldBe Some(SumOutput(5).asJson)
+      case _ => fail("Expected Response")
+
+  it should "serialize structured output into a text block, when the tool returns no content" in:
+    val structuredOnlyTool = tool("structuredOnly")
+      .description("Test tool returning structured output only.")
+      .input[AddInput]
+      .output[SumOutput]
+      .handle(in => ToolResult.structured(SumOutput(in.a + in.b)))
+
+    val params = Json.obj(
+      "name" -> Json.fromString("structuredOnly"),
+      "arguments" -> Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3))
+    )
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("structured1"))
+
+    val response = McpHandler(McpServer(tools = List(structuredOnlyTool))).handleJsonRpc(req.asJson, Seq.empty)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("Failed to decode response")) match
+      case Response(_, _, result) =>
+        val resultObj = result.as[CallToolResult].getOrElse(fail("Failed to decode result"))
+        resultObj.content shouldBe List(ToolContent.Text("text", """{"sum":5}"""))
+        resultObj.structuredContent shouldBe Some(SumOutput(5).asJson)
+      case _ => fail("Expected Response")
+
+  it should "accept only results matching the declared output type" in:
+    // a tool that declares no output type returns content only
+    assertCompiles("""tool("t").input[AddInput].handle(in => ToolResult.text(in.a.toString))""")
+    assertDoesNotCompile("""tool("t").input[AddInput].handle(in => ToolResult.structured(SumOutput(in.a + in.b)))""")
+
+    // a tool that declares one must return it, and can always fail instead
+    assertCompiles("""tool("t").input[AddInput].output[SumOutput].handle(in => ToolResult.structured(SumOutput(in.a + in.b)))""")
+    assertCompiles("""tool("t").input[AddInput].output[SumOutput].handle(_ => ToolResult.error("boom"))""")
+    assertDoesNotCompile("""tool("t").input[AddInput].output[SumOutput].handle(in => ToolResult.text(in.a.toString))""")
+    assertDoesNotCompile("""tool("t").input[AddInput].output[SumOutput].handle(_ => ToolResult.structured(EchoInput("nope")))""")
+
+  private def listedTools(h: McpHandler[Identity, ServerContext[Identity]]): List[ToolDefinition] =
+    val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("list"))
+    extractJsonFromResponse(h.handleJsonRpc(req.asJson, Seq.empty)).as[JSONRPCMessage] match
+      case Right(Response(_, _, result)) => result.as[ListToolsResponse].getOrElse(fail("Failed to decode result")).tools
+      case _                             => fail("Expected Response")
 
   it should "not use type arrays for optional fields in JSON schema" in:
     case class OptionalFieldInput(requiredField: String, optionalField: Option[Long]) derives Schema, Codec
