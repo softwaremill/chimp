@@ -18,7 +18,7 @@ lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each ex
 
 lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   organization := "com.softwaremill.chimp",
-  scalaVersion := "3.3.7",
+  scalaVersion := "3.3.8",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
   Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
