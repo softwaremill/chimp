@@ -92,3 +92,7 @@ Scala snippets in the docs are compiled, so run `sbt compileDocs` after editing 
 `generated-docs/`; it is mdoc output, regenerated at release.
 
 For specific instructions on working with the docs site, refer to `docs/README.md`.
+
+## Language
+
+User ASD-STE100 Simplified Technical English for documentation, responses and user interactions.
