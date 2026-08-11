@@ -23,4 +23,6 @@ Thumbs.db
 
 # Local Sphinx build artifacts
 generated-docs/out/.venv/
-generated-docs/out/_build/ 
+generated-docs/out/_build/
+
+.no-mistakes.yaml
