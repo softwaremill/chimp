@@ -96,3 +96,8 @@ For specific instructions on working with the docs site, refer to `docs/README.m
 ## Language
 
 User ASD-STE100 Simplified Technical English for documentation, responses and user interactions.
+
+## Code comments
+
+Do not add any comments in the code, unless you're asked to do so.
+
