@@ -20,6 +20,10 @@ import scala.util.chaining.*
   *   The MCP endpoint URI.
   * @param protocolVersion
   *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
+  * @param headers
+  *   Extra headers sent with each request to the server, for example `Header.authorization("Bearer", token)`. The headers which the
+  *   protocol requires (`Accept`, `MCP-Protocol-Version` and `Mcp-Session-Id`) cannot be replaced here; the transport always sets them
+  *   itself.
   */
 final class ClientHttpTransport[F[_]](
     backend: Backend[F],
@@ -87,6 +91,7 @@ object ClientHttpTransport:
   ): Request[Either[String, String]] =
     basicRequest
       .post(uri)
+      .headers(headers*)
       .header("Content-Type", MediaType.ApplicationJson.toString)
       .header("Accept", AcceptHeader)
       .header("MCP-Protocol-Version", protocolVersion.name)
@@ -96,7 +101,6 @@ object ClientHttpTransport:
           case Some(sessionId) => request.header("Mcp-Session-Id", sessionId)
           case _               => request
       }
-      .headers(headers*)
 
   private[transport] def baseGetRequest(
       uri: Uri,
@@ -107,11 +111,11 @@ object ClientHttpTransport:
   ): Request[Either[String, String]] =
     basicRequest
       .get(uri)
+      .headers(headers*)
       .header("Accept", MediaType.TextEventStream.toString)
       .header("MCP-Protocol-Version", protocolVersion.name)
       .pipe(request => sessionId.fold(request)(id => request.header("Mcp-Session-Id", id)))
       .pipe(request => lastEventId.fold(request)(id => request.header("Last-Event-ID", id)))
-      .headers(headers*)
 
   private[transport] def baseDeleteRequest(
       uri: Uri,
@@ -121,9 +125,9 @@ object ClientHttpTransport:
   ): Request[Either[String, String]] =
     basicRequest
       .delete(uri)
+      .headers(headers*)
       .header("Mcp-Session-Id", sessionId)
       .header("MCP-Protocol-Version", protocolVersion.name)
-      .headers(headers*)
 
   private[transport] def resolveResponse(
       response: Response[?],
