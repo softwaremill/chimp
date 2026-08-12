@@ -34,7 +34,12 @@ lazy val root = (project in file("."))
     publishArtifact := false,
     name := "chimp",
     updateDocs := Def.taskDyn {
-      val files = UpdateVersionInDocs(sLog.value, organization.value, version.value)
+      val log = sLog.value
+      val org = organization.value
+      val releaseVersion = version.value
+      val files = UpdateVersionInDocs(log, org, releaseVersion) ++
+        UpdateVersionInFiles.scalaCliDependencies(log, org, releaseVersion, Seq(file("README.md"), file("docs"), file("examples"))) ++
+        UpdateVersionInFiles.sphinxVersion(log, releaseVersion, file("docs/conf.py"))
       Def.task {
         (docs / mdoc).toTask("").value
         files ++ Seq(file("generated-docs/out"))
