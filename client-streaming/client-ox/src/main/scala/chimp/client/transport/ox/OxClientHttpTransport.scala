@@ -10,9 +10,9 @@ import ox.*
 import ox.channels.{Actor, ActorRef}
 import ox.resilience.{retry, RetryConfig}
 import ox.scheduling.Schedule
-import sttp.client4.{asInputStreamUnsafe, basicRequest, Response, SyncBackend}
+import sttp.client4.{asInputStreamUnsafe, Response, SyncBackend}
 import sttp.model.sse.ServerSentEvent
-import sttp.model.{MediaType, StatusCode, Uri}
+import sttp.model.{Header, StatusCode, Uri}
 import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
 
@@ -26,6 +26,7 @@ final class OxClientHttpTransport private (
     uri: Uri,
     protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
+    headers: Seq[Header],
     pending: SyncPendingRequests,
     sessionReady: CountDownLatch,
     openStreams: java.util.Set[InputStream]
@@ -72,7 +73,10 @@ final class OxClientHttpTransport private (
       openStreams.forEach(closeQuietly)
       state.ask(_.takeSessionId()) match
         case Some(id) =>
-          try drainBody(ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id).response(asInputStreamUnsafe).send(backend))
+          try
+            drainBody(
+              ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id, headers).response(asInputStreamUnsafe).send(backend)
+            )
           catch case _: Exception => ()
         case None => ()
       pending.closeAll("Transport closed")
@@ -110,7 +114,7 @@ final class OxClientHttpTransport private (
 
   private def post(msg: JSONRPCMessage): Response[Either[String, InputStream]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion, state.ask(_.sessionId), ClientTransport.encode(msg))
+      .basePostRequest(uri, protocolVersion, state.ask(_.sessionId), ClientTransport.encode(msg), headers)
       .response(asInputStreamUnsafe)
       .send(backend)
 
@@ -170,14 +174,10 @@ final class OxClientHttpTransport private (
           finally untrack(stream)
 
   private def openGetSseStream(lastEvent: Option[String]): Option[InputStream] =
-    val base = basicRequest
-      .get(uri)
-      .header("Accept", MediaType.TextEventStream.toString)
-      .header("MCP-Protocol-Version", protocolVersion.name)
+    val response = ClientHttpTransport
+      .baseGetRequest(uri, protocolVersion, state.ask(_.sessionId), lastEvent, headers)
       .response(asInputStreamUnsafe)
-    val withSession = state.ask(_.sessionId).fold(base)(s => base.header("Mcp-Session-Id", s))
-    val withLastEvent = lastEvent.fold(withSession)(id => withSession.header("Last-Event-ID", id))
-    val response = withLastEvent.send(backend)
+      .send(backend)
     response.code match
       case StatusCode.Ok =>
         response.body match
@@ -238,13 +238,15 @@ object OxClientHttpTransport:
       backend: SyncBackend,
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
-      timeout: FiniteDuration = ClientTransport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout,
+      headers: Seq[Header] = Nil
   )(using Ox): OxClientHttpTransport =
     val transport = new OxClientHttpTransport(
       backend,
       uri,
       protocolVersion,
       timeout,
+      headers,
       SyncPendingRequests(),
       CountDownLatch(1),
       ConcurrentHashMap.newKeySet[InputStream]()

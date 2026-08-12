@@ -5,7 +5,7 @@ import chimp.client.{McpAuthorizationException, McpProtocolException, McpSession
 import chimp.protocol.{JSONRPCMessage, ProtocolVersion}
 import sttp.client4.{basicRequest, Backend, Request, Response}
 import sttp.model.sse.ServerSentEvent
-import sttp.model.{MediaType, StatusCode, Uri}
+import sttp.model.{Header, MediaType, StatusCode, Uri}
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 
@@ -20,11 +20,14 @@ import scala.util.chaining.*
   *   The MCP endpoint URI.
   * @param protocolVersion
   *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
+  * @param headers
+  *   Extra headers sent with each request to the server.
   */
 final class ClientHttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
-    protocolVersion: ProtocolVersion = ProtocolVersion.Latest
+    protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+    headers: Seq[Header] = Nil
 ) extends ClientTransport[F]:
 
   given monad: MonadError[F] = backend.monad
@@ -32,7 +35,10 @@ final class ClientHttpTransport[F[_]](
   private val sessionId = AtomicReference[Option[String]](None)
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
-    ClientHttpTransport.basePostRequest(uri, protocolVersion, sessionId.get(), ClientTransport.encode(msg)).send(backend).flatMap(interpret)
+    ClientHttpTransport
+      .basePostRequest(uri, protocolVersion, sessionId.get(), ClientTransport.encode(msg), headers)
+      .send(backend)
+      .flatMap(interpret)
 
   private def interpret(response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
     response.header("Mcp-Session-Id").foreach(s => sessionId.set(Some(s)))
@@ -63,7 +69,7 @@ final class ClientHttpTransport[F[_]](
       case None     => monad.unit(())
       case Some(id) =>
         sessionId.set(None)
-        ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id).send(backend).map(_ => ())
+        ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id, headers).send(backend).map(_ => ())
 
 object ClientHttpTransport:
   enum HttpOutcome:
@@ -78,10 +84,12 @@ object ClientHttpTransport:
       uri: Uri,
       protocolVersion: ProtocolVersion,
       sessionId: Option[String],
-      body: String
+      body: String,
+      headers: Seq[Header]
   ): Request[Either[String, String]] =
     basicRequest
       .post(uri)
+      .headers(headers*)
       .header("Content-Type", MediaType.ApplicationJson.toString)
       .header("Accept", AcceptHeader)
       .header("MCP-Protocol-Version", protocolVersion.name)
@@ -92,13 +100,30 @@ object ClientHttpTransport:
           case _               => request
       }
 
+  private[transport] def baseGetRequest(
+      uri: Uri,
+      protocolVersion: ProtocolVersion,
+      sessionId: Option[String],
+      lastEventId: Option[String],
+      headers: Seq[Header]
+  ): Request[Either[String, String]] =
+    basicRequest
+      .get(uri)
+      .headers(headers*)
+      .header("Accept", MediaType.TextEventStream.toString)
+      .header("MCP-Protocol-Version", protocolVersion.name)
+      .pipe(request => sessionId.fold(request)(id => request.header("Mcp-Session-Id", id)))
+      .pipe(request => lastEventId.fold(request)(id => request.header("Last-Event-ID", id)))
+
   private[transport] def baseDeleteRequest(
       uri: Uri,
       protocolVersion: ProtocolVersion,
-      sessionId: String
+      sessionId: String,
+      headers: Seq[Header]
   ): Request[Either[String, String]] =
     basicRequest
       .delete(uri)
+      .headers(headers*)
       .header("Mcp-Session-Id", sessionId)
       .header("MCP-Protocol-Version", protocolVersion.name)
 

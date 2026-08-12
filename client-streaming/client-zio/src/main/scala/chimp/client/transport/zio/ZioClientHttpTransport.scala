@@ -6,9 +6,9 @@ import chimp.client.{McpProtocolException, McpSessionNotFoundException}
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.slf4j.LoggerFactory
 import sttp.capabilities.zio.ZioStreams
-import sttp.client4.{asStreamUnsafe, basicRequest, Response, StreamBackend}
+import sttp.client4.{asStreamUnsafe, Response, StreamBackend}
 import sttp.model.sse.ServerSentEvent
-import sttp.model.{MediaType, StatusCode, Uri}
+import sttp.model.{Header, StatusCode, Uri}
 import sttp.monad.MonadError
 import zio.stream.{Stream, ZPipeline, ZStream}
 import zio.{Duration, Exit, Promise, Ref, Schedule, Scope, Task, ZIO, ZLayer}
@@ -20,6 +20,7 @@ final class ZioClientHttpTransport private (
     uri: Uri,
     protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
+    headers: Seq[Header],
     reconnectSchedule: Schedule[Any, Any, Any],
     scope: Scope.Closeable,
     sessionRef: Ref[Option[String]],
@@ -28,7 +29,7 @@ final class ZioClientHttpTransport private (
     incomingRef: Ref[JSONRPCMessage => Task[Unit]],
     lastEventId: Ref[Option[String]],
     closingRef: Ref[Boolean]
-) extends ClientStreamingHttpTransport[Task, ZioStreams](backend, uri, ZioStreams):
+) extends ClientStreamingHttpTransport[Task, ZioStreams](backend, uri, ZioStreams, headers):
 
   private val log = LoggerFactory.getLogger(classOf[ZioClientHttpTransport])
 
@@ -54,7 +55,7 @@ final class ZioClientHttpTransport private (
       .flatMap:
         case Some(id) =>
           ClientHttpTransport
-            .baseDeleteRequest(uri, protocolVersion, id)
+            .baseDeleteRequest(uri, protocolVersion, id, headers)
             .response(asStreamUnsafe(ZioStreams))
             .send(backend)
             .flatMap(drainBody)
@@ -102,7 +103,7 @@ final class ZioClientHttpTransport private (
   private def post(msg: JSONRPCMessage): Task[Response[Either[String, Stream[Throwable, Byte]]]] =
     sessionRef.get.flatMap: session =>
       ClientHttpTransport
-        .basePostRequest(uri, protocolVersion, session, ClientTransport.encode(msg))
+        .basePostRequest(uri, protocolVersion, session, ClientTransport.encode(msg), headers)
         .response(asStreamUnsafe(ZioStreams))
         .send(backend)
 
@@ -226,14 +227,9 @@ final class ZioClientHttpTransport private (
 
   private def openGetSseStream(lastEventId: Option[String]): Task[Option[Stream[Throwable, Byte]]] =
     sessionRef.get.flatMap: session =>
-      val base = basicRequest
-        .get(uri)
-        .header("Accept", MediaType.TextEventStream.toString)
-        .header("MCP-Protocol-Version", protocolVersion.name)
+      ClientHttpTransport
+        .baseGetRequest(uri, protocolVersion, session, lastEventId, headers)
         .response(asStreamUnsafe(ZioStreams))
-      val withSession = session.fold(base)(s => base.header("Mcp-Session-Id", s))
-      val withLastEventId = lastEventId.fold(withSession)(id => withSession.header("Last-Event-ID", id))
-      withLastEventId
         .send(backend)
         .flatMap: response =>
           response.code match
@@ -275,7 +271,8 @@ object ZioClientHttpTransport:
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
-      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
+      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule,
+      headers: Seq[Header] = Nil
   ): Task[ZioClientHttpTransport] =
     for
       scope <- Scope.make
@@ -290,6 +287,7 @@ object ZioClientHttpTransport:
         uri,
         protocolVersion,
         timeout,
+        headers,
         reconnectSchedule,
         scope,
         sessionRef,
@@ -307,15 +305,17 @@ object ZioClientHttpTransport:
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
-      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
+      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule,
+      headers: Seq[Header] = Nil
   ): ZIO[Scope, Throwable, ZioClientHttpTransport] =
-    ZIO.acquireRelease(apply(backend, uri, protocolVersion, timeout, reconnectSchedule))(_.close().ignore)
+    ZIO.acquireRelease(apply(backend, uri, protocolVersion, timeout, reconnectSchedule, headers))(_.close().ignore)
 
   def layer(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
       protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
-      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule
+      reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule,
+      headers: Seq[Header] = Nil
   ): ZLayer[Any, Throwable, ZioClientHttpTransport] =
-    ZLayer.scoped(scoped(backend, uri, protocolVersion, timeout, reconnectSchedule))
+    ZLayer.scoped(scoped(backend, uri, protocolVersion, timeout, reconnectSchedule, headers))
