@@ -48,13 +48,13 @@ class ClientHttpTransportSpec extends AnyFlatSpec with Matchers:
     )
 
     val transport = ClientHttpTransport[Identity](backend, mcpUri, headers = List(Header.authorization("Bearer", "t-1")))
-    val request: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
-    val _ = transport.send(request)
+    val message: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
+    val _ = transport.send(message)
     transport.close()
 
-    val sent = backend.allInteractions.map(_._1)
-    sent.map(_.method) shouldBe List(Method.POST, Method.DELETE)
-    all(sent.map(_.header("Authorization"))) shouldBe Some("Bearer t-1")
+    val requests = backend.allInteractions.map { case (request, _) => request }
+    requests.map(_.method) shouldBe List(Method.POST, Method.DELETE)
+    all(requests.map(_.header("Authorization"))) shouldBe Some("Bearer t-1")
 
   it should "not let a given header replace a header that the protocol requires" in:
     val body = (JSONRPCMessage.Response(id = RequestId(1), result = Json.obj()): JSONRPCMessage).asJson.noSpaces
@@ -62,9 +62,9 @@ class ClientHttpTransportSpec extends AnyFlatSpec with Matchers:
 
     val overrides = List(Header("Accept", "application/json"), Header("MCP-Protocol-Version", "1999-01-01"))
     val transport = ClientHttpTransport[Identity](backend, mcpUri, headers = overrides)
-    val request: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
-    val _ = transport.send(request)
+    val message: JSONRPCMessage = JSONRPCMessage.Request(method = "x", params = None, id = RequestId(1))
+    val _ = transport.send(message)
 
-    val sent = backend.allInteractions.map(_._1).head
-    sent.headers.filter(_.is("Accept")) shouldBe List(Header("Accept", "application/json, text/event-stream"))
-    sent.header("MCP-Protocol-Version") shouldBe Some(ProtocolVersion.Latest.name)
+    val request = backend.allInteractions.map { case (request, _) => request }.head
+    request.headers.filter(_.is("Accept")) shouldBe List(Header("Accept", "application/json, text/event-stream"))
+    request.header("MCP-Protocol-Version") shouldBe Some(ProtocolVersion.Latest.name)
