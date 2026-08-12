@@ -21,9 +21,7 @@ import scala.util.chaining.*
   * @param protocolVersion
   *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
   * @param headers
-  *   Extra headers sent with each request to the server, for example `Header.authorization("Bearer", token)`. The headers which the
-  *   protocol requires (`Accept`, `MCP-Protocol-Version` and `Mcp-Session-Id`) cannot be replaced here; the transport always sets them
-  *   itself.
+  *   Extra headers sent with each request to the server.
   */
 final class ClientHttpTransport[F[_]](
     backend: Backend[F],
