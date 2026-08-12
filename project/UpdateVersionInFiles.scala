@@ -32,13 +32,21 @@ object UpdateVersionInFiles {
     if (!root.exists()) {
       log.warn(s"[UpdateVersionInFiles] ${root.getPath} does not exist, skipping...")
       Nil
-    } else if (!root.isDirectory) Seq(root)
-    else
-      Option(root.listFiles()).toSeq.flatten.flatMap {
-        case d if d.isDirectory => if (IgnoredDirectories.contains(d.getName)) Nil else textFilesIn(log, d)
-        case f if TextFileExtensions.exists(f.getName.endsWith(_)) => Seq(f)
-        case _                                                     => Nil
-      }
+    } else if (root.isDirectory) textFilesInDirectory(root)
+    else if (isTextFile(root)) Seq(root)
+    else {
+      log.warn(s"[UpdateVersionInFiles] ${root.getPath} is not a text file, skipping...")
+      Nil
+    }
+
+  private def textFilesInDirectory(directory: File): Seq[File] =
+    Option(directory.listFiles()).toSeq.flatten.flatMap {
+      case d if d.isDirectory => if (IgnoredDirectories.contains(d.getName)) Nil else textFilesInDirectory(d)
+      case f if isTextFile(f) => Seq(f)
+      case _                  => Nil
+    }
+
+  private def isTextFile(f: File): Boolean = TextFileExtensions.exists(f.getName.endsWith(_))
 
   private def rewrite(log: Logger, f: File)(update: String => String): Option[File] = {
     val current = IO.read(f)
