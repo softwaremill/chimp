@@ -5,7 +5,7 @@ import com.softwaremill.UpdateVersionInDocs
 val scalaTestV = "3.2.20"
 val circeV = "0.14.16"
 val slf4jV = "2.0.18"
-val logbackV = "1.6.1"
+val logbackV = "1.6.2"
 val tapirV = "1.13.31"
 val sttpClientV = "4.0.26"
 val zioV = "2.1.26"
@@ -262,7 +262,7 @@ lazy val clientConformance = (project in file("client-conformance"))
     Compile / mainClass := Some("chimp.conformance.client.Main"),
     assembly / assemblyJarName := "chimp-client-conformance.jar",
     libraryDependencies ++= Seq(
-      "ch.qos.logback" % "logback-classic" % "1.6.1"
+      "ch.qos.logback" % "logback-classic" % "1.6.2"
     ),
     conformance := {
       import complete.DefaultParsers.*
