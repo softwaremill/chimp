@@ -39,17 +39,16 @@ jobs:
         run: sbt -v scalafmtCheckAll
       - name: Compile
         run: sbt -v compile
-#  TODO uncomment after release
-#      - name: Verify that examples compile using Scala CLI
-#        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
+      - name: Verify that examples compile using Scala CLI
+        run: sbt -v "project examples" verifyExamplesCompileUsingScalaCli
       - name: Compile documentation
         run: sbt -v compileDocs
       - name: Unit tests
         run: sbt -v test
       - name: Client conformance tests
-        run: sbt -v "clientConformance/conformance client --suite core"
+        run: sbt -v "clientConformance/conformance client --requirements 2025-11-25"
       - name: Server conformance tests
-        run: sbt -v "serverConformance/conformance server"
+        run: sbt -v "serverConformance/conformance server --requirements 2025-11-25"
       - name: Integration tests
         run: sbt -v "testOnly -- -n Integration"
       - uses: actions/upload-artifact@v5

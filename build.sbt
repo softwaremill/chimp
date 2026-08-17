@@ -13,6 +13,7 @@ val zioProcessV = "0.8.0"
 val zioHttpV = "3.11.3"
 val oxV = "1.0.6"
 val testcontainersScalaV = "0.41.8"
+val conformanceHarnessV = "0.2.0-alpha.11"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
@@ -240,7 +241,7 @@ lazy val serverConformance = (project in file("server-conformance"))
       try {
         val url = scala.concurrent.Await.result(urlPromise.future, scala.concurrent.duration.Duration("15s"))
         log.info(s"Server started at $url")
-        val cmd = List("npx", "@modelcontextprotocol/conformance") ++ args ++
+        val cmd = List("npx", s"@modelcontextprotocol/conformance@$conformanceHarnessV") ++ args ++
           List("--url", url, "--expected-failures", baseline)
         val rc = Process(cmd, rootDir).!
         if (rc != 0) sys.error(s"conformance harness exited with code $rc")
@@ -250,7 +251,7 @@ lazy val serverConformance = (project in file("server-conformance"))
       }
     }
   )
-  .dependsOn(server)
+  .dependsOn(serverOx)
 
 lazy val clientConformance = (project in file("client-conformance"))
   .enablePlugins(AssemblyPlugin)
@@ -262,24 +263,24 @@ lazy val clientConformance = (project in file("client-conformance"))
     Compile / mainClass := Some("chimp.conformance.client.Main"),
     assembly / assemblyJarName := "chimp-client-conformance.jar",
     libraryDependencies ++= Seq(
-      "ch.qos.logback" % "logback-classic" % "1.6.2"
+      "ch.qos.logback" % "logback-classic" % logbackV
     ),
     conformance := {
       import complete.DefaultParsers.*
 
       import scala.sys.process.*
       val args = spaceDelimited("<args>").parsed.toList
-      val _ = assembly.value
+      val jar = assembly.value
       val baseDir = baseDirectory.value
       val rootDir = (LocalRootProject / baseDirectory).value
       val wrapper = (baseDir / "bin" / "chimp-conformance-client").getAbsolutePath
-      val cmd = List("npx", "@modelcontextprotocol/conformance") ++ args ++
+      val cmd = List("npx", s"@modelcontextprotocol/conformance@$conformanceHarnessV") ++ args ++
         List("--command", wrapper, "--expected-failures", (rootDir / "conformance-baseline.yml").getAbsolutePath)
-      val rc = Process(cmd, rootDir).!
+      val rc = Process(cmd, rootDir, "CHIMP_CLIENT_CONFORMANCE_JAR" -> jar.getAbsolutePath).!
       if (rc != 0) sys.error(s"conformance harness exited with code $rc")
     }
   )
-  .dependsOn(client)
+  .dependsOn(clientOx)
 
 val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
 compileDocs :=

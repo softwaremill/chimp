@@ -1,7 +1,6 @@
 # client-conformance
 
-Runs chimp's MCP client against the
-official [MCP conformance test suite](https://github.com/modelcontextprotocol/conformance).
+Runs chimp's MCP client against the official [MCP conformance test suite](https://github.com/modelcontextprotocol/conformance).
 
 ## What it does
 
@@ -10,20 +9,33 @@ via `--command` (this fat-jar wrapped in [`bin/chimp-conformance-client`](bin/ch
 test-server URL as the last argument. The client process reads the `MCP_CONFORMANCE_SCENARIO` env var to decide what
 protocol exchange to drive, talks to the harness's server, and exits 0 on success.
 
-This subproject is the binary the harness invokes. `Main.scala` dispatches on the scenario name and uses `chimp-client`
-to drive the protocol.
+This subproject is the binary the harness invokes. `Main.scala` dispatches on the scenario name and selects the
+transport per scenario:
+
+The harness also sets `MCP_CONFORMANCE_PROTOCOL_VERSION`; `Main.scala` uses it to select the protocol version. The sbt
+task sets `CHIMP_CLIENT_CONFORMANCE_JAR` to the path of the assembled fat jar; the wrapper script uses it, and falls
+back to a glob over `target/scala-*` when the variable is not set.
+
+## Harness version and target protocol
+
+The sbt task pins the harness to the version set in `conformanceHarnessV` in [`build.sbt`](../build.sbt).
 
 ## How to run
 
-Using sbt task (assembles a client fat jar and runs test suite in one step):
+Run the full requirement set:
 
 ```bash
-sbt 'clientConformance/conformance client --suite core'
-sbt 'clientConformance/conformance client --scenario initialize'
-sbt 'clientConformance/conformance client --scenario tools_call'
+sbt 'clientConformance/conformance client --requirements 2025-11-25'
 ```
 
-The `@modelcontextprotocol/conformance` will be installed using npm, it must be available on the PATH.
+Run one scenario during development:
+
+```bash
+sbt 'clientConformance/conformance client --scenario initialize --spec-version 2025-11-25'
+sbt 'clientConformance/conformance client --scenario tools_call --spec-version 2025-11-25'
+```
+
+The sbt task downloads `@modelcontextprotocol/conformance` with npm; `npx` must be available on the PATH.
 
 ## Adding a scenario
 
@@ -32,8 +44,8 @@ with `McpClient`, return exit code 0 on success. Once it passes, remove the entr
 
 ## The baseline file
 
-[`conformance-baseline.yml`](../conformance-baseline.yml) lists scenarios that are known to fail today. The harness uses
-it like this:
+[`conformance-baseline.yml`](../conformance-baseline.yml) lists scenarios that are known to fail today. The harness
+uses it like this:
 
 | Scenario result | In baseline? | Exit code | Meaning                               |
 |-----------------|--------------|-----------|---------------------------------------|
