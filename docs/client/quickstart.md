@@ -40,8 +40,14 @@ For streaming transports, also add the dependency for your effect system — ZIO
 libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.5.1"
 ```
 
-or direct-style Ox:
+direct-style Ox:
 
 ```scala
 libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-ox" % "0.5.1"
+```
+
+or Pekko:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-pekko" % "0.5.1"
 ```

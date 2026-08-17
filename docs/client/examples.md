@@ -111,4 +111,45 @@ object BidirectionalOxClient:
       backend.close()
 ```
 
+## Bidirectional client over a Pekko streaming transport
+
+The same bidirectional client with `F = Future`, using `PekkoClientHttpTransport` on the sttp `PekkoHttpBackend`. The transport listens on the GET Server-Sent Event stream from the moment it is created, so remember to close it when the session ends:
+
+```scala mdoc:compile-only
+import chimp.client.*
+import chimp.client.notifications.ServerNotification
+import chimp.client.transport.pekko.PekkoClientHttpTransport
+import chimp.protocol.*
+import org.apache.pekko.actor.ActorSystem
+import sttp.client4.pekkohttp.PekkoHttpBackend
+import sttp.model.Uri.UriContext
+
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, Future}
+
+object BidirectionalPekkoClient:
+  def main(args: Array[String]): Unit =
+    given system: ActorSystem = ActorSystem("mcp")
+    given ExecutionContext = system.dispatcher
+
+    val backend = PekkoHttpBackend.usingActorSystem(system)
+    val transport = PekkoClientHttpTransport(backend, uri"http://localhost:8080/mcp")
+
+    val session = for
+      client <- McpClient.bidirectional[Future](
+        transport,
+        clientInfo = Implementation("my-client", "0.1.0"),
+        rootsHandler = Some(() => Future.successful(ListRootsResult(roots = List(Root("file:///workspace", Some("workspace"))))))
+      )
+      _ <- client.onServerNotification:
+        case ServerNotification.ResourceUpdated(params) => Future.successful(println(s"resource changed: ${params.uri}"))
+        case _                                          => Future.unit
+      tools <- client.listTools()
+      _ <- client.close()
+    yield println(s"server exposes ${tools.tools.size} tools")
+
+    Await.result(session, Duration.Inf)
+    Await.result(backend.close(), Duration.Inf)
+```
+
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

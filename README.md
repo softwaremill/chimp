@@ -10,7 +10,7 @@ and [sttp](https://github.com/softwaremill/sttp), supporting the variety of the 
 ### Transport
 
 Chimp implements both streamable HTTP and stdio transports. Additional integration modules unlock streaming features of 
-the MCP protocol with bidirectional communication between server and client. Currently supporting [Ox](https://ox.softwaremill.com/) and [ZIO](https://zio.dev/).
+the MCP protocol with bidirectional communication between server and client. Currently supporting [Ox](https://ox.softwaremill.com/), [ZIO](https://zio.dev/) and [Pekko](https://pekko.apache.org/).
 
 ### Quickstart
 

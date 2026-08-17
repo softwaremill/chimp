@@ -42,8 +42,7 @@ The streaming transports have concrete implementations per effect system, in sep
 |---|---|---|
 | ZIO | `ZioClientHttpTransport` | `ZioClientStdioTransport` |
 | Ox (direct style) | `OxClientHttpTransport` | `OxClientStdioTransport` |
-
-The Ox implementations are direct-style (`F = Identity`). As sttp has no `StreamBackend` for Ox streams, `OxClientHttpTransport` extends `ClientBidirectionalTransport` directly: it runs on a plain `SyncBackend` and consumes Server-Sent Event responses by reading the response body as an `InputStream`, draining it on Ox forks.
+| Pekko | `PekkoClientHttpTransport` | `PekkoClientStdioTransport` |
 
 ## Backends
 

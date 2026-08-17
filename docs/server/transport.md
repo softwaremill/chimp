@@ -43,10 +43,9 @@ The streaming transports have concrete implementations per effect system, in sep
 |---|---|---|
 | ZIO | `ZioServerHttpTransport` | `ZioServerStdioTransport` |
 | Ox (direct style) | `OxServerHttpTransport` | `OxServerStdioTransport` |
+| Pekko | `PekkoServerHttpTransport` | `PekkoServerStdioTransport` |
 
-The Ox implementations are direct-style (`F = Identity`); `OxServerHttpTransport` serves Server-Sent Events with `tapir-netty-server-sync` and its `OxStreams` capability.
-
-## Medium
+## Backends
 
 - **HTTP** transports produce a Tapir `ServerEndpoint` that you run on any Tapir server interpreter. The streaming HTTP transport additionally requires an interpreter with streaming capability.
 - **STDIO** transports run the read/dispatch/write loop using plain JDK components (synchronous), or an effect's own semantics.

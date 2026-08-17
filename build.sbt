@@ -48,7 +48,20 @@ lazy val root = (project in file("."))
       }
     }.value
   )
-  .aggregate(core, server, serverZio, serverOx, client, clientZio, clientOx, examples, serverConformance, clientConformance)
+  .aggregate(
+    core,
+    server,
+    serverZio,
+    serverOx,
+    serverPekko,
+    client,
+    clientZio,
+    clientOx,
+    clientPekko,
+    examples,
+    serverConformance,
+    clientConformance
+  )
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
@@ -119,7 +132,7 @@ lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"
       "org.apache.pekko" %% "pekko-stream" % pekkoStreamsV
     )
   )
-  .dependsOn(server % "compile->compile;test->test", clientOx % "test->compile")
+  .dependsOn(server % "compile->compile;test->test", clientPekko % "test->compile")
 
 lazy val client: Project = (project in file("client"))
   .settings(commonSettings: _*)
@@ -157,6 +170,18 @@ lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
       scalaTest,
       "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
       "com.softwaremill.ox" %% "core" % oxV
+    )
+  )
+  .dependsOn(client % "compile->compile;test->test")
+
+lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-client-pekko",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "com.softwaremill.sttp.client4" %% "pekko-http-backend" % sttpClientV,
+      "org.apache.pekko" %% "pekko-stream" % pekkoStreamsV
     )
   )
   .dependsOn(client % "compile->compile;test->test")
@@ -314,4 +339,4 @@ lazy val docs: Project = (project in file("generated-docs"))
     publishArtifact := false,
     name := "docs"
   )
-  .dependsOn(core, server, serverZio, serverOx, client, clientZio, clientOx)
+  .dependsOn(core, server, serverZio, serverOx, serverPekko, client, clientZio, clientOx, clientPekko)
