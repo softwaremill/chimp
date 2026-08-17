@@ -1,17 +1,17 @@
 server:
-  - tools-call-with-progress
-  - tools-call-with-logging
-  - tools-call-sampling
+  # needs main-code feature: server-to-client requests during tools/call
   - tools-call-elicitation
   - elicitation-sep1034-defaults
   - elicitation-sep1330-enums
-  - server-sse-polling
+  # sampling is deprecated in spec 2026-07-28
+  - tools-call-sampling
+  # needs main-code feature: Mcp-Session-Id sessions; without a session id the
+  # scenario stops early with a warning, which the baseline counts as a failure
   - server-sse-multiple-streams
-  - json-schema-2020-12
-  - sep-2164-resource-not-found
 client:
-  - elicitation-sep1034-client-defaults
+  # needs main-code feature: SSE resumability; feature removed in spec 2026-07-28
   - sse-retry
+  # needs main-code feature: full OAuth client
   - auth/metadata-default
   - auth/metadata-var1
   - auth/metadata-var2
@@ -26,11 +26,3 @@ client:
   - auth/token-endpoint-auth-post
   - auth/token-endpoint-auth-none
   - auth/pre-registration
-  - auth/client-credentials-jwt
-  - auth/client-credentials-basic
-  - auth/cross-app-access-complete-flow
-  - auth/2025-03-26-oauth-metadata-backcompat
-  - auth/2025-03-26-oauth-endpoint-fallback
-  - auth/resource-mismatch
-  - auth/offline-access-scope
-  - auth/offline-access-not-supported

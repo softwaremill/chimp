@@ -2,14 +2,16 @@ package chimp.conformance.server
 
 import chimp.protocol.*
 import chimp.server.*
+import chimp.server.ox.OxServerHttpTransport
 import io.circe.parser.parse
 import io.circe.{Codec, Json}
-import ox.supervised
+import _root_.ox.{sleep, supervised}
 import sttp.shared.Identity
 import sttp.tapir.Schema
 import sttp.tapir.server.netty.sync.NettySyncServer
 
 import java.util.Base64
+import scala.concurrent.duration.*
 
 object Main:
 
@@ -108,6 +110,28 @@ object Main:
     .inputJson(jsonSchema2020)
     .handle(_ => ToolResult.text("ok"))
 
+  private val progressTool = tool("test_tool_with_progress")
+    .description("Reports progress notifications while running")
+    .input[NoInput]
+    .streamingServerLogic[Identity]: (_, ctx, _) =>
+      ctx.reportProgress(0.0, Some(100.0))
+      sleep(50.millis)
+      ctx.reportProgress(50.0, Some(100.0))
+      sleep(50.millis)
+      ctx.reportProgress(100.0, Some(100.0))
+      ToolResult.text("progress reporting complete")
+
+  private val loggingTool = tool("test_tool_with_logging")
+    .description("Emits log notifications while running")
+    .input[NoInput]
+    .streamingServerLogic[Identity]: (_, ctx, _) =>
+      ctx.log(LoggingLevel.Info, Json.fromString("Tool execution started"))
+      sleep(50.millis)
+      ctx.log(LoggingLevel.Info, Json.fromString("Tool processing data"))
+      sleep(50.millis)
+      ctx.log(LoggingLevel.Info, Json.fromString("Tool execution completed"))
+      ToolResult.text("logging complete")
+
   private val staticText = resource("test://static-text")
     .name("static-text")
     .mimeType("text/plain")
@@ -168,13 +192,15 @@ object Main:
     .withLoggingLevel(_ => ())
     .withSubscriptions(ResourceSubscriptions[Identity](_ => (), _ => ()))
 
+  private val streamingServer = server.streaming.addStreamingTools(progressTool, loggingTool)
+
   def main(args: Array[String]): Unit =
     val requestedPort = args
       .collectFirst { case s"--port=$p" => p.toInt }
       .orElse(sys.env.get("CHIMP_CONFORMANCE_PORT").map(_.toInt))
       .getOrElse(0)
 
-    val endpoint = server.endpoint(List("mcp"))
+    val endpoint = OxServerHttpTransport(List("mcp")).serve(streamingServer)
 
     supervised:
       val binding = NettySyncServer().port(requestedPort).addEndpoint(endpoint).start()
