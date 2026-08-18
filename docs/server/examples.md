@@ -1,6 +1,6 @@
 # Examples
 
-Each example builds an `McpServer` (or `StreamingMcpServer`) and serves it over a transport. The sync HTTP example uses `chimp-server`; the ZIO examples additionally use `chimp-server-zio`.
+Each example builds an `McpServer` (or `StreamingMcpServer`) and serves it over a transport. The sync HTTP example uses `chimp-server`; the ZIO, Ox and Pekko examples additionally use the integration module for that effect system.
 
 ## HTTP server
 
@@ -132,6 +132,64 @@ object StdioOxServer:
     val echo = tool("echo").input[OxEchoInput].handle(in => ToolResult.text(in.message))
     val server = StreamingMcpServer[Identity]().addTool(echo)
     OxServerStdioTransport().serve(server)
+```
+
+## Streaming HTTP server (Pekko)
+
+The same streaming server with `F = Future`, served with `PekkoServerHttpTransport` on `tapir-pekko-http-server`:
+
+```scala mdoc:compile-only
+import chimp.protocol.LoggingLevel
+import chimp.server.pekko.PekkoServerHttpTransport
+import chimp.server.{StreamingMcpServer, ToolResult, tool}
+import io.circe.{Codec, Json}
+import org.apache.pekko.actor.ActorSystem
+import org.apache.pekko.http.scaladsl.Http
+import sttp.tapir.*
+import sttp.tapir.server.pekkohttp.PekkoHttpServerInterpreter
+
+import scala.concurrent.{ExecutionContext, Future}
+
+case class PekkoProgressInput(steps: Int) derives Codec, Schema
+
+object StreamingPekkoServer:
+  def main(args: Array[String]): Unit =
+    given system: ActorSystem = ActorSystem("mcp")
+    given ExecutionContext = system.dispatcher
+
+    val work = tool("work").input[PekkoProgressInput].streamingServerLogic[Future]: (_, ctx, _) =>
+      for
+        _ <- ctx.reportProgress(0.5, total = Some(1.0))
+        _ <- ctx.log(LoggingLevel.Info, Json.fromString("halfway"))
+      yield ToolResult.text("done")
+    val server = StreamingMcpServer[Future]().withLoggingLevel(_ => Future.unit).addStreamingTool(work)
+    val endpoint = PekkoServerHttpTransport(List("mcp")).serve(server)
+    val _ = Http().newServerAt("localhost", 8080).bind(PekkoHttpServerInterpreter().toRoute(endpoint))
+```
+
+## STDIO server (Pekko)
+
+A server exchanging line-delimited JSON-RPC over stdin/stdout, served with `PekkoServerStdioTransport`. The effect it returns completes when the standard input ends:
+
+```scala mdoc:compile-only
+import chimp.server.pekko.PekkoServerStdioTransport
+import chimp.server.{StreamingMcpServer, ToolResult, tool}
+import io.circe.Codec
+import org.apache.pekko.actor.ActorSystem
+import sttp.tapir.*
+
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
+
+case class PekkoEchoInput(message: String) derives Codec, Schema
+
+object StdioPekkoServer:
+  def main(args: Array[String]): Unit =
+    given ActorSystem = ActorSystem("mcp")
+
+    val echo = tool("echo").input[PekkoEchoInput].serverLogic[Future]((in, _) => Future.successful(ToolResult.text(in.message)))
+    val server = StreamingMcpServer[Future]().addTool(echo)
+    Await.result(PekkoServerStdioTransport().serve(server), Duration.Inf)
 ```
 
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

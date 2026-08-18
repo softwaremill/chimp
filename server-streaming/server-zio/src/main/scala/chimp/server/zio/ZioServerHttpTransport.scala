@@ -19,7 +19,7 @@ final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHt
 
   type EventStream = Stream[Throwable, ServerSentEvent]
 
-  val sseBody: StreamBodyIO[Stream[Throwable, Byte], EventStream, ZioStreams] =
+  val sseBody: StreamBodyIO[streams.BinaryStream, EventStream, ZioStreams] =
     streamTextBody(ZioStreams)(CodecFormat.TextEventStream(), Some(StandardCharsets.UTF_8))
       .map(ZioServerSentEvents.parseBytesToSSE)(ZioServerSentEvents.serialiseSSEToBytes)
 

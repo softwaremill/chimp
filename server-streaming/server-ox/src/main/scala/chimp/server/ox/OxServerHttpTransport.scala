@@ -6,7 +6,6 @@ import chimp.server.transport.ServerStreamingHttpTransport
 import io.circe.Json
 import io.circe.syntax.*
 import ox.*
-import ox.Chunk
 import ox.channels.Channel
 import ox.flow.Flow
 import sttp.model.sse.ServerSentEvent
@@ -19,7 +18,7 @@ final class OxServerHttpTransport(path: List[String]) extends ServerStreamingHtt
 
   type EventStream = Flow[ServerSentEvent]
 
-  val sseBody: StreamBodyIO[Flow[Chunk[Byte]], EventStream, OxStreams] = serverSentEventsBody
+  val sseBody: StreamBodyIO[streams.BinaryStream, EventStream, OxStreams] = serverSentEventsBody
 
   val emptyStream: EventStream = Flow.empty
 

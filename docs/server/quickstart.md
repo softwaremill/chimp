@@ -42,10 +42,16 @@ For a streaming server that pushes progress and log notifications over SSE, add 
 libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-zio" % "0.5.1"
 ```
 
-or direct-style Ox:
+direct-style Ox:
 
 ```scala
 libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-ox" % "0.5.1"
+```
+
+or Pekko:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-pekko" % "0.5.1"
 ```
 
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

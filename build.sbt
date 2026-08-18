@@ -13,6 +13,7 @@ val zioProcessV = "0.8.0"
 val zioHttpV = "3.11.3"
 val oxV = "1.0.6"
 val testcontainersScalaV = "0.41.8"
+val pekkoV = "1.6.0"
 val conformanceHarnessV = "0.2.0-alpha.11"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
@@ -47,7 +48,20 @@ lazy val root = (project in file("."))
       }
     }.value
   )
-  .aggregate(core, server, serverZio, serverOx, client, clientZio, clientOx, examples, serverConformance, clientConformance)
+  .aggregate(
+    core,
+    server,
+    serverZio,
+    serverOx,
+    serverPekko,
+    client,
+    clientZio,
+    clientOx,
+    clientPekko,
+    examples,
+    serverConformance,
+    clientConformance
+  )
 
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
@@ -108,6 +122,18 @@ lazy val serverOx: Project = (project in file("server-streaming/server-ox"))
   )
   .dependsOn(server % "compile->compile;test->test", clientOx % "test->compile")
 
+lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-server-pekko",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % tapirV,
+      "org.apache.pekko" %% "pekko-stream" % pekkoV
+    )
+  )
+  .dependsOn(server % "compile->compile;test->test", clientPekko % "test->compile")
+
 lazy val client: Project = (project in file("client"))
   .settings(commonSettings: _*)
   .settings(
@@ -144,6 +170,19 @@ lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
       scalaTest,
       "com.softwaremill.sttp.client4" %% "core" % sttpClientV,
       "com.softwaremill.ox" %% "core" % oxV
+    )
+  )
+  .dependsOn(client % "compile->compile;test->test")
+
+lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"))
+  .settings(commonSettings: _*)
+  .settings(
+    name := "chimp-client-pekko",
+    libraryDependencies ++= Seq(
+      scalaTest,
+      "com.softwaremill.sttp.client4" %% "pekko-http-backend" % sttpClientV,
+      "org.apache.pekko" %% "pekko-stream" % pekkoV,
+      "org.apache.pekko" %% "pekko-actor-typed" % pekkoV
     )
   )
   .dependsOn(client % "compile->compile;test->test")
@@ -301,4 +340,4 @@ lazy val docs: Project = (project in file("generated-docs"))
     publishArtifact := false,
     name := "docs"
   )
-  .dependsOn(core, server, serverZio, serverOx, client, clientZio, clientOx)
+  .dependsOn(core, server, serverZio, serverOx, serverPekko, client, clientZio, clientOx, clientPekko)
