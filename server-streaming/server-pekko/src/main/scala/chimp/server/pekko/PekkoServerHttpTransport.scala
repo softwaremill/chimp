@@ -53,7 +53,7 @@ final class PekkoServerHttpTransport(
                 val lastMessage = response.fold(Future.unit)(json => PekkoOutbound.offer(queue, json))
                 lastMessage.onComplete(_ => queue.complete())
               case Failure(t) =>
-                log.warn(s"Failed to handle the JSON-RPC message: ${t.getMessage}")
+                log.warn("Failed to handle the JSON-RPC message", t)
                 queue.complete()
           NotUsed
         .map(json => ServerSentEvent(data = Some(json.noSpaces)))
