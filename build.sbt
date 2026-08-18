@@ -13,7 +13,7 @@ val zioProcessV = "0.8.0"
 val zioHttpV = "3.11.3"
 val oxV = "1.0.6"
 val testcontainersScalaV = "0.41.8"
-val pekkoStreamsV = "1.6.0"
+val pekkoV = "1.6.0"
 val conformanceHarnessV = "0.2.0-alpha.11"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
@@ -129,7 +129,7 @@ lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"
     libraryDependencies ++= Seq(
       scalaTest,
       "com.softwaremill.sttp.tapir" %% "tapir-pekko-http-server" % tapirV,
-      "org.apache.pekko" %% "pekko-stream" % pekkoStreamsV
+      "org.apache.pekko" %% "pekko-stream" % pekkoV
     )
   )
   .dependsOn(server % "compile->compile;test->test", clientPekko % "test->compile")
@@ -181,7 +181,8 @@ lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"
     libraryDependencies ++= Seq(
       scalaTest,
       "com.softwaremill.sttp.client4" %% "pekko-http-backend" % sttpClientV,
-      "org.apache.pekko" %% "pekko-stream" % pekkoStreamsV
+      "org.apache.pekko" %% "pekko-stream" % pekkoV,
+      "org.apache.pekko" %% "pekko-actor-typed" % pekkoV
     )
   )
   .dependsOn(client % "compile->compile;test->test")

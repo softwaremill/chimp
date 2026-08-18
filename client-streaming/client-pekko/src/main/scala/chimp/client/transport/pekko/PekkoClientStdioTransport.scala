@@ -1,7 +1,7 @@
 package chimp.client.transport.pekko
 
 import chimp.client.McpTransportException
-import chimp.client.transport.pekko.internal.PekkoPendingRequests
+import chimp.client.transport.pekko.internal.{PekkoPendingRequests, StateActor}
 import chimp.client.transport.{ClientStreamingStdioTransport, ClientTransport}
 import chimp.protocol.JSONRPCMessage
 import org.apache.pekko.stream.scaladsl.{Framing, Sink, Source, StreamConverters}
@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory
 import sttp.monad.{FutureMonad, MonadError}
 
 import java.io.{File, InputStream}
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.*
@@ -32,44 +31,62 @@ final class PekkoClientStdioTransport private (
 
   private given ExecutionContext = mat.executionContext
 
-  private val incoming = AtomicReference[JSONRPCMessage => Future[Unit]](_ => Future.unit)
-  private val closed = AtomicBoolean(false)
+  private final class State:
+    var incoming: JSONRPCMessage => Future[Unit] = _ => Future.unit
+    var closed: Boolean = false
+
+    def beginClosing(): Boolean =
+      if closed then false
+      else
+        closed = true
+        true
+
+  private val state = StateActor(new State, "chimp-mcp-client-stdio-transport")
 
   override given monad: MonadError[Future] = FutureMonad()
 
   override def send(msg: JSONRPCMessage): Future[Option[JSONRPCMessage]] =
-    if closed.get() then Future.failed(McpTransportException("Stdio transport is closed"))
-    else
-      msg match
-        case request: JSONRPCMessage.Request =>
-          pending
-            .register(request.id, timeout)
-            .flatMap(await => offer(msg).flatMap(_ => await()))
-            .map(Some(_))
-        case other => offer(other).map(_ => None)
+    state
+      .ask(_.closed)
+      .flatMap:
+        case true  => Future.failed(McpTransportException("Stdio transport is closed"))
+        case false =>
+          msg match
+            case request: JSONRPCMessage.Request =>
+              pending
+                .register(request.id, timeout)
+                .flatMap(await => offer(msg).flatMap(_ => await()))
+                .map(Some(_))
+            case other => offer(other).map(_ => None)
 
   override def onIncoming(handler: JSONRPCMessage => Future[Unit]): Future[Unit] =
-    incoming.set(handler)
+    state.tell(_.incoming = handler)
     Future.unit
 
   override def close(): Future[Unit] =
-    if !closed.compareAndSet(false, true) then Future.unit
-    else
-      outbound.complete()
-      val terminate = mat.scheduleOnce(PekkoClientStdioTransport.exitTimeout, () => if process.isAlive then process.destroy())
-      val kill = mat.scheduleOnce(
-        PekkoClientStdioTransport.exitTimeout * 2,
-        () => if process.isAlive then { val _ = process.destroyForcibly() }
-      )
-      process
-        .onExit()
-        .asScala
-        .map(_ => ())
-        .andThen { case _ =>
-          val _ = terminate.cancel()
-          val _ = kill.cancel()
-        }
-        .flatMap(_ => pending.closeAll("Transport closed"))
+    state
+      .ask(_.beginClosing())
+      .flatMap:
+        case false => Future.unit
+        case true  =>
+          outbound.complete()
+          val terminate = mat.scheduleOnce(PekkoClientStdioTransport.exitTimeout, () => if process.isAlive then process.destroy())
+          val kill = mat.scheduleOnce(
+            PekkoClientStdioTransport.exitTimeout * 2,
+            () => if process.isAlive then { val _ = process.destroyForcibly() }
+          )
+          process
+            .onExit()
+            .asScala
+            .map(_ => ())
+            .andThen { case _ =>
+              val _ = terminate.cancel()
+              val _ = kill.cancel()
+            }
+            .flatMap(_ => pending.closeAll("Transport closed"))
+            .map: _ =>
+              pending.stop()
+              state.stopWhenIdle()
 
   private def offer(msg: JSONRPCMessage): Future[Unit] =
     outbound.offer(msg) match
@@ -81,7 +98,7 @@ final class PekkoClientStdioTransport private (
   private def dispatch(msg: JSONRPCMessage): Future[Unit] = msg match
     case response: JSONRPCMessage.Response => pending.complete(response.id, response).map(_ => ())
     case err: JSONRPCMessage.Error         => pending.complete(err.id, err).map(_ => ())
-    case other                             => incoming.get()(other)
+    case other                             => state.ask(_.incoming).flatMap(handler => handler(other))
 
   private[pekko] def startReader(): Unit =
     val done = PekkoClientStdioTransport
@@ -94,8 +111,11 @@ final class PekkoClientStdioTransport private (
             Future.unit
       .runWith(Sink.ignore)
     done.onComplete: result =>
-      result.failed.foreach(t => if !closed.get() then log.warn(s"Reader stream ended: ${t.getMessage}"))
+      result.failed.foreach(logReaderFailure)
       pending.closeAll("Transport closed")
+
+  private def logReaderFailure(t: Throwable): Unit =
+    state.ask(_.closed).foreach(closed => if !closed then log.warn(s"Reader stream ended: ${t.getMessage}"))
 
   private[pekko] def startStderr(): Unit =
     val _ = PekkoClientStdioTransport
