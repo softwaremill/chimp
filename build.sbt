@@ -5,7 +5,7 @@ import com.softwaremill.UpdateVersionInDocs
 val scalaTestV = "3.2.20"
 val circeV = "0.14.16"
 val slf4jV = "2.0.18"
-val logbackV = "1.6.2"
+val logbackV = "1.6.3"
 val tapirV = "1.13.31"
 val sttpClientV = "4.0.26"
 val zioV = "2.1.26"
