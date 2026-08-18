@@ -11,10 +11,12 @@ import org.apache.pekko.util.Timeout
 
 import java.util.UUID
 import java.util.concurrent.TimeoutException
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future}
 
-private[pekko] final class StateActor[S](state: S, name: String)(using mat: Materializer):
+private[pekko] final class StateActor[S](state: S, name: String, idleTimeout: FiniteDuration = StateActor.defaultIdleTimeout)(using
+    mat: Materializer
+):
   private given ExecutionContext = mat.executionContext
   private given Timeout = StateActor.askTimeout
 
@@ -40,7 +42,7 @@ private[pekko] final class StateActor[S](state: S, name: String)(using mat: Mate
           replyTo ! read(state)
           Behaviors.same
         case StopWhenIdle =>
-          context.setReceiveTimeout(StateActor.idleTimeout, Idle)
+          context.setReceiveTimeout(idleTimeout, Idle)
           Behaviors.same
         case Idle => Behaviors.stopped
 
@@ -57,4 +59,4 @@ private[pekko] final class StateActor[S](state: S, name: String)(using mat: Mate
 
 private[pekko] object StateActor:
   private val askTimeout: Timeout = Timeout(10.seconds)
-  private val idleTimeout = 30.seconds
+  private val defaultIdleTimeout = 30.seconds
