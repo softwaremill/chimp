@@ -2,6 +2,7 @@ package chimp.client.transport
 
 import chimp.client.internal.SyncPendingRequests
 import chimp.protocol.JSONRPCMessage
+import chimp.transport.{StdioFraming, StdioLineReader}
 import org.slf4j.LoggerFactory
 import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
@@ -24,12 +25,15 @@ import scala.jdk.CollectionConverters.*
   *   Optional working directory for the subprocess.
   * @param timeout
   *   Maximum time to wait for a response to each request before raising an [[chimp.client.McpTimeoutException]].
+  * @param maxLineLength
+  *   The maximum length of a single line received from the subprocess, in bytes. A longer line closes the transport.
   */
 final class ClientStdioTransport(
     command: List[String],
     env: Map[String, String] = Map.empty,
     workDir: Option[File] = None,
-    timeout: FiniteDuration = ClientTransport.defaultTimeout
+    timeout: FiniteDuration = ClientTransport.defaultTimeout,
+    maxLineLength: Int = StdioFraming.defaultMaxLineLength
 ) extends ClientBidirectionalTransport[Identity]:
 
   private val log = LoggerFactory.getLogger(classOf[ClientStdioTransport])
@@ -46,7 +50,7 @@ final class ClientStdioTransport(
     pb.start()
 
   private val writer = BufferedWriter(OutputStreamWriter(proc.getOutputStream, StandardCharsets.UTF_8))
-  private val reader = BufferedReader(InputStreamReader(proc.getInputStream, StandardCharsets.UTF_8))
+  private val reader = StdioLineReader(proc.getInputStream, maxLineLength)
   private val errReader = BufferedReader(InputStreamReader(proc.getErrorStream, StandardCharsets.UTF_8))
 
   private val pending = SyncPendingRequests()
@@ -65,13 +69,12 @@ final class ClientStdioTransport(
 
   private def readLoop(): Unit =
     try
-      var line: String = reader.readLine()
-      while line != null do
-        if line.nonEmpty then
+      reader.lines
+        .filter(_.nonEmpty)
+        .foreach: line =>
           ClientTransport.decode(line) match
             case Right(msg) => dispatch(msg)
             case Left(e)    => log.warn(s"Failed to parse JSON-RPC line: ${e.getMessage}; raw: $line")
-        line = reader.readLine()
     catch case e: Exception => if !closed.get() then log.warn(s"Reader loop ended: ${e.getMessage}")
     finally pending.closeAll("Transport closed")
 

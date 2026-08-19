@@ -2,6 +2,7 @@ package chimp.client.transport.zio
 
 import chimp.client.transport.{ClientStreamingStdioTransport, ClientTransport}
 import chimp.protocol.JSONRPCMessage
+import chimp.transport.{McpLineTooLongException, StdioFraming}
 import org.slf4j.LoggerFactory
 import sttp.client4.impl.zio.RIOMonadAsyncError
 import sttp.monad.MonadError
@@ -11,6 +12,7 @@ import zio.{Chunk, Exit, Queue, Ref, Scope, Task, ZIO, ZLayer}
 
 import java.io.File
 import java.nio.charset.StandardCharsets
+import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
 
 final class ZioClientStdioTransport private (
@@ -20,6 +22,7 @@ final class ZioClientStdioTransport private (
     timeout: FiniteDuration,
     scope: Scope.Closeable,
     process: Process,
+    maxLineLength: Int,
     writeQueue: Queue[JSONRPCMessage],
     pending: ZioPendingRequests,
     incomingRef: Ref[JSONRPCMessage => Task[Unit]]
@@ -51,8 +54,8 @@ final class ZioClientStdioTransport private (
     case other                             => incomingRef.get.flatMap(_(other))
 
   private[zio] def startReader: Task[Unit] =
-    val drain = process.stdout.linesStream
-      .filter(_.nonEmpty)
+    val drain = ZioClientStdioTransport
+      .lines(process.stdout.stream, maxLineLength)
       .mapZIO: line =>
         ClientTransport.decode(line) match
           case Right(msg) => dispatch(msg)
@@ -74,7 +77,8 @@ object ZioClientStdioTransport:
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = ClientTransport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout,
+      maxLineLength: Int = StdioFraming.defaultMaxLineLength
   ): Task[ZioClientStdioTransport] =
     for
       scope <- Scope.make
@@ -90,7 +94,8 @@ object ZioClientStdioTransport:
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
       cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes, flushChunksEagerly = true))
       process <- cmd.run.provideEnvironment(zio.ZEnvironment(scope))
-      transport = new ZioClientStdioTransport(command, env, workDir, timeout, scope, process, writeQueue, pending, incomingRef)
+      transport =
+        new ZioClientStdioTransport(command, env, workDir, timeout, scope, process, maxLineLength, writeQueue, pending, incomingRef)
       _ <- transport.startReader
       _ <- transport.startStderr
     yield transport
@@ -99,14 +104,38 @@ object ZioClientStdioTransport:
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = ClientTransport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout,
+      maxLineLength: Int = StdioFraming.defaultMaxLineLength
   ): ZIO[Scope, Throwable, ZioClientStdioTransport] =
-    ZIO.acquireRelease(apply(command, env, workDir, timeout))(_.close().ignore)
+    ZIO.acquireRelease(apply(command, env, workDir, timeout, maxLineLength))(_.close().ignore)
 
   def layer(
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = ClientTransport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout,
+      maxLineLength: Int = StdioFraming.defaultMaxLineLength
   ): ZLayer[Any, Throwable, ZioClientStdioTransport] =
-    ZLayer.scoped(scoped(command, env, workDir, timeout))
+    ZLayer.scoped(scoped(command, env, workDir, timeout, maxLineLength))
+
+  private[zio] def lines(bytes: ZStream[Any, Throwable, Byte], maxLineLength: Int): ZStream[Any, Throwable, String] =
+    bytes.chunks
+      .concat(ZStream.succeed(Chunk.single(StdioFraming.newline)))
+      .mapAccumZIO(Chunk.empty[Byte]): (buffered, chunk) =>
+        split(buffered ++ chunk, maxLineLength) match
+          case Some(framed) => ZIO.succeed(framed)
+          case None         => ZIO.fail(McpLineTooLongException(maxLineLength))
+      .flattenChunks
+      .filter(_.nonEmpty)
+
+  private def split(bytes: Chunk[Byte], maxLineLength: Int): Option[(Chunk[Byte], Chunk[String])] =
+    @tailrec
+    def loop(remaining: Chunk[Byte], lines: Chunk[String]): Option[(Chunk[Byte], Chunk[String])] =
+      remaining.indexWhere(_ == StdioFraming.newline) match
+        case -1                       => if remaining.size > maxLineLength then None else Some((remaining, lines))
+        case at if at > maxLineLength => None
+        case at                       =>
+          val (line, rest) = remaining.splitAt(at)
+          loop(rest.drop(1), lines :+ StdioFraming.decodeLine(line.toArray))
+
+    loop(bytes, Chunk.empty)

@@ -3,6 +3,7 @@ package chimp.server.pekko
 import chimp.protocol.{JSONRPCMessage, ProgressToken}
 import chimp.server.transport.ServerStreamingStdioTransport
 import chimp.server.{McpHandler, OutboundSink, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
+import chimp.transport.{McpLineTooLongException, StdioFraming}
 import io.circe.syntax.*
 import io.circe.{parser, Json}
 import org.apache.pekko.stream.scaladsl.{Framing, Keep, Sink, Source, SourceQueueWithComplete, StreamConverters}
@@ -14,7 +15,11 @@ import sttp.monad.{FutureMonad, MonadError}
 import java.io.{InputStream, OutputStream}
 import scala.concurrent.{ExecutionContext, Future}
 
-final class PekkoServerStdioTransport(in: InputStream = System.in, out: OutputStream = System.out)(using mat: Materializer)
+final class PekkoServerStdioTransport(
+    in: InputStream = System.in,
+    out: OutputStream = System.out,
+    maxLineLength: Int = StdioFraming.defaultMaxLineLength
+)(using mat: Materializer)
     extends ServerStreamingStdioTransport[Future]:
 
   private val log = LoggerFactory.getLogger(classOf[PekkoServerStdioTransport])
@@ -39,7 +44,8 @@ final class PekkoServerStdioTransport(in: InputStream = System.in, out: OutputSt
 
     val reading = StreamConverters
       .fromInputStream(() => in)
-      .via(Framing.delimiter(ByteString("\n"), maximumFrameLength = PekkoServerStdioTransport.maxLineLength, allowTruncation = true))
+      .via(Framing.delimiter(ByteString("\n"), maximumFrameLength = maxLineLength, allowTruncation = true))
+      .mapError { case _: Framing.FramingException => McpLineTooLongException(maxLineLength) }
       .map(_.utf8String.trim)
       .filter(_.nonEmpty)
       .mapAsync(1)(line => handleLine(handler, makeContext, outbound, line))
@@ -63,6 +69,3 @@ final class PekkoServerStdioTransport(in: InputStream = System.in, out: OutputSt
       case Left(error) =>
         log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line")
         Future.unit
-
-object PekkoServerStdioTransport:
-  private val maxLineLength = 8 * 1024 * 1024
