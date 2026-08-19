@@ -175,11 +175,14 @@ final class ZioClientHttpTransport private (
     case err: JSONRPCMessage.Error         => pending.complete(err.id, err).unit
     case other                             => incomingRef.get.flatMap(_(other))
 
+  private def warnUnlessClosing(message: => String): Task[Unit] =
+    closingRef.get.map(closing => if !closing then log.warn(message))
+
   private[zio] def startGetSseListener: Task[Unit] =
     val listener = sessionReady.await *> openGetSseStream(None).flatMap:
       case None         => ZIO.unit
       case Some(stream) => streamWithResume(stream, lastEventId, closingRef.get.map(!_))
-    listener.catchAll(t => ZIO.succeed(log.warn(s"GET listener failed: ${t.getMessage}"))).forkIn(scope).unit
+    listener.catchAll(t => warnUnlessClosing(s"GET listener failed: ${t.getMessage}")).forkIn(scope).unit
 
   private def streamWithResume(
       stream: Stream[Throwable, Byte],
@@ -189,7 +192,7 @@ final class ZioClientHttpTransport private (
     reconnectSchedule.driver.flatMap: driver =>
       def loop(stream: Stream[Throwable, Byte]): Task[Unit] =
         drainSseStream(stream, lastEventIdRef)
-          .catchAll(t => ZIO.succeed(log.warn(s"SSE drain error: ${t.getMessage}")))
+          .catchAll(t => warnUnlessClosing(s"SSE drain error: ${t.getMessage}"))
           .flatMap(_ => reconnect)
 
       def reconnect: Task[Unit] =
@@ -204,7 +207,7 @@ final class ZioClientHttpTransport private (
                   lastEventIdRef.get
                     .flatMap(openGetSseStream)
                     .foldZIO(
-                      t => ZIO.succeed(log.warn(s"GET SSE reconnect failed: ${t.getMessage}")) *> reconnect,
+                      t => warnUnlessClosing(s"GET SSE reconnect failed: ${t.getMessage}") *> reconnect,
                       {
                         case Some(stream) => loop(stream)
                         case None         => ZIO.unit
