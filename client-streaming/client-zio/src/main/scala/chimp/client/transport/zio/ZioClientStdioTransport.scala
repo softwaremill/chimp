@@ -25,7 +25,8 @@ final class ZioClientStdioTransport private (
     maxLineLength: Int,
     writeQueue: Queue[JSONRPCMessage],
     pending: ZioPendingRequests,
-    incomingRef: Ref[JSONRPCMessage => Task[Unit]]
+    incomingRef: Ref[JSONRPCMessage => Task[Unit]],
+    closingRef: Ref[Boolean]
 ) extends ClientStreamingStdioTransport[Task](command, env, workDir):
 
   private val log = LoggerFactory.getLogger(classOf[ZioClientStdioTransport])
@@ -46,7 +47,8 @@ final class ZioClientStdioTransport private (
     incomingRef.set(handler)
 
   override def close(): Task[Unit] =
-    writeQueue.shutdown *> pending.closeAll("Transport closed").ignore *> process.kill.ignore *> scope.close(Exit.unit).ignore
+    closingRef.set(true) *> writeQueue.shutdown *> pending.closeAll("Transport closed").ignore *> process.kill.ignore *>
+      scope.close(Exit.unit).ignore
 
   private def dispatch(msg: JSONRPCMessage): Task[Unit] = msg match
     case response: JSONRPCMessage.Response => pending.complete(response.id, response).unit
@@ -62,7 +64,10 @@ final class ZioClientStdioTransport private (
           case Left(err)  => ZIO.succeed(log.warn(s"Failed to parse JSON-RPC line: ${err.getMessage}, raw: $line"))
       .runDrain
       .ensuring(pending.closeAll("Transport closed").orDie)
-    drain.catchAll(t => ZIO.succeed(log.warn(s"Reader fiber ended: ${t.getMessage}"))).forkIn(scope).unit
+    drain.catchAll(t => warnUnlessClosing(s"Reader fiber ended: ${t.getMessage}")).forkIn(scope).unit
+
+  private def warnUnlessClosing(message: => String): Task[Unit] =
+    closingRef.get.map(closing => if !closing then log.warn(message))
 
   private[zio] def startStderr: Task[Unit] =
     process.stderr.linesStream
@@ -85,6 +90,7 @@ object ZioClientStdioTransport:
       writeQueue <- Queue.bounded[JSONRPCMessage](256)
       pending <- ZioPendingRequests.make
       incomingRef <- Ref.make[JSONRPCMessage => Task[Unit]](_ => ZIO.unit)
+      closingRef <- Ref.make(false)
       stdinBytes = ZStream
         .fromQueue(writeQueue)
         .map(msg => Chunk.fromArray((ClientTransport.encode(msg) + "\n").getBytes(StandardCharsets.UTF_8)))
@@ -94,8 +100,19 @@ object ZioClientStdioTransport:
       withDir = workDir.fold(withEnv)(withEnv.workingDirectory)
       cmd = withDir.stdin(ProcessInput.fromStream(stdinBytes, flushChunksEagerly = true))
       process <- cmd.run.provideEnvironment(zio.ZEnvironment(scope))
-      transport =
-        new ZioClientStdioTransport(command, env, workDir, timeout, scope, process, maxLineLength, writeQueue, pending, incomingRef)
+      transport = new ZioClientStdioTransport(
+        command,
+        env,
+        workDir,
+        timeout,
+        scope,
+        process,
+        maxLineLength,
+        writeQueue,
+        pending,
+        incomingRef,
+        closingRef
+      )
       _ <- transport.startReader
       _ <- transport.startStderr
     yield transport
