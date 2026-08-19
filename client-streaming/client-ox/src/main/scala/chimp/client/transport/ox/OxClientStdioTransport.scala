@@ -4,6 +4,7 @@ import chimp.client.McpTransportException
 import chimp.client.internal.SyncPendingRequests
 import chimp.client.transport.{ClientStreamingStdioTransport, ClientTransport}
 import chimp.protocol.JSONRPCMessage
+import chimp.transport.{StdioFraming, StdioLineReader}
 import org.slf4j.LoggerFactory
 import ox.*
 import ox.channels.{Actor, ActorRef}
@@ -77,15 +78,14 @@ final class OxClientStdioTransport private (
     case err: JSONRPCMessage.Error         => val _ = pending.complete(err.id, err)
     case other                             => state.ask(_.incoming)(other)
 
-  private def readLoop(reader: BufferedReader): Unit =
+  private def readLoop(reader: StdioLineReader): Unit =
     try
-      var line = reader.readLine()
-      while line != null do
-        if line.nonEmpty then
+      reader.lines
+        .filter(_.nonEmpty)
+        .foreach: line =>
           ClientTransport.decode(line) match
             case Right(msg) => dispatch(msg)
             case Left(e)    => log.warn(s"Failed to parse JSON-RPC line: ${e.getMessage}; raw: $line")
-        line = reader.readLine()
     catch case e: Exception => if !state.ask(_.closed) then log.warn(s"Reader loop ended: ${e.getMessage}")
     finally pending.closeAll("Transport closed")
 
@@ -103,7 +103,8 @@ object OxClientStdioTransport:
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = ClientTransport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout,
+      maxLineLength: Int = StdioFraming.defaultMaxLineLength
   )(using Ox): OxClientStdioTransport =
     val pb = ProcessBuilder(command.asJava)
     workDir.foreach(pb.directory)
@@ -117,7 +118,7 @@ object OxClientStdioTransport:
 
     val transport = new OxClientStdioTransport(command, env, workDir, timeout, process, SyncPendingRequests())
 
-    val reader = BufferedReader(InputStreamReader(process.getInputStream, StandardCharsets.UTF_8))
+    val reader = StdioLineReader(process.getInputStream, maxLineLength)
     val errReader = BufferedReader(InputStreamReader(process.getErrorStream, StandardCharsets.UTF_8))
     forkDiscard(transport.readLoop(reader))
     forkDiscard(transport.drainStderr(errReader))

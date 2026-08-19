@@ -50,6 +50,39 @@ The streaming transports have concrete implementations per effect system, in sep
 - **HTTP** transports produce a Tapir `ServerEndpoint` that you run on any Tapir server interpreter. The streaming HTTP transport additionally requires an interpreter with streaming capability.
 - **STDIO** transports run the read/dispatch/write loop using plain JDK components (synchronous), or an effect's own semantics.
 
+## Message size limits
+
+The MCP specification sets no limit on the size of a message.
+
+**STDIO** transports read newline-delimited messages and bound a single incoming line with `maxLineLength`, 10 MB by default. A longer line fails the serve loop with a `chimp.transport.McpLineTooLongException` on every backend:
+
+```scala mdoc:compile-only
+import chimp.server.*
+import chimp.server.transport.ServerStdioTransport
+
+object BoundedStdioServer:
+  def main(args: Array[String]): Unit =
+    val echo = tool("echo").input[String].handle(echo => ToolResult.text(echo))
+    ServerStdioTransport(maxLineLength = 4 * 1024 * 1024).serve(McpServer(tools = List(echo)))
+```
+
+**HTTP** transports produce a Tapir endpoint, so the limit is Tapir's `maxRequestBodyLength`. A longer body gets `413 Payload Too Large`:
+
+```scala mdoc:compile-only
+import chimp.server.*
+import sttp.tapir.server.model.EndpointExtensions.*
+import sttp.tapir.server.netty.sync.NettySyncServer
+
+object BoundedHttpServer:
+  def main(args: Array[String]): Unit =
+    val echo = tool("echo").input[String].handle(echo => ToolResult.text(echo))
+    val mcpEndpoint = McpServer(tools = List(echo)).endpoint(List("mcp")).maxRequestBodyLength(4 * 1024 * 1024)
+
+    NettySyncServer().port(8080).addEndpoint(mcpEndpoint).startAndWait()
+```
+
+Some server interpreters have a limit of their own, refer to their configuration if needed. For example Pekko HTTP `pekko.http.server.parsing.max-content-length` defaults to 8 MB.
+
 ## Security
 
 An HTTP transport produces a plain Tapir `ServerEndpoint`, so you can protect the MCP endpoint with Tapir's endpoint security. `prependSecurity` (or `prependSecurityPure`, if the check needs no effect) adds a security input and the logic which validates it. The logic runs before any MCP message is handled:

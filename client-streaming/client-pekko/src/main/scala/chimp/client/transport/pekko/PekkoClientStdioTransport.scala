@@ -4,6 +4,7 @@ import chimp.client.McpTransportException
 import chimp.client.transport.pekko.internal.{PekkoPendingRequests, StateActor}
 import chimp.client.transport.{ClientStreamingStdioTransport, ClientTransport}
 import chimp.protocol.JSONRPCMessage
+import chimp.transport.{McpLineTooLongException, StdioFraming}
 import org.apache.pekko.stream.scaladsl.{Framing, Sink, Source, StreamConverters}
 import org.apache.pekko.stream.{BoundedSourceQueue, Materializer, QueueOfferResult}
 import org.apache.pekko.util.ByteString
@@ -22,6 +23,7 @@ final class PekkoClientStdioTransport private (
     workDir: Option[File],
     timeout: FiniteDuration,
     process: Process,
+    maxLineLength: Int,
     outbound: BoundedSourceQueue[JSONRPCMessage],
     pending: PekkoPendingRequests
 )(using mat: Materializer)
@@ -102,7 +104,7 @@ final class PekkoClientStdioTransport private (
 
   private[pekko] def startReader(): Unit =
     val done = PekkoClientStdioTransport
-      .lines(process.getInputStream)
+      .lines(process.getInputStream, maxLineLength)
       .mapAsync(1): line =>
         ClientTransport.decode(line) match
           case Right(msg) => dispatch(msg)
@@ -119,11 +121,10 @@ final class PekkoClientStdioTransport private (
 
   private[pekko] def startStderr(): Unit =
     val _ = PekkoClientStdioTransport
-      .lines(process.getErrorStream)
+      .lines(process.getErrorStream, maxLineLength)
       .runForeach(line => log.info(s"stdio-server: $line"))
 
 object PekkoClientStdioTransport:
-  private val maxLineLength = 8 * 1024 * 1024
   private val outboundBufferSize = 256
   private val exitTimeout = 2.seconds
 
@@ -137,12 +138,15 @@ object PekkoClientStdioTransport:
     *   The working directory of the subprocess; by default inherited from the current process.
     * @param timeout
     *   How long to wait for a response to a request sent to the server.
+    * @param maxLineLength
+    *   The maximum length of a single line received from the subprocess, in bytes. A longer line closes the transport.
     */
   def apply(
       command: List[String],
       env: Map[String, String] = Map.empty,
       workDir: Option[File] = None,
-      timeout: FiniteDuration = ClientTransport.defaultTimeout
+      timeout: FiniteDuration = ClientTransport.defaultTimeout,
+      maxLineLength: Int = StdioFraming.defaultMaxLineLength
   )(using Materializer): PekkoClientStdioTransport =
     val builder = ProcessBuilder(command.asJava)
     workDir.foreach(builder.directory)
@@ -160,14 +164,16 @@ object PekkoClientStdioTransport:
       .to(StreamConverters.fromOutputStream(() => process.getOutputStream, autoFlush = true))
       .run()
 
-    val transport = new PekkoClientStdioTransport(command, env, workDir, timeout, process, outbound, PekkoPendingRequests())
+    val transport =
+      new PekkoClientStdioTransport(command, env, workDir, timeout, process, maxLineLength, outbound, PekkoPendingRequests())
     transport.startReader()
     transport.startStderr()
     transport
 
-  private def lines(in: InputStream): Source[String, ?] =
+  private def lines(in: InputStream, maxLineLength: Int): Source[String, ?] =
     StreamConverters
       .fromInputStream(() => in)
       .via(Framing.delimiter(ByteString("\n"), maximumFrameLength = maxLineLength, allowTruncation = true))
+      .mapError { case _: Framing.FramingException => McpLineTooLongException(maxLineLength) }
       .map(_.utf8String.trim)
       .filter(_.nonEmpty)

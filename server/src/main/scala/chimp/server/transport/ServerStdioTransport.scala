@@ -2,13 +2,14 @@ package chimp.server.transport
 
 import chimp.protocol.{JSONRPCMessage, ProgressToken}
 import chimp.server.*
+import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.parser
 import io.circe.syntax.*
 import org.slf4j.LoggerFactory
 import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
 
-import java.io.{BufferedReader, BufferedWriter, InputStream, InputStreamReader, OutputStream, OutputStreamWriter}
+import java.io.{BufferedWriter, InputStream, OutputStream, OutputStreamWriter}
 import java.nio.charset.StandardCharsets
 
 /** A synchronous implementation of MCP server using stdio transport. Exchanges line-delimited JSON-RPC messages over its standard input and
@@ -18,9 +19,15 @@ import java.nio.charset.StandardCharsets
   *   Server input stream.
   * @param out
   *   Server output stream.
+  * @param maxLineLength
+  *   The maximum length of a single incoming line, in bytes. Reading a longer line fails the transport with a
+  *   [[chimp.transport.McpLineTooLongException]].
   */
-final class ServerStdioTransport(in: InputStream = System.in, out: OutputStream = System.out)
-    extends ServerTransport[Identity, Unit]
+final class ServerStdioTransport(
+    in: InputStream = System.in,
+    out: OutputStream = System.out,
+    maxLineLength: Int = StdioFraming.defaultMaxLineLength
+) extends ServerTransport[Identity, Unit]
     with StreamingServerTransport[Identity, Unit]:
 
   private val log = LoggerFactory.getLogger(classOf[ServerStdioTransport])
@@ -30,7 +37,7 @@ final class ServerStdioTransport(in: InputStream = System.in, out: OutputStream 
   def serve(server: StreamingMcpServer[Identity]): Unit =
     given MonadError[Identity] = IdentityMonad
     val handler = new McpHandler[Identity, StreamingServerContext[Identity]](server)
-    val reader = BufferedReader(InputStreamReader(in, StandardCharsets.UTF_8))
+    val reader = StdioLineReader(in, maxLineLength)
     val writer = BufferedWriter(OutputStreamWriter(out, StandardCharsets.UTF_8))
 
     def writeLine(json: io.circe.Json): Unit =
@@ -45,10 +52,9 @@ final class ServerStdioTransport(in: InputStream = System.in, out: OutputStream 
     val makeContext: Option[ProgressToken] => StreamingServerContext[Identity] =
       token => SinkStreamingServerContext(sink, token)
 
-    var line = reader.readLine()
-    while line != null do
-      if line.nonEmpty then
+    reader.lines
+      .filter(_.nonEmpty)
+      .foreach: line =>
         parser.parse(line) match
           case Right(json) => handler.handleJsonRpc(json, Nil, makeContext).body.foreach(writeLine)
           case Left(error) => log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line")
-      line = reader.readLine()

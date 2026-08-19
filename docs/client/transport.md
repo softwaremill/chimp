@@ -48,3 +48,21 @@ The streaming transports have concrete implementations per effect system, in sep
 
 - **HTTP** transports run on any [sttp](https://sttp.softwaremill.com/en/latest/) backend. The streaming HTTP transports additionally require a backend with streaming capability.
 - **STDIO** transports, on the other hand, can run using plain JDK components (synchronous), or using various libraries that support asynchronous streaming.
+
+## Message size limits
+
+The **STDIO** transports bound a single line read from the subprocess with `maxLineLength`, 10 MB by default. A longer line closes the transport: the reader stops and the requests waiting for a response fail.
+
+```scala mdoc:compile-only
+import chimp.client.*
+import chimp.client.transport.ClientStdioTransport
+import chimp.protocol.Implementation
+import sttp.shared.Identity
+
+object BoundedStdioClient:
+  def main(args: Array[String]): Unit =
+    val transport = ClientStdioTransport(command = List("my-mcp-server"), maxLineLength = 4 * 1024 * 1024)
+    val client = McpClient[Identity](transport, Implementation("my-client", "0.1.0"))
+
+    client.close()
+```
