@@ -21,4 +21,4 @@ pip install -r requirements.txt
 
 ## Notes
 
-- `0.5.1` and other mdoc variables are **not** substituted in the local watch mode. For a fully-rendered preview, run `sbt docs/mdoc` from the repo root and serve `generated-docs/out/` (don't commit the result).
+- `0.5.2` and other mdoc variables are **not** substituted in the local watch mode. For a fully-rendered preview, run `sbt docs/mdoc` from the repo root and serve `generated-docs/out/` (don't commit the result).

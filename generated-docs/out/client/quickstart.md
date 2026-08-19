@@ -5,7 +5,7 @@ Chimp ships an MCP client that connects to any MCP-compliant server. The client 
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.5.1"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client" % "0.5.2"
 ```
 
 ## Example: the simplest MCP client
@@ -37,11 +37,17 @@ object QuickstartClient:
 For streaming transports, also add the dependency for your effect system — ZIO:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.5.1"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-zio" % "0.5.2"
 ```
 
-or direct-style Ox:
+direct-style Ox:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-ox" % "0.5.1"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-ox" % "0.5.2"
+```
+
+or Pekko:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-client-pekko" % "0.5.2"
 ```

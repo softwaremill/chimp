@@ -19,7 +19,7 @@ the MCP protocol with bidirectional communication between server and client. Cur
 Run a basic MCP server with Netty exposing a simple adder tool:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server:0.5.1
+//> using dep com.softwaremill.chimp::chimp-server:0.5.2
 //> using dep com.softwaremill.sttp.tapir::tapir-netty-server-sync:1.13.19
 
 import chimp.server.*
@@ -39,7 +39,7 @@ case class AdderInput(a: Int, b: Int) derives Codec, Schema
 Connect and invoke the tool as an MCP client:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-client:0.5.1
+//> using dep com.softwaremill.chimp::chimp-client:0.5.2
 //> using dep com.softwaremill.sttp.client4::core:4.0.24
 
 import chimp.client.*
@@ -65,7 +65,7 @@ import io.circe.Json
 Run a basic MCP server using stdio transport:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server:0.5.1
+//> using dep com.softwaremill.chimp::chimp-server:0.5.2
 
 import chimp.server.*
 import chimp.server.transport.ServerStdioTransport
@@ -84,7 +84,7 @@ case class EchoInput(message: String) derives Codec, Schema
 Start the server as a subprocess and invoke the tool as an MCP client:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-client:0.5.1
+//> using dep com.softwaremill.chimp::chimp-client:0.5.2
 
 import chimp.client.*
 import chimp.client.transport.ClientStdioTransport
@@ -107,7 +107,7 @@ With the integration modules (like `chimp-server-ox` and `chimp-client-ox` for o
 For example, run a basic streaming MCP server using Netty and ox:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server-ox:0.5.1
+//> using dep com.softwaremill.chimp::chimp-server-ox:0.5.2
 
 import chimp.protocol.LoggingLevel
 import chimp.server.*
@@ -136,7 +136,7 @@ case class WorkInput(steps: Int) derives Codec, Schema
 Connect and invoke the tool as an MCP client, receiving server's notifications while the tool call is in flight:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-client-ox:0.5.1
+//> using dep com.softwaremill.chimp::chimp-client-ox:0.5.2
 
 import chimp.client.McpClient
 import chimp.client.notifications.ServerNotification

@@ -5,7 +5,7 @@ Chimp lets you expose MCP tools over a JSON-RPC HTTP API. Tool inputs are descri
 Add the dependency to your `build.sbt`:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.5.1"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.5.2"
 ```
 
 ## Example: the simplest MCP server
@@ -13,7 +13,7 @@ libraryDependencies += "com.softwaremill.chimp" %% "chimp-server" % "0.5.1"
 Below is a self-contained, [scala-cli](https://scala-cli.virtuslab.org)-runnable example:
 
 ```scala
-//> using dep com.softwaremill.chimp::chimp-server:0.5.1
+//> using dep com.softwaremill.chimp::chimp-server:0.5.2
 
 import chimp.*
 import sttp.tapir.*
@@ -39,13 +39,19 @@ case class AdderInput(a: Int, b: Int) derives io.circe.Codec, Schema
 For a streaming server that pushes progress and log notifications over SSE, add the dependency for your effect system — ZIO:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-zio" % "0.5.1"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-zio" % "0.5.2"
 ```
 
-or direct-style Ox:
+direct-style Ox:
 
 ```scala
-libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-ox" % "0.5.1"
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-ox" % "0.5.2"
+```
+
+or Pekko:
+
+```scala
+libraryDependencies += "com.softwaremill.chimp" %% "chimp-server-pekko" % "0.5.2"
 ```
 
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).

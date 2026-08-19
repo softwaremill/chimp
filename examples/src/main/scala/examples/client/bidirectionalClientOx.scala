@@ -1,4 +1,4 @@
-//> using dep com.softwaremill.chimp::chimp-client-ox:0.5.1
+//> using dep com.softwaremill.chimp::chimp-client-ox:0.5.2
 //> using dep ch.qos.logback:logback-classic:1.5.37
 
 package examples.client
