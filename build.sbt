@@ -12,7 +12,7 @@ val zioV = "2.1.26"
 val zioProcessV = "0.8.0"
 val zioHttpV = "3.11.4"
 val oxV = "1.0.6"
-val testcontainersScalaV = "0.41.8"
+val testcontainersScalaV = "0.44.1"
 val pekkoV = "1.7.0"
 val conformanceHarnessV = "0.2.0-alpha.11"
 
