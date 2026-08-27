@@ -45,6 +45,18 @@ The streaming transports have concrete implementations per effect system, in sep
 | Ox (direct style) | `OxServerHttpTransport` | `OxServerStdioTransport` |
 | Pekko | `PekkoServerHttpTransport` | `PekkoServerStdioTransport` |
 
+### Keep-alive
+
+Long-running tool calls hold the Server-Sent Event response stream open. Idle connections can be closed by proxies in between. Set `keepAlive` on a streaming HTTP transport to emit a data-less `ping` event at a fixed interval while the stream is open. The events carry no data and are ignored by MCP clients:
+
+```scala mdoc:compile-only
+import chimp.server.ox.OxServerHttpTransport
+
+import scala.concurrent.duration.*
+
+val transport = OxServerHttpTransport(List("mcp"), keepAlive = Some(15.seconds))
+```
+
 ## Backends
 
 - **HTTP** transports produce a Tapir `ServerEndpoint` that you run on any Tapir server interpreter. The streaming HTTP transport additionally requires an interpreter with streaming capability.
