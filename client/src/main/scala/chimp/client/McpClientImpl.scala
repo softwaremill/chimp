@@ -220,6 +220,15 @@ object McpClientImpl:
       val params = ProgressParams(progressToken = token, progress = progress, total = total, message = message).asJson
       sendNotification("notifications/progress", Some(params))
 
+    override def getTask(taskId: String): F[GetTaskResult] =
+      sendRequest[GetTaskResult]("tasks/get", Some(GetTaskParams(taskId).asJson))
+
+    override def cancelTask(taskId: String): F[Unit] =
+      sendRequest[Json]("tasks/cancel", Some(CancelTaskParams(taskId).asJson)).map(_ => ())
+
+    override def updateTask(taskId: String, inputResponses: Json): F[Unit] =
+      sendRequest[Json]("tasks/update", Some(UpdateTaskParams(taskId, inputResponses).asJson)).map(_ => ())
+
     protected def requireServerCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
       if present(serverCapabilities) then action
       else monad.error(McpProtocolException(s"Server did not negotiate the capability required for $method"))

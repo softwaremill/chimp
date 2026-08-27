@@ -43,3 +43,19 @@ def listen(client: BidirectionalMcpClient[Task]): Task[Unit] =
     case _                                          => ZIO.unit
   }
 ```
+
+## Tasks (experimental)
+
+The [Tasks extension](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/seps/2663-tasks-extension.md) (`io.modelcontextprotocol/tasks`) lets a server answer a long-running request with a durable task handle that the client polls and later collects the result of. The client supports the requestor side with `getTask`, `cancelTask` and `updateTask`. This part of the protocol is experimental and its wire format may change.
+
+```scala mdoc:compile-only
+import chimp.client.*
+import chimp.protocol.*
+import zio.{Task, ZIO}
+
+def awaitResult(client: McpClient[Task], taskId: String): Task[GetTaskResult] =
+  client.getTask(taskId).flatMap { task =>
+    if TaskStatus.isTerminal(task.status) then ZIO.succeed(task)
+    else awaitResult(client, taskId)
+  }
+```
