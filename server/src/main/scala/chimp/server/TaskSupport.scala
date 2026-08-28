@@ -1,0 +1,74 @@
+package chimp.server
+
+import chimp.protocol.GetTaskResult
+import sttp.monad.MonadError
+import sttp.shared.Identity
+
+import java.util.concurrent.{ConcurrentHashMap, ExecutorService, Executors, Future as JavaFuture}
+
+/** Durable-ish store of task state for the Tasks extension, addressable by task id. The default in-memory implementation keeps tasks for
+  * the lifetime of the process.
+  */
+trait TaskStore[F[_]]:
+  def create(task: GetTaskResult): F[Unit]
+  def get(taskId: String): F[Option[GetTaskResult]]
+
+  /** Applies `f` to the stored task if present, atomically, and returns the updated task. */
+  def update(taskId: String)(f: GetTaskResult => GetTaskResult): F[Option[GetTaskResult]]
+
+object TaskStore:
+  def inMemory[F[_]](using m: MonadError[F]): TaskStore[F] = new TaskStore[F]:
+    private val tasks = ConcurrentHashMap[String, GetTaskResult]()
+
+    def create(task: GetTaskResult): F[Unit] = m.eval:
+      val _ = tasks.put(task.taskId, task)
+      ()
+
+    def get(taskId: String): F[Option[GetTaskResult]] = m.eval(Option(tasks.get(taskId)))
+
+    def update(taskId: String)(f: GetTaskResult => GetTaskResult): F[Option[GetTaskResult]] = m.eval:
+      Option(tasks.computeIfPresent(taskId, (_, current) => f(current)))
+
+/** Runs task bodies in the background and supports best-effort cancellation. The body is passed as a thunk so that, on eager effect types
+  * such as `Identity`, it is only run on the background worker rather than at the call site.
+  */
+trait TaskExecutor[F[_]]:
+  def start(taskId: String, body: () => F[Unit]): F[Unit]
+  def cancel(taskId: String): F[Unit]
+
+object TaskExecutor:
+
+  /** A thread-pool executor for synchronous (`Identity`) servers, such as the Netty sync server. Cancellation interrupts the worker thread.
+    */
+  def threadPool(pool: ExecutorService = Executors.newCachedThreadPool()): TaskExecutor[Identity] = new TaskExecutor[Identity]:
+    private val running = ConcurrentHashMap[String, JavaFuture[?]]()
+
+    def start(taskId: String, body: () => Identity[Unit]): Identity[Unit] =
+      val future = pool.submit(new Runnable:
+        def run(): Unit =
+          try body()
+          finally
+            val _ = running.remove(taskId))
+      val _ = running.put(taskId, future)
+      ()
+
+    def cancel(taskId: String): Identity[Unit] =
+      val _ = Option(running.remove(taskId)).foreach(_.cancel(true))
+      ()
+
+/** Bundles everything a server needs to answer requests with tasks (Tasks extension, experimental).
+  *
+  * @param useTask
+  *   Given a tool name, whether to answer its `tools/call` with a task when the client declares task support. Defaults to always.
+  * @param requireTask
+  *   Given a tool name, whether a task is required; if the client does not declare task support, the call fails with `-32003`. Defaults to
+  *   never.
+  */
+final case class TaskSupport[F[_]](
+    store: TaskStore[F],
+    executor: TaskExecutor[F],
+    ttlMs: Option[Long] = Some(3600000L),
+    pollIntervalMs: Option[Long] = Some(1000L),
+    useTask: String => Boolean = (_: String) => true,
+    requireTask: String => Boolean = (_: String) => false
+)

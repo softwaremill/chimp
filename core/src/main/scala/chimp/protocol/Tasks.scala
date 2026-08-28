@@ -9,6 +9,20 @@ import io.circe.{Codec, Decoder, Encoder, Json}
 object TasksExtension:
   val Id: String = "io.modelcontextprotocol/tasks"
 
+  /** `_meta` key under which a client declares its per-request capabilities. */
+  val ClientCapabilitiesMetaKey: String = "io.modelcontextprotocol/clientCapabilities"
+
+  /** The `_meta` entry a client adds to a request to declare support for the Tasks extension, so the server may answer with a task. */
+  def clientCapabilityMeta: Map[String, Json] =
+    Map(ClientCapabilitiesMetaKey -> Json.obj("extensions" -> Json.obj(Id -> Json.obj())))
+
+  /** Whether the given request `_meta` declares support for the Tasks extension. */
+  def declaredIn(meta: Option[Map[String, Json]]): Boolean =
+    meta
+      .flatMap(_.get(ClientCapabilitiesMetaKey))
+      .flatMap(_.hcursor.downField("extensions").downField(Id).focus)
+      .isDefined
+
 /** State of a task. Terminal states are `Completed`, `Failed` and `Cancelled`. */
 enum TaskStatus:
   case Working, InputRequired, Completed, Failed, Cancelled

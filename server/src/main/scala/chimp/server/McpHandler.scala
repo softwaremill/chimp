@@ -82,6 +82,12 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
             jsonResponse(JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefinitions).asJson)).unit
           case "tools/call" =>
             handleToolsCall(params, id, headers, makeContext).map(jsonResponse)
+          case "tasks/get" if server.tasks.isDefined =>
+            handleTasksGet(params, id).map(jsonResponse)
+          case "tasks/cancel" if server.tasks.isDefined =>
+            handleTasksCancel(params, id).map(jsonResponse)
+          case "tasks/update" if server.tasks.isDefined =>
+            handleTasksUpdate(params, id).map(jsonResponse)
           case "resources/list" if hasResources =>
             jsonResponse(JSONRPCMessage.Response(id = id, result = ListResourcesResult(server.resources.map(_.definition)).asJson)).unit
           case "resources/templates/list" if hasResources =>
@@ -126,7 +132,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
       resources =
         Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
-      tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
+      tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false))),
+      extensions = server.tasks.map(_ => Map(TasksExtension.Id -> Json.obj()))
     )
     val result = InitializeResult(
       protocolVersion = negotiated.name,
@@ -142,6 +149,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val name = params.flatMap(_.hcursor.downField("name").as[String].toOption)
     val arguments = params.flatMap(_.hcursor.downField("arguments").focus).getOrElse(Json.obj())
     val progressToken = params.flatMap(_.hcursor.downField("_meta").downField("progressToken").as[ProgressToken].toOption)
+    val requestMeta = params.flatMap(_.hcursor.downField("_meta").as[Map[String, Json]].toOption)
+    val clientSupportsTasks = TasksExtension.declaredIn(requestMeta)
     name match
       case Some(name) =>
         toolsByName.get(name) match
@@ -149,10 +158,20 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
             tool.inputDecoder.decodeJson(arguments) match
               case Right(input) =>
                 val context = makeContext(progressToken)
-                tool
-                  .logic(input, context, headers)
-                  .map: result =>
-                    toolCallResponse(id, result)
+                server.tasks match
+                  case Some(support) if support.requireTask(name) && !clientSupportsTasks =>
+                    protocolError(
+                      id,
+                      JSONRPCErrorCodes.MissingRequiredClientCapability.code,
+                      s"Tool '$name' requires the ${TasksExtension.Id} client capability"
+                    ).unit
+                  case Some(support) if clientSupportsTasks && support.useTask(name) =>
+                    startTask(support, id, tool, input, context, headers)
+                  case _ =>
+                    tool
+                      .logic(input, context, headers)
+                      .map: result =>
+                        toolCallResponse(id, result)
               case Left(decodingError) =>
                 val snippet = arguments.noSpaces.take(200)
                 protocolError(
@@ -164,19 +183,111 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case None =>
         protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
 
-  private def toolCallResponse(id: RequestId, result: ToolResult[?]): JSONRPCMessage =
+  private def toCallToolResult(result: ToolResult[?]): CallToolResult =
     // for backwards compatibility, structured output is serialized into a text block, unless the tool returned content of its own
     val content = result.structuredContent match
       case Some(json) if result.content.isEmpty => List(ToolContent.Text(text = json.noSpaces))
       case _                                    => result.content
-    JSONRPCMessage.Response(
-      id = id,
-      result = CallToolResult(
-        content = content,
-        structuredContent = result.structuredContent,
-        isError = result.isError
-      ).asJson
+    CallToolResult(content = content, structuredContent = result.structuredContent, isError = result.isError)
+
+  private def toolCallResponse(id: RequestId, result: ToolResult[?]): JSONRPCMessage =
+    JSONRPCMessage.Response(id = id, result = toCallToolResult(result).asJson)
+
+  private def startTask[I](
+      support: TaskSupport[F],
+      id: RequestId,
+      tool: ServerTool[I, ?, F, C],
+      input: I,
+      context: C,
+      headers: Seq[Header]
+  )(using m: MonadError[F]): F[JSONRPCMessage] =
+    val taskId = java.util.UUID.randomUUID().toString
+    val now = java.time.Instant.now().toString
+    val initial = GetTaskResult(
+      taskId = taskId,
+      status = TaskStatus.Working,
+      createdAt = Some(now),
+      lastUpdatedAt = Some(now),
+      ttlMs = support.ttlMs,
+      pollIntervalMs = support.pollIntervalMs,
+      resultType = Some("complete")
     )
+    // handleError takes its body by-name, so a synchronous (Identity) tool that throws is caught here too
+    val body: () => F[Unit] = () =>
+      m.handleError(
+        m.flatMap(tool.logic(input, context, headers))(result =>
+          finishTask(support, taskId, TaskStatus.Completed, result = Some(toCallToolResult(result).asJson))
+        )
+      ) { case t =>
+        finishTask(
+          support,
+          taskId,
+          TaskStatus.Failed,
+          error = Some(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")).asJson)
+        )
+      }
+    support.store
+      .create(initial)
+      .flatMap(_ => support.executor.start(taskId, body))
+      .map: _ =>
+        JSONRPCMessage.Response(
+          id = id,
+          result = CreateTaskResult(
+            taskId = taskId,
+            status = TaskStatus.Working,
+            createdAt = Some(now),
+            lastUpdatedAt = Some(now),
+            ttlMs = support.ttlMs,
+            pollIntervalMs = support.pollIntervalMs
+          ).asJson
+        )
+
+  // only transition a task that is still working, so a cancellation is not overwritten by a late completion
+  private def finishTask(
+      support: TaskSupport[F],
+      taskId: String,
+      status: TaskStatus,
+      result: Option[Json] = None,
+      error: Option[Json] = None
+  )(using
+      MonadError[F]
+  ): F[Unit] =
+    support.store
+      .update(taskId): current =>
+        if current.status == TaskStatus.Working then
+          current.copy(status = status, result = result, error = error, lastUpdatedAt = Some(java.time.Instant.now().toString))
+        else current
+      .map(_ => ())
+
+  private def handleTasksGet(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+    decodeParams[GetTaskParams](params, id): p =>
+      server.tasks.get.store
+        .get(p.taskId)
+        .map:
+          case Some(task) => JSONRPCMessage.Response(id = id, result = task.asJson)
+          case None       => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown task: ${p.taskId}")
+
+  private def handleTasksCancel(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+    decodeParams[CancelTaskParams](params, id): p =>
+      val support = server.tasks.get
+      support.store
+        .update(p.taskId): current =>
+          if TaskStatus.isTerminal(current.status) then current
+          else current.copy(status = TaskStatus.Cancelled, lastUpdatedAt = Some(java.time.Instant.now().toString))
+        .flatMap:
+          case Some(_) => support.executor.cancel(p.taskId).map(_ => taskAck(id, p.taskId, TaskStatus.Cancelled))
+          case None    => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown task: ${p.taskId}").unit
+
+  private def handleTasksUpdate(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
+    decodeParams[UpdateTaskParams](params, id): p =>
+      server.tasks.get.store
+        .get(p.taskId)
+        .map:
+          case Some(task) => taskAck(id, task.taskId, task.status)
+          case None       => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown task: ${p.taskId}")
+
+  private def taskAck(id: RequestId, taskId: String, status: TaskStatus): JSONRPCMessage =
+    JSONRPCMessage.Response(id = id, result = TaskAck(taskId = Some(taskId), status = Some(status)).asJson)
 
   private def handleResourcesRead(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =
     decodeParams[ReadResourceParams](params, id): params =>

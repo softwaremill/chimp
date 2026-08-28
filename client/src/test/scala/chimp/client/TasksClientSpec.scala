@@ -63,3 +63,22 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
       .thenRespondAdjust("", StatusCode.Accepted)
 
     noException should be thrownBy client(backend).cancelTask("t1")
+
+  it should "declare task support and parse a task handle from callToolWithTasks" in:
+    val created = CreateTaskResult(taskId = "t9", status = TaskStatus.Working)
+    val createdEnvelope = (JSONRPCMessage.Response(id = RequestId(1), result = created.asJson): JSONRPCMessage).asJson.noSpaces
+    val initResult = InitializeResult(
+      protocolVersion = ProtocolVersion.Latest.name,
+      capabilities = ServerCapabilities(tools = Some(ServerToolsCapability())),
+      serverInfo = Implementation(name = "s", version = "1")
+    )
+    val toolsInitEnvelope = (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
+    val backend = SyncBackendStub
+      .whenRequestMatches(envelopeFor("initialize", _))
+      .thenRespondAdjust(toolsInitEnvelope)
+      .whenRequestMatches(req => envelopeFor("tools/call", req) && envelopeFor(TasksExtension.Id, req))
+      .thenRespondAdjust(createdEnvelope)
+      .whenAnyRequest
+      .thenRespondAdjust("", StatusCode.Accepted)
+
+    client(backend).callToolWithTasks("slow", io.circe.Json.obj()) shouldBe Right(created)

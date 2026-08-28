@@ -229,6 +229,20 @@ object McpClientImpl:
     override def updateTask(taskId: String, inputResponses: Json): F[Unit] =
       sendRequest[Json]("tasks/update", Some(UpdateTaskParams(taskId, inputResponses).asJson)).map(_ => ())
 
+    override def callToolWithTasks(name: String, arguments: Json): F[Either[CallToolResult, CreateTaskResult]] =
+      requireServerCapability("tools/call", _.tools.isDefined):
+        val params = CallToolParams(name = name, arguments = arguments, _meta = Some(TasksExtension.clientCapabilityMeta)).asJson
+        sendRequest[Json]("tools/call", Some(params)).flatMap: json =>
+          val isTask = json.hcursor.downField("resultType").as[String].toOption.contains("task")
+          if isTask then
+            json.as[CreateTaskResult] match
+              case Right(task) => monad.unit(Right(task))
+              case Left(error) => monad.error(McpProtocolException(s"Failed to decode CreateTaskResult: ${error.getMessage}"))
+          else
+            json.as[CallToolResult] match
+              case Right(result) => monad.unit(Left(result))
+              case Left(error)   => monad.error(McpProtocolException(s"Failed to decode CallToolResult: ${error.getMessage}"))
+
     protected def requireServerCapability[A](method: String, present: ServerCapabilities => Boolean)(action: => F[A]): F[A] =
       if present(serverCapabilities) then action
       else monad.error(McpProtocolException(s"Server did not negotiate the capability required for $method"))
