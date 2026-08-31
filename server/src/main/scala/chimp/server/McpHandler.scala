@@ -205,7 +205,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val now = java.time.Instant.now()
     val initial = GetTaskResult(
       taskId = taskId,
-      status = TaskStatus.Working,
+      outcome = TaskOutcome.Working,
       createdAt = Some(now),
       lastUpdatedAt = Some(now),
       ttlMs = support.ttl,
@@ -216,14 +216,13 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val body: () => F[Unit] = () =>
       m.handleError(
         m.flatMap(tool.logic(input, context, headers))(result =>
-          finishTask(support, taskId, TaskStatus.Completed, result = Some(toCallToolResult(result).asJson))
+          finishTask(support, taskId, TaskOutcome.Completed(toCallToolResult(result).asJson))
         )
       ) { case t =>
         finishTask(
           support,
           taskId,
-          TaskStatus.Failed,
-          error = Some(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")))
+          TaskOutcome.Failed(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")))
         )
       }
     support.store
@@ -243,19 +242,10 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         )
 
   // only transition a task that is still working, so a cancellation is not overwritten by a late completion
-  private def finishTask(
-      support: TaskSupport[F],
-      taskId: TaskId,
-      status: TaskStatus,
-      result: Option[Json] = None,
-      error: Option[JSONRPCErrorObject] = None
-  )(using
-      MonadError[F]
-  ): F[Unit] =
+  private def finishTask(support: TaskSupport[F], taskId: TaskId, outcome: TaskOutcome)(using MonadError[F]): F[Unit] =
     support.store
       .update(taskId): current =>
-        if current.status == TaskStatus.Working then
-          current.copy(status = status, result = result, error = error, lastUpdatedAt = Some(java.time.Instant.now()))
+        if current.status == TaskStatus.Working then current.copy(outcome = outcome, lastUpdatedAt = Some(java.time.Instant.now()))
         else current
       .map(_ => ())
 
@@ -273,7 +263,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       support.store
         .update(p.taskId): current =>
           if TaskStatus.isTerminal(current.status) then current
-          else current.copy(status = TaskStatus.Cancelled, lastUpdatedAt = Some(java.time.Instant.now()))
+          else current.copy(outcome = TaskOutcome.Cancelled, lastUpdatedAt = Some(java.time.Instant.now()))
         .flatMap:
           case Some(_) => support.executor.cancel(p.taskId).map(_ => taskAck(id, p.taskId, TaskStatus.Cancelled))
           case None    => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown task: ${p.taskId}").unit

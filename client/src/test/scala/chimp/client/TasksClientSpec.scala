@@ -34,8 +34,7 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
   it should "poll a task with tasks/get and expose the underlying result" in:
     val task = GetTaskResult(
       taskId = TaskId("t1"),
-      status = TaskStatus.Completed,
-      result = Some(CallToolResult(content = List(ToolContent.Text(text = "done"))).asJson),
+      outcome = TaskOutcome.Completed(CallToolResult(content = List(ToolContent.Text(text = "done"))).asJson),
       resultType = Some("complete")
     )
     val taskEnvelope = (JSONRPCMessage.Response(id = RequestId(1), result = task.asJson): JSONRPCMessage).asJson.noSpaces
@@ -49,7 +48,10 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
 
     val res = client(backend).getTask(TaskId("t1"))
     res.status shouldBe TaskStatus.Completed
-    res.result.flatMap(_.as[CallToolResult].toOption).map(_.content.head) shouldBe Some(ToolContent.Text("text", "done"))
+    res.outcome match
+      case TaskOutcome.Completed(result) =>
+        result.as[CallToolResult].toOption.map(_.content.head) shouldBe Some(ToolContent.Text("text", "done"))
+      case other => fail(s"expected Completed, got $other")
 
   it should "cancel a task with tasks/cancel" in:
     val ack = TaskAck(taskId = Some(TaskId("t1")), status = Some(TaskStatus.Cancelled))

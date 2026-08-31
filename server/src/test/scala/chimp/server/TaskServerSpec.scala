@@ -60,7 +60,7 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
     (Request(method = "tools/call", params = Some(params), id = RequestId("call")): JSONRPCMessage).asJson
 
   private def pollTask(handler: McpHandler[Identity, ServerContext[Identity]], taskId: TaskId): GetTaskResult =
-    var last = GetTaskResult(taskId = taskId, status = TaskStatus.Working)
+    var last = GetTaskResult(taskId = taskId, outcome = TaskOutcome.Working)
     var done = false
     var i = 0
     while !done && i < 200 do
@@ -87,10 +87,10 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
     created.taskId.value should not be empty
 
     val finished = pollTask(handler, created.taskId)
-    finished.status shouldBe TaskStatus.Completed
-    finished.result
-      .flatMap(_.as[CallToolResult].toOption)
-      .map(_.content.head) shouldBe Some(ToolContent.Text("text", "slow:hi"))
+    finished.outcome match
+      case TaskOutcome.Completed(result) =>
+        result.as[CallToolResult].toOption.map(_.content.head) shouldBe Some(ToolContent.Text("text", "slow:hi"))
+      case other => fail(s"expected Completed, got $other")
 
   it should "report a failed task when the tool throws" in:
     val handler = handlerWith()
@@ -99,8 +99,9 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
       .getOrElse(fail("decode CreateTaskResult"))
 
     val finished = pollTask(handler, created.taskId)
-    finished.status shouldBe TaskStatus.Failed
-    finished.error.isDefined shouldBe true
+    finished.outcome match
+      case TaskOutcome.Failed(_) => succeed
+      case other                 => fail(s"expected Failed, got $other")
 
   it should "cancel a running task" in:
     val handler = handlerWith()

@@ -1,6 +1,7 @@
 package chimp.protocol
 
 import io.circe.{Codec, Decoder, Encoder, Json}
+import io.circe.syntax.*
 
 import java.time.Instant
 import scala.concurrent.duration.{DurationLong, FiniteDuration}
@@ -78,23 +79,78 @@ final case class CreateTaskResult(
 final case class GetTaskParams(taskId: TaskId, _meta: Option[Map[String, Json]] = None) derives Codec
 final case class GetTaskRequest(method: String = "tasks/get", params: GetTaskParams) derives Codec
 
-/** Detailed task state returned by `tasks/get`. `result` is present once the task is `Completed`, `error` once it has `Failed`, and
-  * `inputRequests` while it is `InputRequired`. `result` is left as raw JSON, since its shape depends on the request the task stands for.
+/** The status of a task together with the data specific to that status. Modelling it as a sealed type means `result`, `error` and
+  * `inputRequests` can only appear with the status they belong to. `result` is raw JSON, since its shape depends on the request the task
+  * stands for.
+  */
+enum TaskOutcome:
+  case Working
+  case InputRequired(inputRequests: Map[String, Json])
+  case Completed(result: Json)
+  case Failed(error: JSONRPCErrorObject)
+  case Cancelled
+
+  def status: TaskStatus = this match
+    case TaskOutcome.Working          => TaskStatus.Working
+    case TaskOutcome.InputRequired(_) => TaskStatus.InputRequired
+    case TaskOutcome.Completed(_)     => TaskStatus.Completed
+    case TaskOutcome.Failed(_)        => TaskStatus.Failed
+    case TaskOutcome.Cancelled        => TaskStatus.Cancelled
+
+/** Detailed task state returned by `tasks/get`. The [[TaskOutcome]] carries the `status` and its status-specific data. On the wire the
+  * outcome is flattened: `status` plus, where applicable, `result` / `error` / `inputRequests`.
   */
 final case class GetTaskResult(
     taskId: TaskId,
-    status: TaskStatus,
+    outcome: TaskOutcome,
     createdAt: Option[Instant] = None,
     lastUpdatedAt: Option[Instant] = None,
     ttlMs: Option[FiniteDuration] = None,
     pollIntervalMs: Option[FiniteDuration] = None,
     statusMessage: Option[String] = None,
-    result: Option[Json] = None,
-    error: Option[JSONRPCErrorObject] = None,
-    inputRequests: Option[Map[String, Json]] = None,
     resultType: Option[String] = None,
     _meta: Option[Map[String, Json]] = None
-) derives Codec
+):
+  def status: TaskStatus = outcome.status
+
+object GetTaskResult:
+  given Encoder[GetTaskResult] = Encoder.instance: task =>
+    val base = Json.obj(
+      "taskId" -> task.taskId.asJson,
+      "status" -> task.status.asJson,
+      "createdAt" -> task.createdAt.asJson,
+      "lastUpdatedAt" -> task.lastUpdatedAt.asJson,
+      "ttlMs" -> task.ttlMs.asJson,
+      "pollIntervalMs" -> task.pollIntervalMs.asJson,
+      "statusMessage" -> task.statusMessage.asJson,
+      "resultType" -> task.resultType.asJson,
+      "_meta" -> task._meta.asJson
+    )
+    val payload = task.outcome match
+      case TaskOutcome.Completed(result)               => Json.obj("result" -> result)
+      case TaskOutcome.Failed(error)                   => Json.obj("error" -> error.asJson)
+      case TaskOutcome.InputRequired(inputRequests)    => Json.obj("inputRequests" -> inputRequests.asJson)
+      case TaskOutcome.Working | TaskOutcome.Cancelled => Json.obj()
+    base.deepMerge(payload)
+
+  given Decoder[GetTaskResult] = Decoder.instance: c =>
+    for
+      taskId <- c.get[TaskId]("taskId")
+      status <- c.get[TaskStatus]("status")
+      createdAt <- c.get[Option[Instant]]("createdAt")
+      lastUpdatedAt <- c.get[Option[Instant]]("lastUpdatedAt")
+      ttlMs <- c.get[Option[FiniteDuration]]("ttlMs")
+      pollIntervalMs <- c.get[Option[FiniteDuration]]("pollIntervalMs")
+      statusMessage <- c.get[Option[String]]("statusMessage")
+      resultType <- c.get[Option[String]]("resultType")
+      meta <- c.get[Option[Map[String, Json]]]("_meta")
+      outcome <- status match
+        case TaskStatus.Working       => Right(TaskOutcome.Working)
+        case TaskStatus.Cancelled     => Right(TaskOutcome.Cancelled)
+        case TaskStatus.Completed     => c.get[Json]("result").map(result => TaskOutcome.Completed(result))
+        case TaskStatus.Failed        => c.get[JSONRPCErrorObject]("error").map(error => TaskOutcome.Failed(error))
+        case TaskStatus.InputRequired => c.get[Map[String, Json]]("inputRequests").map(reqs => TaskOutcome.InputRequired(reqs))
+    yield GetTaskResult(taskId, outcome, createdAt, lastUpdatedAt, ttlMs, pollIntervalMs, statusMessage, resultType, meta)
 
 final case class CancelTaskParams(taskId: TaskId, _meta: Option[Map[String, Json]] = None) derives Codec
 final case class CancelTaskRequest(method: String = "tasks/cancel", params: CancelTaskParams) derives Codec

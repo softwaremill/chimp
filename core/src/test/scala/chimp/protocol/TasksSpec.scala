@@ -55,11 +55,16 @@ class TasksSpec extends AnyFlatSpec with Matchers:
     val toolResult = CallToolResult(content = List(ToolContent.Text(text = "Hello, Luca!"))).asJson
     val task = GetTaskResult(
       taskId = TaskId("t1"),
-      status = TaskStatus.Completed,
-      result = Some(toolResult),
+      outcome = TaskOutcome.Completed(toolResult),
       resultType = Some("complete")
     )
     decode[GetTaskResult](task.asJson.noSpaces) shouldBe Right(task)
+
+  it should "flatten the outcome onto the wire and reject a completed task without a result" in:
+    val completed = GetTaskResult(taskId = TaskId("t1"), outcome = TaskOutcome.Completed(Json.obj("k" -> Json.fromInt(1))))
+    completed.asJson.hcursor.downField("status").as[String] shouldBe Right("completed")
+    completed.asJson.hcursor.downField("result").as[Json] shouldBe Right(Json.obj("k" -> Json.fromInt(1)))
+    decode[GetTaskResult]("""{ "taskId": "t1", "status": "completed" }""").isLeft shouldBe true
 
   it should "mark only completed, failed and cancelled as terminal" in:
     TaskStatus.values.filter(TaskStatus.isTerminal).toSet shouldBe
