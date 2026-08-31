@@ -76,6 +76,20 @@ final case class CreateTaskResult(
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 
+/** The response to a `tools/call` made with task support declared: the receiver either answers immediately with the tool's
+  * [[CallToolResult]], or defers by returning a [[CreateTaskResult]] task handle to poll.
+  */
+enum ToolCallResponse:
+  case Immediate(result: CallToolResult)
+  case Deferred(task: CreateTaskResult)
+
+object ToolCallResponse:
+  given Decoder[ToolCallResponse] = Decoder.instance: c =>
+    c.get[Option[String]]("resultType")
+      .flatMap:
+        case Some("task") => c.as[CreateTaskResult].map(ToolCallResponse.Deferred(_))
+        case _            => c.as[CallToolResult].map(ToolCallResponse.Immediate(_))
+
 final case class GetTaskParams(taskId: TaskId, _meta: Option[Map[String, Json]] = None) derives Codec
 final case class GetTaskRequest(method: String = "tasks/get", params: GetTaskParams) derives Codec
 

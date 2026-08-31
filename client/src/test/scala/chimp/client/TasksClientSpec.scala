@@ -83,4 +83,4 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
       .whenAnyRequest
       .thenRespondAdjust("", StatusCode.Accepted)
 
-    client(backend).callToolWithTasks("slow", io.circe.Json.obj()) shouldBe Right(created)
+    client(backend).callToolWithTasks("slow", io.circe.Json.obj()) shouldBe ToolCallResponse.Deferred(created)

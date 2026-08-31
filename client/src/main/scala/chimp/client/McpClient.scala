@@ -106,11 +106,11 @@ trait McpClient[F[_]]:
   /** Fulfils the input a task is waiting for while it is `InputRequired` (MCP Tasks extension, experimental). */
   def updateTask(taskId: TaskId, inputResponses: Map[String, Json]): F[Unit]
 
-  /** Invokes a tool, declaring support for the Tasks extension (experimental). The server may answer either directly with a
-    * [[chimp.protocol.CallToolResult]] (`Left`) or, for a long-running call, with a [[chimp.protocol.CreateTaskResult]] task handle
-    * (`Right`) that is then driven with [[getTask]] / [[cancelTask]] / [[updateTask]].
+  /** Invokes a tool, declaring support for the Tasks extension (experimental). The server may answer directly
+    * ([[chimp.protocol.ToolCallResponse.Immediate]]) or, for a long-running call, defer with a task handle
+    * ([[chimp.protocol.ToolCallResponse.Deferred]]) that is then driven with [[getTask]] / [[cancelTask]] / [[updateTask]].
     */
-  def callToolWithTasks(name: String, arguments: Json): F[Either[CallToolResult, CreateTaskResult]]
+  def callToolWithTasks(name: String, arguments: Json): F[ToolCallResponse]
 
 /** An [[McpClient]] used over a [[chimp.client.transport.ClientBidirectionalTransport]], which additionally supports server-initiated
   * interactions: subscribing to resource updates, notifying the server about changes to the client's roots, and handling notifications
