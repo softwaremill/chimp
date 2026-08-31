@@ -98,13 +98,13 @@ trait McpClient[F[_]]:
     * [[chimp.protocol.CreateTaskResult]], the returned `taskId` is polled with this method until the task reaches a terminal state; the
     * underlying result is then available in [[chimp.protocol.GetTaskResult.result]].
     */
-  def getTask(taskId: String): F[GetTaskResult]
+  def getTask(taskId: TaskId): F[GetTaskResult]
 
   /** Requests cancellation of a task by its id (MCP Tasks extension, experimental). */
-  def cancelTask(taskId: String): F[Unit]
+  def cancelTask(taskId: TaskId): F[Unit]
 
   /** Fulfils the input a task is waiting for while it is `InputRequired` (MCP Tasks extension, experimental). */
-  def updateTask(taskId: String, inputResponses: Json): F[Unit]
+  def updateTask(taskId: TaskId, inputResponses: Map[String, Json]): F[Unit]
 
   /** Invokes a tool, declaring support for the Tasks extension (experimental). The server may answer either directly with a
     * [[chimp.protocol.CallToolResult]] (`Left`) or, for a long-running call, with a [[chimp.protocol.CreateTaskResult]] task handle

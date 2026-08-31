@@ -220,13 +220,13 @@ object McpClientImpl:
       val params = ProgressParams(progressToken = token, progress = progress, total = total, message = message).asJson
       sendNotification("notifications/progress", Some(params))
 
-    override def getTask(taskId: String): F[GetTaskResult] =
+    override def getTask(taskId: TaskId): F[GetTaskResult] =
       sendRequest[GetTaskResult]("tasks/get", Some(GetTaskParams(taskId).asJson))
 
-    override def cancelTask(taskId: String): F[Unit] =
+    override def cancelTask(taskId: TaskId): F[Unit] =
       sendRequest[Json]("tasks/cancel", Some(CancelTaskParams(taskId).asJson)).map(_ => ())
 
-    override def updateTask(taskId: String, inputResponses: Json): F[Unit] =
+    override def updateTask(taskId: TaskId, inputResponses: Map[String, Json]): F[Unit] =
       sendRequest[Json]("tasks/update", Some(UpdateTaskParams(taskId, inputResponses).asJson)).map(_ => ())
 
     override def callToolWithTasks(name: String, arguments: Json): F[Either[CallToolResult, CreateTaskResult]] =

@@ -33,7 +33,7 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
 
   it should "poll a task with tasks/get and expose the underlying result" in:
     val task = GetTaskResult(
-      taskId = "t1",
+      taskId = TaskId("t1"),
       status = TaskStatus.Completed,
       result = Some(CallToolResult(content = List(ToolContent.Text(text = "done"))).asJson),
       resultType = Some("complete")
@@ -47,12 +47,12 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
       .whenAnyRequest
       .thenRespondAdjust("", StatusCode.Accepted)
 
-    val res = client(backend).getTask("t1")
+    val res = client(backend).getTask(TaskId("t1"))
     res.status shouldBe TaskStatus.Completed
     res.result.flatMap(_.as[CallToolResult].toOption).map(_.content.head) shouldBe Some(ToolContent.Text("text", "done"))
 
   it should "cancel a task with tasks/cancel" in:
-    val ack = TaskAck(taskId = Some("t1"), status = Some(TaskStatus.Cancelled))
+    val ack = TaskAck(taskId = Some(TaskId("t1")), status = Some(TaskStatus.Cancelled))
     val ackEnvelope = (JSONRPCMessage.Response(id = RequestId(1), result = ack.asJson): JSONRPCMessage).asJson.noSpaces
     val backend = SyncBackendStub
       .whenRequestMatches(envelopeFor("initialize", _))
@@ -62,10 +62,10 @@ class TasksClientSpec extends AnyFlatSpec with Matchers:
       .whenAnyRequest
       .thenRespondAdjust("", StatusCode.Accepted)
 
-    noException should be thrownBy client(backend).cancelTask("t1")
+    noException should be thrownBy client(backend).cancelTask(TaskId("t1"))
 
   it should "declare task support and parse a task handle from callToolWithTasks" in:
-    val created = CreateTaskResult(taskId = "t9", status = TaskStatus.Working)
+    val created = CreateTaskResult(taskId = TaskId("t9"), status = TaskStatus.Working)
     val createdEnvelope = (JSONRPCMessage.Response(id = RequestId(1), result = created.asJson): JSONRPCMessage).asJson.noSpaces
     val initResult = InitializeResult(
       protocolVersion = ProtocolVersion.Latest.name,

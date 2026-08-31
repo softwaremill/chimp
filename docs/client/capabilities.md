@@ -53,7 +53,7 @@ import chimp.client.*
 import chimp.protocol.*
 import zio.{Task, ZIO}
 
-def awaitResult(client: McpClient[Task], taskId: String): Task[GetTaskResult] =
+def awaitResult(client: McpClient[Task], taskId: TaskId): Task[GetTaskResult] =
   client.getTask(taskId).flatMap { task =>
     if TaskStatus.isTerminal(task.status) then ZIO.succeed(task)
     else awaitResult(client, taskId)

@@ -201,15 +201,15 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       context: C,
       headers: Seq[Header]
   )(using m: MonadError[F]): F[JSONRPCMessage] =
-    val taskId = java.util.UUID.randomUUID().toString
-    val now = java.time.Instant.now().toString
+    val taskId = TaskId(java.util.UUID.randomUUID().toString)
+    val now = java.time.Instant.now()
     val initial = GetTaskResult(
       taskId = taskId,
       status = TaskStatus.Working,
       createdAt = Some(now),
       lastUpdatedAt = Some(now),
-      ttlMs = support.ttlMs,
-      pollIntervalMs = support.pollIntervalMs,
+      ttl = support.ttl,
+      pollInterval = support.pollInterval,
       resultType = Some("complete")
     )
     // handleError takes its body by-name, so a synchronous (Identity) tool that throws is caught here too
@@ -223,7 +223,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
           support,
           taskId,
           TaskStatus.Failed,
-          error = Some(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")).asJson)
+          error = Some(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")))
         )
       }
     support.store
@@ -237,25 +237,25 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
             status = TaskStatus.Working,
             createdAt = Some(now),
             lastUpdatedAt = Some(now),
-            ttlMs = support.ttlMs,
-            pollIntervalMs = support.pollIntervalMs
+            ttl = support.ttl,
+            pollInterval = support.pollInterval
           ).asJson
         )
 
   // only transition a task that is still working, so a cancellation is not overwritten by a late completion
   private def finishTask(
       support: TaskSupport[F],
-      taskId: String,
+      taskId: TaskId,
       status: TaskStatus,
       result: Option[Json] = None,
-      error: Option[Json] = None
+      error: Option[JSONRPCErrorObject] = None
   )(using
       MonadError[F]
   ): F[Unit] =
     support.store
       .update(taskId): current =>
         if current.status == TaskStatus.Working then
-          current.copy(status = status, result = result, error = error, lastUpdatedAt = Some(java.time.Instant.now().toString))
+          current.copy(status = status, result = result, error = error, lastUpdatedAt = Some(java.time.Instant.now()))
         else current
       .map(_ => ())
 
@@ -273,7 +273,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       support.store
         .update(p.taskId): current =>
           if TaskStatus.isTerminal(current.status) then current
-          else current.copy(status = TaskStatus.Cancelled, lastUpdatedAt = Some(java.time.Instant.now().toString))
+          else current.copy(status = TaskStatus.Cancelled, lastUpdatedAt = Some(java.time.Instant.now()))
         .flatMap:
           case Some(_) => support.executor.cancel(p.taskId).map(_ => taskAck(id, p.taskId, TaskStatus.Cancelled))
           case None    => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown task: ${p.taskId}").unit
@@ -286,7 +286,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
           case Some(task) => taskAck(id, task.taskId, task.status)
           case None       => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown task: ${p.taskId}")
 
-  private def taskAck(id: RequestId, taskId: String, status: TaskStatus): JSONRPCMessage =
+  private def taskAck(id: RequestId, taskId: TaskId, status: TaskStatus): JSONRPCMessage =
     JSONRPCMessage.Response(id = id, result = TaskAck(taskId = Some(taskId), status = Some(status)).asJson)
 
   private def handleResourcesRead(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =

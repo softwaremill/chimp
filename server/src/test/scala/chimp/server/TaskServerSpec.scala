@@ -59,7 +59,7 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
     val params = CallToolParams(name = name, arguments = TIn("hi").asJson, _meta = meta).asJson
     (Request(method = "tools/call", params = Some(params), id = RequestId("call")): JSONRPCMessage).asJson
 
-  private def pollTask(handler: McpHandler[Identity, ServerContext[Identity]], taskId: String): GetTaskResult =
+  private def pollTask(handler: McpHandler[Identity, ServerContext[Identity]], taskId: TaskId): GetTaskResult =
     var last = GetTaskResult(taskId = taskId, status = TaskStatus.Working)
     var done = false
     var i = 0
@@ -84,7 +84,7 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
       .as[CreateTaskResult]
       .getOrElse(fail("decode CreateTaskResult"))
     created.status shouldBe TaskStatus.Working
-    created.taskId should not be empty
+    created.taskId.value should not be empty
 
     val finished = pollTask(handler, created.taskId)
     finished.status shouldBe TaskStatus.Completed
