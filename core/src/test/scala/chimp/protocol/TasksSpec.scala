@@ -31,7 +31,7 @@ class TasksSpec extends AnyFlatSpec with Matchers:
     res.map(_.ttl) shouldBe Right(Some(1.hour))
     res.map(_.pollInterval) shouldBe Right(Some(5.seconds))
 
-  it should "encode durations as ISO-8601 strings on the wire" in:
+  it should "encode durations as integer milliseconds on the wire" in:
     val created =
       CreateTaskResult(
         taskId = TaskId("t"),
@@ -40,14 +40,8 @@ class TasksSpec extends AnyFlatSpec with Matchers:
         pollInterval = Some(5.seconds)
       )
     val json = created.asJson
-    json.hcursor.downField("ttlMs").as[String] shouldBe Right("PT1H")
-    json.hcursor.downField("pollIntervalMs").as[String] shouldBe Right("PT5S")
-
-  it should "decode durations from an ISO-8601 string" in:
-    val json = """{ "resultType": "task", "taskId": "t", "status": "working", "ttlMs": "PT2H", "pollIntervalMs": "PT10S" }"""
-    val res = decode[CreateTaskResult](json)
-    res.map(_.ttl) shouldBe Right(Some(2.hours))
-    res.map(_.pollInterval) shouldBe Right(Some(10.seconds))
+    json.hcursor.downField("ttlMs").as[Long] shouldBe Right(3600000L)
+    json.hcursor.downField("pollIntervalMs").as[Long] shouldBe Right(5000L)
 
   it should "encode and decode task status with the spec wire strings" in:
     (TaskStatus.InputRequired: TaskStatus).asJson shouldBe Json.fromString("input_required")
