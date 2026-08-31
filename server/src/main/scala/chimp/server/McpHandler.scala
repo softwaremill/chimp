@@ -208,8 +208,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       status = TaskStatus.Working,
       createdAt = Some(now),
       lastUpdatedAt = Some(now),
-      ttl = support.ttl,
-      pollInterval = support.pollInterval,
+      ttlMs = support.ttl,
+      pollIntervalMs = support.pollInterval,
       resultType = Some("complete")
     )
     // handleError takes its body by-name, so a synchronous (Identity) tool that throws is caught here too
@@ -237,8 +237,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
             status = TaskStatus.Working,
             createdAt = Some(now),
             lastUpdatedAt = Some(now),
-            ttl = support.ttl,
-            pollInterval = support.pollInterval
+            ttlMs = support.ttl,
+            pollIntervalMs = support.pollInterval
           ).asJson
         )
 

@@ -59,24 +59,21 @@ object TaskStatus:
   given Encoder[TaskStatus] = Encoder.instance(status => Json.fromString(toWire(status)))
   given Decoder[TaskStatus] = Decoder.decodeString.emap(s => fromWire.get(s).toRight(s"Unknown task status: $s"))
 
-/** Result returned when a receiver answers a request with a task instead of the request's normal result. */
+/** Result returned when a receiver answers a request with a task instead of the request's normal result. `ttlMs` and `pollIntervalMs` carry
+  * their unit in the name because that is the wire field name; the values are typed as [[scala.concurrent.duration.FiniteDuration]] and
+  * serialized as integer milliseconds.
+  */
 final case class CreateTaskResult(
     taskId: TaskId,
     status: TaskStatus,
     createdAt: Option[Instant] = None,
     lastUpdatedAt: Option[Instant] = None,
-    ttl: Option[FiniteDuration] = None,
-    pollInterval: Option[FiniteDuration] = None,
+    ttlMs: Option[FiniteDuration] = None,
+    pollIntervalMs: Option[FiniteDuration] = None,
     statusMessage: Option[String] = None,
     resultType: String = "task",
     _meta: Option[Map[String, Json]] = None
-)
-
-object CreateTaskResult:
-  given Codec[CreateTaskResult] =
-    Codec.forProduct9("taskId", "status", "createdAt", "lastUpdatedAt", "ttlMs", "pollIntervalMs", "statusMessage", "resultType", "_meta")(
-      CreateTaskResult.apply
-    )(r => (r.taskId, r.status, r.createdAt, r.lastUpdatedAt, r.ttl, r.pollInterval, r.statusMessage, r.resultType, r._meta))
+) derives Codec
 
 final case class GetTaskParams(taskId: TaskId, _meta: Option[Map[String, Json]] = None) derives Codec
 final case class GetTaskRequest(method: String = "tasks/get", params: GetTaskParams) derives Codec
@@ -89,46 +86,15 @@ final case class GetTaskResult(
     status: TaskStatus,
     createdAt: Option[Instant] = None,
     lastUpdatedAt: Option[Instant] = None,
-    ttl: Option[FiniteDuration] = None,
-    pollInterval: Option[FiniteDuration] = None,
+    ttlMs: Option[FiniteDuration] = None,
+    pollIntervalMs: Option[FiniteDuration] = None,
     statusMessage: Option[String] = None,
     result: Option[Json] = None,
     error: Option[JSONRPCErrorObject] = None,
     inputRequests: Option[Map[String, Json]] = None,
     resultType: Option[String] = None,
     _meta: Option[Map[String, Json]] = None
-)
-
-object GetTaskResult:
-  given Codec[GetTaskResult] = Codec.forProduct12(
-    "taskId",
-    "status",
-    "createdAt",
-    "lastUpdatedAt",
-    "ttlMs",
-    "pollIntervalMs",
-    "statusMessage",
-    "result",
-    "error",
-    "inputRequests",
-    "resultType",
-    "_meta"
-  )(GetTaskResult.apply)(r =>
-    (
-      r.taskId,
-      r.status,
-      r.createdAt,
-      r.lastUpdatedAt,
-      r.ttl,
-      r.pollInterval,
-      r.statusMessage,
-      r.result,
-      r.error,
-      r.inputRequests,
-      r.resultType,
-      r._meta
-    )
-  )
+) derives Codec
 
 final case class CancelTaskParams(taskId: TaskId, _meta: Option[Map[String, Json]] = None) derives Codec
 final case class CancelTaskRequest(method: String = "tasks/cancel", params: CancelTaskParams) derives Codec
