@@ -1,29 +1,30 @@
 package chimp.protocol
 
-import io.circe.{Codec, Decoder, DecodingFailure, Encoder}
-import io.circe.Json
+import io.circe.{Codec, Decoder, DecodingFailure, Encoder, Json}
 
-import java.time.{Duration, Instant}
-import scala.concurrent.duration.{FiniteDuration, NANOSECONDS}
+import java.time.Instant
+import scala.concurrent.duration.{DurationLong, FiniteDuration, NANOSECONDS}
 import scala.util.Try
 
-/** ISO-8601 duration codecs, for example `"PT1H"` or `"PT1H30M"`. Encoding always produces an ISO-8601 string. To interoperate with peers
-  * that send the bare-millisecond form, decoding also accepts a JSON number, read as milliseconds. The `FiniteDuration` codec bridges
-  * through [[java.time.Duration]], which is the JDK's ISO-8601 duration type.
+/** ISO-8601 duration codec for [[scala.concurrent.duration.FiniteDuration]], for example `"PT1H"` or `"PT1H30M"`. Encoding always produces
+  * an ISO-8601 string. To interoperate with peers that send the bare-millisecond form, decoding also accepts a JSON number, read as
+  * milliseconds. `java.time.Duration` is used internally only, as the JDK's ISO-8601 duration parser and formatter.
   */
 object DurationCodecs:
-  private val decodeDuration: Decoder[Duration] = Decoder.instance: c =>
-    c.value.asString match
-      case Some(iso) =>
-        Try(Duration.parse(iso)).toEither.left
-          .map(e => DecodingFailure(s"Invalid ISO-8601 duration '$iso': ${e.getMessage}", c.history))
-      case None => c.as[Long].map(Duration.ofMillis)
+  private def parseIso(iso: String): Either[String, FiniteDuration] =
+    Try(java.time.Duration.parse(iso)).toEither.left
+      .map(e => s"Invalid ISO-8601 duration '$iso': ${e.getMessage}")
+      .map(d => FiniteDuration(d.toNanos, NANOSECONDS))
 
-  given Codec[Duration] = Codec.from(decodeDuration, Encoder.encodeString.contramap(_.toString))
+  private def formatIso(duration: FiniteDuration): String = java.time.Duration.ofNanos(duration.toNanos).toString
 
   given Codec[FiniteDuration] = Codec.from(
-    decodeDuration.map(d => FiniteDuration(d.toNanos, NANOSECONDS)),
-    Encoder.encodeString.contramap(fd => Duration.ofNanos(fd.toNanos).toString)
+    Decoder.instance { c =>
+      c.value.asString match
+        case Some(iso) => parseIso(iso).left.map(message => DecodingFailure(message, c.history))
+        case None      => c.as[Long].map(_.millis)
+    },
+    Encoder.encodeString.contramap(formatIso)
   )
 
 import DurationCodecs.given
@@ -83,8 +84,8 @@ final case class CreateTaskResult(
     status: TaskStatus,
     createdAt: Option[Instant] = None,
     lastUpdatedAt: Option[Instant] = None,
-    ttl: Option[Duration] = None,
-    pollInterval: Option[Duration] = None,
+    ttl: Option[FiniteDuration] = None,
+    pollInterval: Option[FiniteDuration] = None,
     statusMessage: Option[String] = None,
     resultType: String = "task",
     _meta: Option[Map[String, Json]] = None
@@ -107,8 +108,8 @@ final case class GetTaskResult(
     status: TaskStatus,
     createdAt: Option[Instant] = None,
     lastUpdatedAt: Option[Instant] = None,
-    ttl: Option[Duration] = None,
-    pollInterval: Option[Duration] = None,
+    ttl: Option[FiniteDuration] = None,
+    pollInterval: Option[FiniteDuration] = None,
     statusMessage: Option[String] = None,
     result: Option[Json] = None,
     error: Option[JSONRPCErrorObject] = None,

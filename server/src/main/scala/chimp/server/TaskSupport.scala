@@ -4,8 +4,8 @@ import chimp.protocol.{GetTaskResult, TaskId}
 import sttp.monad.MonadError
 import sttp.shared.Identity
 
-import java.time.Duration
 import java.util.concurrent.{ConcurrentHashMap, ExecutorService, Executors, Future as JavaFuture}
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /** Durable-ish store of task state for the Tasks extension, addressable by task id. The default in-memory implementation keeps tasks for
   * the lifetime of the process.
@@ -68,8 +68,8 @@ object TaskExecutor:
 final case class TaskSupport[F[_]](
     store: TaskStore[F],
     executor: TaskExecutor[F],
-    ttl: Option[Duration] = Some(Duration.ofHours(1)),
-    pollInterval: Option[Duration] = Some(Duration.ofSeconds(1)),
+    ttl: Option[FiniteDuration] = Some(1.hour),
+    pollInterval: Option[FiniteDuration] = Some(1.second),
     useTask: String => Boolean = (_: String) => true,
     requireTask: String => Boolean = (_: String) => false
 )

@@ -6,7 +6,8 @@ import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import java.time.{Duration, Instant}
+import java.time.Instant
+import scala.concurrent.duration.*
 
 class TasksSpec extends AnyFlatSpec with Matchers:
 
@@ -27,16 +28,16 @@ class TasksSpec extends AnyFlatSpec with Matchers:
     res.map(_.taskId) shouldBe Right(TaskId("786512e2-9e0d-44bd-8f29-789f320fe840"))
     res.map(_.status) shouldBe Right(TaskStatus.Working)
     res.map(_.createdAt) shouldBe Right(Some(Instant.parse("2025-11-25T10:30:00Z")))
-    res.map(_.ttl) shouldBe Right(Some(Duration.ofHours(1)))
-    res.map(_.pollInterval) shouldBe Right(Some(Duration.ofSeconds(5)))
+    res.map(_.ttl) shouldBe Right(Some(1.hour))
+    res.map(_.pollInterval) shouldBe Right(Some(5.seconds))
 
   it should "encode durations as ISO-8601 strings on the wire" in:
     val created =
       CreateTaskResult(
         taskId = TaskId("t"),
         status = TaskStatus.Working,
-        ttl = Some(Duration.ofHours(1)),
-        pollInterval = Some(Duration.ofSeconds(5))
+        ttl = Some(1.hour),
+        pollInterval = Some(5.seconds)
       )
     val json = created.asJson
     json.hcursor.downField("ttlMs").as[String] shouldBe Right("PT1H")
@@ -45,8 +46,8 @@ class TasksSpec extends AnyFlatSpec with Matchers:
   it should "decode durations from an ISO-8601 string" in:
     val json = """{ "resultType": "task", "taskId": "t", "status": "working", "ttlMs": "PT2H", "pollIntervalMs": "PT10S" }"""
     val res = decode[CreateTaskResult](json)
-    res.map(_.ttl) shouldBe Right(Some(Duration.ofHours(2)))
-    res.map(_.pollInterval) shouldBe Right(Some(Duration.ofSeconds(10)))
+    res.map(_.ttl) shouldBe Right(Some(2.hours))
+    res.map(_.pollInterval) shouldBe Right(Some(10.seconds))
 
   it should "encode and decode task status with the spec wire strings" in:
     (TaskStatus.InputRequired: TaskStatus).asJson shouldBe Json.fromString("input_required")

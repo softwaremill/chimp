@@ -7,13 +7,9 @@ import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import java.time.Duration
 import scala.concurrent.duration.*
 
 class DurationCodecsSpec extends AnyFlatSpec with Matchers:
-
-  it should "encode a java.time.Duration as an ISO-8601 string" in:
-    (Duration.ofMinutes(90): Duration).asJson shouldBe Json.fromString("PT1H30M")
 
   it should "encode a FiniteDuration as an ISO-8601 string" in:
     (5.seconds: FiniteDuration).asJson shouldBe Json.fromString("PT5S")
@@ -23,8 +19,7 @@ class DurationCodecsSpec extends AnyFlatSpec with Matchers:
     decode[FiniteDuration]("\"PT5S\"") shouldBe Right(5.seconds)
     decode[FiniteDuration]("\"PT1H30M\"") shouldBe Right(90.minutes)
 
-  it should "also decode a bare number as milliseconds, for both duration types" in:
-    decode[Duration]("1500") shouldBe Right(Duration.ofMillis(1500))
+  it should "also decode a bare number as milliseconds" in:
     decode[FiniteDuration]("1500") shouldBe Right(1500.millis)
 
   it should "reject a malformed duration string" in:
