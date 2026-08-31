@@ -1,10 +1,11 @@
 package chimp.server
 
 import chimp.protocol.{GetTaskResult, TaskId}
+import io.circe.Json
 import sttp.monad.MonadError
 import sttp.shared.Identity
 
-import java.util.concurrent.{ConcurrentHashMap, ExecutorService, Executors, Future as JavaFuture}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ExecutorService, Executors, Future as JavaFuture}
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /** Durable-ish store of task state for the Tasks extension, addressable by task id. The default in-memory implementation keeps tasks for
@@ -75,3 +76,31 @@ final case class TaskSupport[F[_]](
     useTask: String => Boolean = (_: String) => true,
     requireTask: String => Boolean = (_: String) => false
 )
+
+/** Coordinates the `input_required` flow within a process: a running task tool parks on the future from [[register]] for a `(taskId, key)`
+  * while `tasks/update` hands the answer over with [[deliverInput]]. Cancelling a task unblocks any of its waiters.
+  */
+private[server] final class TaskInputCoordinator:
+  private val pending = ConcurrentHashMap[(TaskId, String), CompletableFuture[Json]]()
+
+  /** Registers interest in an answer for `(taskId, key)` and returns the future to block on. Call this before advertising the request
+    * (moving the task to `input_required`), so a fast `tasks/update` is never delivered before there is a waiter.
+    */
+  def register(taskId: TaskId, key: String): CompletableFuture[Json] =
+    pending.computeIfAbsent((taskId, key), _ => CompletableFuture[Json]())
+
+  /** Hands `response` to a waiter, if any. Returns whether a waiter was present. */
+  def deliverInput(taskId: TaskId, key: String, response: Json): Boolean =
+    Option(pending.remove((taskId, key))).exists { future =>
+      future.complete(response)
+      true
+    }
+
+  /** Unblocks all waiters for a cancelled task by failing their futures. */
+  def cancel(taskId: TaskId): Unit =
+    val iterator = pending.entrySet().iterator()
+    while iterator.hasNext do
+      val entry = iterator.next()
+      if entry.getKey._1 == taskId then
+        entry.getValue.completeExceptionally(InterruptedException("task cancelled"))
+        iterator.remove()

@@ -30,13 +30,19 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
       Thread.sleep(10000)
       ToolResult.text("done")
 
+  private val askThenEcho = tool("askThenEcho")
+    .input[TIn]
+    .taskLogic[Identity]: (in, ctx, _) =>
+      val answer = ctx.requestInput("q1", Json.fromString(s"need input for ${in.message}"))
+      ToolResult.text(s"got:${answer.noSpaces}")
+
   private def handlerWith(requireTask: String => Boolean = _ => false): McpHandler[Identity, ServerContext[Identity]] =
     val support = TaskSupport[Identity](
       store = TaskStore.inMemory[Identity],
       executor = TaskExecutor.threadPool(),
       requireTask = requireTask
     )
-    McpHandler(McpServer(tools = List(instant, slow, boom, forever)).withTasks(support))
+    McpHandler(McpServer(tools = List(instant, slow, boom, forever)).withTasks(support).addTaskTool(askThenEcho))
 
   private def resultJson(response: McpResponse): Json =
     val json = response match
@@ -59,18 +65,23 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
     val params = CallToolParams(name = name, arguments = TIn("hi").asJson, _meta = meta).asJson
     (Request(method = "tools/call", params = Some(params), id = RequestId("call")): JSONRPCMessage).asJson
 
-  private def pollTask(handler: McpHandler[Identity, ServerContext[Identity]], taskId: TaskId): GetTaskResult =
+  private def pollUntil(handler: McpHandler[Identity, ServerContext[Identity]], taskId: TaskId)(
+      predicate: GetTaskResult => Boolean
+  ): GetTaskResult =
     var last = GetTaskResult(taskId = taskId, outcome = TaskOutcome.Working)
     var done = false
     var i = 0
     while !done && i < 200 do
       val req = (Request(method = "tasks/get", params = Some(GetTaskParams(taskId).asJson), id = RequestId("get")): JSONRPCMessage).asJson
       last = resultJson(handler.handleJsonRpc(req, Seq.empty)).as[GetTaskResult].getOrElse(fail("decode GetTaskResult"))
-      if TaskStatus.isTerminal(last.status) then done = true
+      if predicate(last) then done = true
       else
         Thread.sleep(20)
         i += 1
     last
+
+  private def pollTask(handler: McpHandler[Identity, ServerContext[Identity]], taskId: TaskId): GetTaskResult =
+    pollUntil(handler, taskId)(task => TaskStatus.isTerminal(task.status))
 
   "a task-enabled server" should "run tools/call synchronously when the client does not declare task support" in:
     val handler = handlerWith()
@@ -126,3 +137,36 @@ class TaskServerSpec extends AnyFlatSpec with Matchers:
     val req = (Request(method = "initialize", id = RequestId("i")): JSONRPCMessage).asJson
     val result = resultJson(handler.handleJsonRpc(req, Seq.empty)).as[InitializeResult].getOrElse(fail("decode InitializeResult"))
     result.capabilities.extensions.map(_.keySet) shouldBe Some(Set(TasksExtension.Id))
+
+  it should "run an input_required task tool: request input, answer via tasks/update, then complete" in:
+    val handler = handlerWith()
+    val created = resultJson(handler.handleJsonRpc(callToolReq("askThenEcho", withTasks = true), Seq.empty))
+      .as[CreateTaskResult]
+      .getOrElse(fail("decode CreateTaskResult"))
+    created.status shouldBe TaskStatus.Working
+
+    // the tool has requested input and parked, surfacing the request via tasks/get
+    val waiting = pollUntil(handler, created.taskId)(_.status == TaskStatus.InputRequired)
+    waiting.outcome match
+      case TaskOutcome.InputRequired(requests) => requests.keySet shouldBe Set("q1")
+      case other                               => fail(s"expected InputRequired, got $other")
+
+    // answer it
+    val updateReq = (Request(
+      method = "tasks/update",
+      params = Some(UpdateTaskParams(created.taskId, Map("q1" -> Json.fromString("42"))).asJson),
+      id = RequestId("u")
+    ): JSONRPCMessage).asJson
+    val ack = resultJson(handler.handleJsonRpc(updateReq, Seq.empty)).as[TaskAck].getOrElse(fail("decode TaskAck"))
+    ack.taskId shouldBe Some(created.taskId)
+
+    // the tool resumes and completes with the answer folded in
+    pollTask(handler, created.taskId).outcome match
+      case TaskOutcome.Completed(result) =>
+        result.as[CallToolResult].toOption.map(_.content.head) shouldBe Some(ToolContent.Text("text", "got:\"42\""))
+      case other => fail(s"expected Completed, got $other")
+
+  it should "reject the input_required tool when the client does not declare task support" in:
+    val handler = handlerWith()
+    val err = errorObj(handler.handleJsonRpc(callToolReq("askThenEcho", withTasks = false), Seq.empty))
+    err.code shouldBe JSONRPCErrorCodes.MissingRequiredClientCapability.code

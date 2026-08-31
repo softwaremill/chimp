@@ -27,6 +27,7 @@ sealed trait McpServerDef[F[_], C <: ServerContext[F]]:
   def loggingLevel: Option[SetLoggingLevelHandler[F]]
   def subscriptions: Option[ResourceSubscriptions[F]]
   def tasks: Option[TaskSupport[F]]
+  def taskTools: List[ServerTool[?, ?, F, TaskContext[F]]]
 
 case class McpServer[F[_]](
     name: String = "Chimp MCP server",
@@ -41,7 +42,8 @@ case class McpServer[F[_]](
     completion: Option[CompletionHandler[F]] = None,
     loggingLevel: Option[SetLoggingLevelHandler[F]] = None,
     subscriptions: Option[ResourceSubscriptions[F]] = None,
-    tasks: Option[TaskSupport[F]] = None
+    tasks: Option[TaskSupport[F]] = None,
+    taskTools: List[ServerTool[?, ?, F, TaskContext[F]]] = Nil
 ) extends McpServerDef[F, ServerContext[F]]:
   def name(value: String): McpServer[F] =
     copy(name = value)
@@ -94,6 +96,10 @@ case class McpServer[F[_]](
   def withTasks(support: TaskSupport[F]): McpServer[F] =
     copy(tasks = Some(support))
 
+  /** Registers a tool that runs as a task and can request input from the client while running (Tasks extension). */
+  def addTaskTool(tool: ServerTool[?, ?, F, TaskContext[F]]): McpServer[F] =
+    copy(taskTools = taskTools :+ tool)
+
   def endpoint(path: List[String]): ServerEndpoint[Any, F] = ServerHttpTransport(path).serve(this)
 
   def streaming: StreamingMcpServer[F] =
@@ -110,7 +116,8 @@ case class McpServer[F[_]](
       completion,
       loggingLevel,
       subscriptions,
-      tasks
+      tasks,
+      taskTools
     )
 
 case class StreamingMcpServer[F[_]](
@@ -126,7 +133,8 @@ case class StreamingMcpServer[F[_]](
     completion: Option[CompletionHandler[F]] = None,
     loggingLevel: Option[SetLoggingLevelHandler[F]] = None,
     subscriptions: Option[ResourceSubscriptions[F]] = None,
-    tasks: Option[TaskSupport[F]] = None
+    tasks: Option[TaskSupport[F]] = None,
+    taskTools: List[ServerTool[?, ?, F, TaskContext[F]]] = Nil
 ) extends McpServerDef[F, StreamingServerContext[F]]:
   def name(value: String): StreamingMcpServer[F] =
     copy(name = value)
@@ -184,3 +192,7 @@ case class StreamingMcpServer[F[_]](
 
   def withTasks(support: TaskSupport[F]): StreamingMcpServer[F] =
     copy(tasks = Some(support))
+
+  /** Registers a tool that runs as a task and can request input from the client while running (Tasks extension). */
+  def addTaskTool(tool: ServerTool[?, ?, F, TaskContext[F]]): StreamingMcpServer[F] =
+    copy(taskTools = taskTools :+ tool)

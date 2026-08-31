@@ -53,4 +53,32 @@ val server = McpServer(tools = List(report))
   .withTasks(TaskSupport(TaskStore.inMemory[Identity], TaskExecutor.threadPool()))
 ```
 
-The server runs the tool in the background, transitions the task to `completed` (with the tool's `CallToolResult`) or `failed`, and answers `tasks/cancel` by interrupting the worker. `useTask` and `requireTask` on `TaskSupport` control, per tool, whether a task is offered or required; a required task with no client support fails with `-32003`. Full server-initiated `input_required` flows are not yet implemented.
+The server runs the tool in the background, transitions the task to `completed` (with the tool's `CallToolResult`) or `failed`, and answers `tasks/cancel` by interrupting the worker. `useTask` and `requireTask` on `TaskSupport` control, per tool, whether a task is offered or required; a required task with no client support fails with `-32003`.
+
+### Requesting input while running
+
+A tool registered with `addTaskTool` (defined with `.taskLogic`) receives a `TaskContext` and can ask the client for input mid-run. `requestInput` moves the task to `input_required`, surfacing the request under a key via `tasks/get`; the tool parks until the client answers with `tasks/update`, then resumes:
+
+```scala mdoc:compile-only
+import chimp.server.*
+import io.circe.{Codec, Json}
+import sttp.monad.{IdentityMonad, MonadError}
+import sttp.shared.Identity
+import sttp.tapir.Schema
+
+given MonadError[Identity] = IdentityMonad
+
+case class ReviewInput(text: String) derives Codec, Schema
+
+val review = tool("review")
+  .input[ReviewInput]
+  .taskLogic[Identity]: (in, ctx, _) =>
+    val decision = ctx.requestInput("approve", Json.fromString(s"Approve: ${in.text}?"))
+    ToolResult.text(s"decision: ${decision.noSpaces}")
+
+val server = McpServer()
+  .withTasks(TaskSupport(TaskStore.inMemory[Identity], TaskExecutor.threadPool()))
+  .addTaskTool(review)
+```
+
+A task tool always runs as a task and requires the client to declare task support, so calling it without that support fails with `-32003`.
