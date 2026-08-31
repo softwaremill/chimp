@@ -34,7 +34,7 @@ object TaskStore:
   * such as `Identity`, it is only run on the background worker rather than at the call site.
   */
 trait TaskExecutor[F[_]]:
-  def start(taskId: TaskId, body: () => F[Unit]): F[Unit]
+  def start(taskId: TaskId)(body: => F[Unit]): F[Unit]
   def cancel(taskId: TaskId): F[Unit]
 
 object TaskExecutor:
@@ -46,10 +46,10 @@ object TaskExecutor:
   def threadPool(pool: ExecutorService = Executors.newVirtualThreadPerTaskExecutor()): TaskExecutor[Identity] = new TaskExecutor[Identity]:
     private val running = ConcurrentHashMap[TaskId, JavaFuture[?]]()
 
-    def start(taskId: TaskId, body: () => Identity[Unit]): Identity[Unit] =
+    def start(taskId: TaskId)(body: => Identity[Unit]): Identity[Unit] =
       val future = pool.submit(new Runnable:
         def run(): Unit =
-          try body()
+          try body
           finally
             val _ = running.remove(taskId))
       val _ = running.put(taskId, future)

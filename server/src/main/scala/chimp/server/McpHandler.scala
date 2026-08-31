@@ -212,23 +212,25 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       pollIntervalMs = support.pollInterval,
       resultType = Some("complete")
     )
-    // handleError takes its body by-name, so a synchronous (Identity) tool that throws is caught here too
-    val body: () => F[Unit] = () =>
-      m.handleError(
-        m.flatMap(tool.logic(input, context, headers))(result =>
-          finishTask(support, taskId, TaskOutcome.Completed(toCallToolResult(result).asJson))
-        )
-      ) { case t =>
-        finishTask(
-          support,
-          taskId,
-          TaskOutcome.Failed(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")))
-        )
-      }
+    // start and handleError both take their body by-name, so a synchronous (Identity) tool that throws is caught here too
     support.store
       .create(initial)
-      .flatMap(_ => support.executor.start(taskId, body))
-      .map: _ =>
+      .flatMap { _ =>
+        support.executor.start(taskId)(
+          m.handleError(
+            m.flatMap(tool.logic(input, context, headers))(result =>
+              finishTask(support, taskId, TaskOutcome.Completed(toCallToolResult(result).asJson))
+            )
+          ) { case t =>
+            finishTask(
+              support,
+              taskId,
+              TaskOutcome.Failed(JSONRPCErrorObject(JSONRPCErrorCodes.InternalError.code, Option(t.getMessage).getOrElse("Task failed")))
+            )
+          }
+        )
+      }
+      .map { _ =>
         JSONRPCMessage.Response(
           id = id,
           result = CreateTaskResult(
@@ -240,6 +242,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
             pollIntervalMs = support.pollInterval
           ).asJson
         )
+      }
 
   // only transition a task that is still working, so a cancellation is not overwritten by a late completion
   private def finishTask(support: TaskSupport[F], taskId: TaskId, outcome: TaskOutcome)(using MonadError[F]): F[Unit] =
