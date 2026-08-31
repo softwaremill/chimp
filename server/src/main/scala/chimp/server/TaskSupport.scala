@@ -39,9 +39,11 @@ trait TaskExecutor[F[_]]:
 
 object TaskExecutor:
 
-  /** A thread-pool executor for synchronous (`Identity`) servers, such as the Netty sync server. Cancellation interrupts the worker thread.
+  /** A [[TaskExecutor]] for synchronous (`Identity`) servers, such as the Netty sync server, backed by an `ExecutorService`. Defaults to a
+    * virtual-thread-per-task executor (JDK 21+), which suits the blocking tool logic that tasks run and scales to many concurrent tasks.
+    * Cancellation interrupts the worker thread.
     */
-  def threadPool(pool: ExecutorService = Executors.newCachedThreadPool()): TaskExecutor[Identity] = new TaskExecutor[Identity]:
+  def threadPool(pool: ExecutorService = Executors.newVirtualThreadPerTaskExecutor()): TaskExecutor[Identity] = new TaskExecutor[Identity]:
     private val running = ConcurrentHashMap[TaskId, JavaFuture[?]]()
 
     def start(taskId: TaskId, body: () => Identity[Unit]): Identity[Unit] =
