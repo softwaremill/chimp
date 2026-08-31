@@ -6,8 +6,7 @@ import io.circe.syntax.*
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
-import java.time.Instant
-import scala.concurrent.duration.*
+import java.time.{Duration, Instant}
 
 class TasksSpec extends AnyFlatSpec with Matchers:
 
@@ -28,11 +27,17 @@ class TasksSpec extends AnyFlatSpec with Matchers:
     res.map(_.taskId) shouldBe Right(TaskId("786512e2-9e0d-44bd-8f29-789f320fe840"))
     res.map(_.status) shouldBe Right(TaskStatus.Working)
     res.map(_.createdAt) shouldBe Right(Some(Instant.parse("2025-11-25T10:30:00Z")))
-    res.map(_.ttl) shouldBe Right(Some(1.hour))
-    res.map(_.pollInterval) shouldBe Right(Some(5.seconds))
+    res.map(_.ttl) shouldBe Right(Some(Duration.ofHours(1)))
+    res.map(_.pollInterval) shouldBe Right(Some(Duration.ofSeconds(5)))
 
   it should "encode durations as integer milliseconds on the wire" in:
-    val created = CreateTaskResult(taskId = TaskId("t"), status = TaskStatus.Working, ttl = Some(1.hour), pollInterval = Some(5.seconds))
+    val created =
+      CreateTaskResult(
+        taskId = TaskId("t"),
+        status = TaskStatus.Working,
+        ttl = Some(Duration.ofHours(1)),
+        pollInterval = Some(Duration.ofSeconds(5))
+      )
     val json = created.asJson
     json.hcursor.downField("ttlMs").as[Long] shouldBe Right(3600000L)
     json.hcursor.downField("pollIntervalMs").as[Long] shouldBe Right(5000L)
