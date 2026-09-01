@@ -29,3 +29,7 @@ val server = StreamingMcpServer[Identity]().addStreamingTool(work)
 ```
 
 Server-wide capabilities are enabled by registering a handler — only what you wire up is advertised: `.withCompletion`, `.withLoggingLevel`, `.withSubscriptions`.
+
+## Discovery
+
+The chimp server is stateless: every request is handled on its own, no session is stored, and no `initialize` handshake is required before other methods. A client (or a proxy) can learn the server's capabilities up front with a `server/discover` request, which returns the same `serverInfo`, `capabilities` and `protocolVersion` as `initialize`, without negotiating a session.
