@@ -29,3 +29,9 @@ val server = StreamingMcpServer[Identity]().addStreamingTool(work)
 ```
 
 Server-wide capabilities are enabled by registering a handler — only what you wire up is advertised: `.withCompletion`, `.withLoggingLevel`, `.withSubscriptions`.
+
+## Protocol versions
+
+chimp is **dual-era**: it speaks the legacy handshake revisions (`2025-11-25` and earlier, negotiated via `initialize`) and the modern `2026-07-28` revision, where each request carries its protocol version in `_meta` under `io.modelcontextprotocol/protocolVersion` instead of a handshake.
+
+The server answers `server/discover` automatically with its supported versions, capabilities and identity (`serverInfo` in `_meta`), so a client can learn them in one request without connecting. A request that declares a protocol version the server does not support is rejected with an `UnsupportedProtocolVersion` error (`-32022`) listing the supported versions, per the [versioning compatibility matrix](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning#compatibility-matrix). No configuration is required for any of this.

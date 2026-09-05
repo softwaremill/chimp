@@ -103,6 +103,36 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     // nulls should be dropped
     respJson.hcursor.downField("result").downField("instructions").focus shouldBe None
 
+  it should "respond to server/discover with supported versions, capabilities and identity" in:
+    val req: JSONRPCMessage = Request(method = "server/discover", id = RequestId("d"))
+    val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
+    respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Response(_, _, result) =>
+        val discover = result.as[DiscoverResult].getOrElse(fail("Failed to decode DiscoverResult"))
+        discover.supportedVersions should contain("2026-07-28")
+        discover.capabilities.tools.isDefined shouldBe true
+        discover.resultType shouldBe "complete"
+        discover._meta.flatMap(_.get(ProtocolMeta.ServerInfo)).isDefined shouldBe true
+      case _ => fail("Expected Response")
+
+  it should "reject a request declaring an unsupported protocol version with -32022" in:
+    val params = Json.obj("_meta" -> Json.obj(ProtocolMeta.ProtocolVersion -> Json.fromString("1900-01-01")))
+    val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("v"))
+    val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
+    respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) =>
+        err.code shouldBe JSONRPCErrorCodes.UnsupportedProtocolVersion.code
+        err.data.flatMap(_.hcursor.downField("supported").as[List[String]].toOption).getOrElse(Nil) should contain("2026-07-28")
+      case _ => fail("Expected Error")
+
+  it should "process a request declaring a supported modern protocol version" in:
+    val params = Json.obj("_meta" -> Json.obj(ProtocolMeta.ProtocolVersion -> Json.fromString("2026-07-28")))
+    val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("m"))
+    val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
+    respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Response(_, _, result) => result.as[ListToolsResponse].isRight shouldBe true
+      case _                      => fail("Expected Response")
+
   it should "list available tools" in:
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("2"))
     val json = req.asJson
