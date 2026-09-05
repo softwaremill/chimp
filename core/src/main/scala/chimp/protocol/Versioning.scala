@@ -52,4 +52,9 @@ final case class DiscoverResult(
     instructions: Option[String] = None,
     resultType: String = "complete",
     _meta: Option[Map[String, Json]] = None
-) derives Codec
+) derives Codec:
+  /** [[supportedVersions]] parsed: `Right` for a version this build knows as a [[ProtocolVersion]], `Left` with the raw string for one it
+    * does not recognise (e.g. a newer revision). Kept lazy of the wire so an unknown version never fails decoding.
+    */
+  def getSupportedVersions: List[Either[String, ProtocolVersion]] =
+    supportedVersions.map(version => ProtocolVersion.from(version).toRight(version))
