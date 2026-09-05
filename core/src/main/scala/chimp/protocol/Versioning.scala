@@ -3,6 +3,12 @@ package chimp.protocol
 import io.circe.syntax.*
 import io.circe.{Codec, Decoder, Encoder, Json}
 
+import scala.concurrent.duration.{DurationLong, FiniteDuration}
+
+// the wire encodes ttlMs as an integer number of milliseconds; file-private so it does not leak into the wider protocol scope
+private given Codec[FiniteDuration] =
+  Codec.from(Decoder.decodeLong.map(_.millis), Encoder.encodeLong.contramap(_.toMillis))
+
 /** Reserved `_meta` keys carrying the per-request / per-response protocol fields of modern (2026-07-28+) revisions, where version, identity
   * and capabilities travel with each request instead of an `initialize` handshake.
   */
@@ -41,7 +47,7 @@ object CacheScope:
 final case class DiscoverResult(
     supportedVersions: List[String],
     capabilities: ServerCapabilities,
-    ttlMs: Long,
+    ttlMs: FiniteDuration,
     cacheScope: CacheScope,
     instructions: Option[String] = None,
     resultType: String = "complete",

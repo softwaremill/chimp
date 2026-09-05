@@ -157,7 +157,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val result = DiscoverResult(
       supportedVersions = ProtocolVersion.supported.map(_.name),
       capabilities = serverCapabilities,
-      ttlMs = 0L,
+      ttlMs = scala.concurrent.duration.Duration.Zero,
       cacheScope = CacheScope.Private,
       instructions = server.instructions,
       _meta = Some(Map(ProtocolMeta.ServerInfo -> Implementation(server.name, server.version).asJson))

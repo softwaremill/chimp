@@ -6,6 +6,7 @@ import io.circe.{Decoder, Encoder}
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
+import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 /** Validates the 2026-07-28 (modern) protocol datatypes against the official MCP JSON schema, mirroring [[SchemaConformanceSpec]]. */
@@ -49,7 +50,7 @@ class Schema2026ConformanceSpec extends AnyFlatSpec with Matchers:
       DiscoverResult(
         supportedVersions = List("2026-07-28", "2025-11-25"),
         capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false)))),
-        ttlMs = 0L,
+        ttlMs = 0.millis,
         cacheScope = CacheScope.Private,
         instructions = Some("welcome"),
         _meta = Some(Map(ProtocolMeta.ServerInfo -> Implementation(name = "chimp", version = "1.0").asJson.deepDropNullValues))
