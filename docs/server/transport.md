@@ -93,7 +93,7 @@ import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
-object SecuredMcpServer:
+object McpServerWithPrependedSecurity:
   def main(args: Array[String]): Unit =
     val adder = tool("echo").input[String].handle(echo => ToolResult.text(echo))
     val mcpEndpoint = McpServer(tools = List(adder)).endpoint(List("mcp"))
@@ -106,6 +106,40 @@ object SecuredMcpServer:
     NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
 ```
 
-The result of the security logic does not reach the tool logic. If a tool needs data from the caller, read the request headers with `handleWithHeaders` (or `serverLogic` with headers).
+The result of the security logic of `prependSecurity` does not reach the tool logic. Use `prependSecurity` if the tools do not need data from the caller. If a tool needs such data, read the request headers with `handleWithHeaders` (or `serverLogic` with headers), or give the tools a principal, as below.
 
 For all the security inputs - API keys, basic and bearer authorization, OAuth2 flows - see the [Tapir endpoint security documentation](https://tapir.softwaremill.com/en/latest/endpoint/security.html).
+
+### Giving the security result to the tools
+
+To validate the caller one time and give the result to the tool logic, use `serverSecurityLogic` (or `serverSecurityLogicPure`, if the logic needs no effect). It takes the same security input and error output as `prependSecurity`, and makes a principal - a value of your own type, such as the identity of the caller.
+
+The server gives the principal to the logic of each tool which you add to it. Define such a tool with `handleSecured`, or with `securedServerLogic` if the logic needs an effect. Tools which do not need the principal keep their usual logic. The other builders of `McpServer` stay available, so you can configure the server before or after you add the security logic:
+
+```scala mdoc:compile-only
+import chimp.server.*
+import sttp.model.StatusCode
+import sttp.shared.Identity
+import sttp.tapir.*
+import sttp.tapir.server.netty.sync.NettySyncServer
+
+case class User(email: String)
+
+object McpServerWithPrincipal:
+  def main(args: Array[String]): Unit =
+    val echo = tool("echo").input[String].handle(message => ToolResult.text(message))
+    val whoAmI = tool("whoAmI").input[String].handleSecured[User]((_, user) => ToolResult.text(user.email))
+
+    val securedEndpoint = McpServer[Identity]()
+      .serverSecurityLogicPure(
+        auth.bearer[String](),
+        statusCode(StatusCode.Unauthorized).and(stringBody)
+      )(token => if token == "s3cret" then Right(User("employee@example.com")) else Left("Invalid token"))
+      .name("my-mcp-server")
+      .addTools(echo, whoAmI)
+      .endpoint(List("mcp"))
+
+    NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
+```
+
+The security logic runs one time for each request, before the server handles the MCP message. If it gives a rejection, the server sends the error output and no tool logic runs. This is necessary if the client must get an HTTP status code, because a tool which rejects a call can only give a JSON-RPC error with status code 200.
