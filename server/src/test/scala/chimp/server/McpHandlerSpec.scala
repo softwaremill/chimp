@@ -133,6 +133,23 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
       case Response(_, _, result) => result.as[ListToolsResponse].isRight shouldBe true
       case _                      => fail("Expected Response")
 
+  // legacy negotiation path: a stock official-SDK client sends a classic initialize with no modern _meta; a dual-era server MUST serve it
+  // via the legacy handshake, not reject it with UnsupportedProtocolVersion (-32022)
+  it should "serve a classic initialize with no modern protocol version rather than rejecting it with -32022" in:
+    val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("legacy-init"))
+    val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
+    respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Response(_, _, result) => result.as[InitializeResult].isRight shouldBe true
+      case other                  => fail(s"expected InitializeResult, got $other")
+
+  it should "treat a request whose _meta omits the protocol version as legacy (no -32022)" in:
+    val params = Json.obj("_meta" -> Json.obj("progressToken" -> Json.fromString("p")))
+    val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("legacy-call"))
+    val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
+    respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Response(_, _, result) => result.as[ListToolsResponse].isRight shouldBe true
+      case other                  => fail(s"expected ListToolsResponse, got $other")
+
   it should "list available tools" in:
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("2"))
     val json = req.asJson
