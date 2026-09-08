@@ -65,6 +65,23 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
 
     received shouldBe Some(ServerNotification.Progress(params))
 
+  it should "stop delivering notifications after removeServerNotification" in:
+    val transport = InMemoryTransport()
+    planInitResponse(transport)
+    val client = McpClient.bidirectional[Identity](transport, clientInfo)
+    var count = 0
+    val listener: ServerNotificationListener[Identity] = _ => { count += 1; () }
+    val _ = client.onServerNotification(listener)
+
+    val params = ProgressParams(progressToken = ProgressToken("p1"), progress = 0.42)
+    val notification: JSONRPCMessage = JSONRPCMessage.Notification(method = "notifications/progress", params = Some(params.asJson))
+    transport.simulateIncoming(notification)
+    count shouldBe 1
+
+    val _ = client.removeServerNotification(listener)
+    transport.simulateIncoming(notification)
+    count shouldBe 1
+
   it should "include opted-in capabilities on initialize" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
