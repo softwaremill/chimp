@@ -94,6 +94,24 @@ trait McpClient[F[_]]:
     */
   def sendProgress(token: ProgressToken, progress: Double, total: Option[Double] = None, message: Option[String] = None): F[Unit]
 
+  /** Retrieves the current state of a task by its id (MCP Tasks extension, experimental). When a receiver answers `tools/call` with a
+    * [[chimp.protocol.CreateTaskResult]], the returned `taskId` is polled with this method until the task reaches a terminal state; the
+    * underlying result is then available in [[chimp.protocol.GetTaskResult.result]].
+    */
+  def getTask(taskId: TaskId): F[GetTaskResult]
+
+  /** Requests cancellation of a task by its id (MCP Tasks extension, experimental). */
+  def cancelTask(taskId: TaskId): F[Unit]
+
+  /** Fulfils the input a task is waiting for while it is `InputRequired` (MCP Tasks extension, experimental). */
+  def updateTask(taskId: TaskId, inputResponses: Map[String, Json]): F[Unit]
+
+  /** Invokes a tool, declaring support for the Tasks extension (experimental). The server may answer directly
+    * ([[chimp.protocol.ToolCallResponse.Immediate]]) or, for a long-running call, defer with a task handle
+    * ([[chimp.protocol.ToolCallResponse.Deferred]]) that is then driven with [[getTask]] / [[cancelTask]] / [[updateTask]].
+    */
+  def callToolWithTasks(name: String, arguments: Json): F[ToolCallResponse]
+
 /** An [[McpClient]] used over a [[chimp.client.transport.ClientBidirectionalTransport]], which additionally supports server-initiated
   * interactions: subscribing to resource updates, notifying the server about changes to the client's roots, and handling notifications
   * pushed by the server.
