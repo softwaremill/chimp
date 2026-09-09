@@ -275,8 +275,8 @@ case class SecuredMcpServer[F[_], S, E, P](
 
   def streaming: SecuredStreamingMcpServer[F, S, E, P] = SecuredStreamingMcpServer(this)
 
-/** A [[SecuredMcpServer]] which also accepts streaming tools, which are given a [[SecuredStreamingServerContext]] combining the
-  * principal with the [[StreamingServerContext]]. Tools of the initial secured server, which need only the principal, are kept.
+/** A [[SecuredMcpServer]] which also accepts streaming tools, which are given a [[SecuredStreamingServerContext]] combining the principal
+  * with the [[StreamingServerContext]]. Tools of the initial secured server, which need only the principal, are kept.
   */
 case class SecuredStreamingMcpServer[F[_], S, E, P](
     server: SecuredMcpServer[F, S, E, P],

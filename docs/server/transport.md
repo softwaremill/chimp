@@ -184,4 +184,4 @@ object McpServerWithPrincipalAndStreaming:
     NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
 ```
 
-`SecuredServerStreamingHttpTransport` wraps a `StreamingBackend` rather than extending it, so the same effect-specific backend instance - `OxServerHttpTransport`, `PekkoServerHttpTransport`, `ZioServerHttpTransport` - serves both a plain `StreamingMcpServer` and a `SecuredStreamingMcpServer`.
+`SecuredServerStreamingHttpTransport` takes an existing `ServerStreamingHttpTransport` as its source of streaming machinery, rather than extending it, so the same effect-specific backend instance - `OxServerHttpTransport`, `PekkoServerHttpTransport`, `ZioServerHttpTransport` - serves both a plain `StreamingMcpServer` and a `SecuredStreamingMcpServer`.

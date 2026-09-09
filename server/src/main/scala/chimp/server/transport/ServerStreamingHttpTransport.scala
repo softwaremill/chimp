@@ -11,30 +11,24 @@ import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
 
-/** The streaming machinery which a bidirectional MCP server transport needs from an effect backend: the streaming capability evidence,
-  * the codec for a Server-Sent-Event body, and a way to turn a [[chimp.server.OutboundSink]] into a stream of events. One instance is
-  * shared between the unsecured [[ServerStreamingHttpTransport]] and [[SecuredServerStreamingHttpTransport]].
+/** Abstract base for bidirectional MCP server using Streamable HTTP. Responds to JSON-RPC messages from an MCP client with a
+  * Server-Sent-Event stream. Messages in the stream are interleaved with the final response on that stream.
   *
-  * @tparam Caps
-  *   The streaming capability evidence required by the Tapir [[sttp.tapir.server.ServerEndpoint]] to produce an asynchronous stream of
-  *   Server-Sent Events as response.
+  * The extra type parameter `Caps` carries the streaming capability evidence required by the Tapir [[sttp.tapir.server.ServerEndpoint]] to
+  * produce asynchronous stream of Server-Sent Events as response. An instance also serves as the streaming machinery which
+  * [[SecuredServerStreamingHttpTransport]] needs from the same effect backend - its `path` plays no part in that, so the same instance, or
+  * another one for the same `F`/`Caps`, can back both a plain [[StreamingMcpServer]] and a [[SecuredStreamingMcpServer]].
+  *
+  * @param path
+  *   The MCP endpoint path.
   */
-trait StreamingBackend[F[_], Caps]:
+abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) extends StreamingServerTransport[F, ServerEndpoint[Caps, F]]:
   val streams: Streams[Caps]
   type EventStream
   def sseBody: StreamBodyIO[streams.BinaryStream, EventStream, Caps]
   def emptyStream: EventStream
   def eventStream(handle: OutboundSink[F] => F[Option[Json]]): F[EventStream]
 
-/** Abstract base for bidirectional MCP server using Streamable HTTP. Responds to JSON-RPC messages from an MCP client with a
-  * Server-Sent-Event stream. Messages in the stream are interleaved with the final response on that stream.
-  *
-  * @param path
-  *   The MCP endpoint path.
-  */
-abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String])
-    extends StreamingBackend[F, Caps]
-    with StreamingServerTransport[F, ServerEndpoint[Caps, F]]:
   final def serve(server: StreamingMcpServer[F]): ServerEndpoint[Caps, F] =
     val handler = new McpHandler[F, StreamingServerContext[F]](server)
     val endpoint = infallibleEndpoint.post

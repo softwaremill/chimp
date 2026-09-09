@@ -121,8 +121,7 @@ case class Tool[I, O](
   ): ServerTool[I, O, F, StreamingServerContext[F]] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
 
-  /** Attaches effectful logic with access to the principal and the [[StreamingServerContext]]; usable only on a secured streaming
-    * server.
+  /** Attaches effectful logic with access to the principal and the [[StreamingServerContext]]; usable only on a secured streaming server.
     */
   def securedStreamingServerLogic[F[_], P](
       logic: (I, P, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O]]

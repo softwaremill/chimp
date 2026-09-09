@@ -14,15 +14,19 @@ import sttp.tapir.server.ServerEndpoint
   * security logic runs before any MCP message is handled. If it gives a rejection, the server sends the error output and no tool logic
   * runs. If it gives a principal, the principal goes to the tool logic, together with the [[StreamingServerContext]].
   *
-  * Wraps a [[StreamingBackend]] instead of extending it, so that the same backend instance - for example an
-  * `chimp.server.ox.OxServerHttpTransport` - serves both a plain [[StreamingMcpServer]] and a [[SecuredStreamingMcpServer]].
+  * Takes an existing [[ServerStreamingHttpTransport]] as the source of the streaming machinery for the effect backend, rather than
+  * extending it, so that the same backend instance - for example an `chimp.server.ox.OxServerHttpTransport` - serves both a plain
+  * [[StreamingMcpServer]] and a [[SecuredStreamingMcpServer]]. Its own `path` plays no part here; only its streaming machinery is used.
   *
   * @param path
   *   The MCP endpoint path.
   * @param backend
-  *   The streaming machinery for the effect type `F` and the streaming capability `Caps`.
+  *   Supplies the streaming machinery for the effect type `F` and the streaming capability `Caps`.
   */
-final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](path: List[String], backend: StreamingBackend[F, Caps]):
+final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](
+    path: List[String],
+    backend: ServerStreamingHttpTransport[F, Caps]
+):
   def serve(server: SecuredStreamingMcpServer[F, S, E, P]): ServerEndpoint[Caps, F] =
     val handler = new McpHandler[F, SecuredStreamingServerContext[F, P]](server)
     val mcpEndpoint = endpoint.post
