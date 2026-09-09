@@ -121,6 +121,22 @@ case class Tool[I, O](
   ): ServerTool[I, O, F, StreamingServerContext[F]] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
 
+  /** Attaches effectful logic with access to the principal and the [[StreamingServerContext]]; usable only on a secured streaming
+    * server.
+    */
+  def securedStreamingServerLogic[F[_], P](
+      logic: (I, P, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O]]
+  ): ServerTool[I, O, F, SecuredStreamingServerContext[F, P]] =
+    ServerTool(
+      name,
+      description,
+      inputSchema,
+      inputDecoder,
+      outputSchema,
+      annotations,
+      (input, context, headers) => logic(input, context.principal, context, headers)
+    )
+
   /** Attaches synchronous logic that also receives the request headers. */
   def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult[O]): ServerTool[I, O, Identity, ServerContext[Identity]] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (i, _, headers) => logic(i, headers))

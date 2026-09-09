@@ -143,3 +143,45 @@ object McpServerWithPrincipal:
 ```
 
 The security logic runs one time for each request, before the server handles the MCP message. If it gives a rejection, the server sends the error output and no tool logic runs. This is necessary if the client must get an HTTP status code, because a tool which rejects a call can only give a JSON-RPC error with status code 200.
+
+### Combining security with streaming
+
+`.streaming` on a secured server gives a `SecuredStreamingMcpServer`, which accepts streaming tools alongside the plain secured ones. Define such a tool with `securedStreamingServerLogic`, which gives both the principal and the `StreamingServerContext`:
+
+```scala mdoc:compile-only
+import chimp.protocol.LoggingLevel
+import chimp.server.*
+import chimp.server.ox.OxServerHttpTransport
+import chimp.server.transport.SecuredServerStreamingHttpTransport
+import io.circe.Json
+import sttp.model.StatusCode
+import sttp.shared.Identity
+import sttp.tapir.*
+import sttp.tapir.server.netty.sync.NettySyncServer
+
+case class User(email: String)
+
+object McpServerWithPrincipalAndStreaming:
+  def main(args: Array[String]): Unit =
+    val whoAmI = tool("whoAmI")
+      .input[String]
+      .securedStreamingServerLogic[Identity, User]: (_, user, ctx, _) =>
+        ctx.log(LoggingLevel.Info, Json.fromString(s"called by ${user.email}"))
+        ToolResult.text(user.email)
+
+    val securedStreamingServer = McpServer[Identity]()
+      .serverSecurityLogicPure(
+        auth.bearer[String](),
+        statusCode(StatusCode.Unauthorized).and(stringBody)
+      )(token => if token == "s3cret" then Right(User("employee@example.com")) else Left("Invalid token"))
+      .streaming
+      .addStreamingTool(whoAmI)
+
+    // `OxServerHttpTransport` is one effect backend's streaming machinery; substitute your own (Pekko, ZIO, ...).
+    val backend = OxServerHttpTransport(List("mcp"))
+    val securedEndpoint = SecuredServerStreamingHttpTransport(List("mcp"), backend).serve(securedStreamingServer)
+
+    NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
+```
+
+`SecuredServerStreamingHttpTransport` wraps a `StreamingBackend` rather than extending it, so the same effect-specific backend instance - `OxServerHttpTransport`, `PekkoServerHttpTransport`, `ZioServerHttpTransport` - serves both a plain `StreamingMcpServer` and a `SecuredStreamingMcpServer`.

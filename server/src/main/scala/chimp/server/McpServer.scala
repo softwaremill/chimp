@@ -272,3 +272,84 @@ case class SecuredMcpServer[F[_], S, E, P](
     copy(server = server.withSubscriptions(handler))
 
   def endpoint(path: List[String]): ServerEndpoint[Any, F] = SecuredServerHttpTransport[F, S, E, P](path).serve(this)
+
+  def streaming: SecuredStreamingMcpServer[F, S, E, P] = SecuredStreamingMcpServer(this)
+
+/** A [[SecuredMcpServer]] which also accepts streaming tools, which are given a [[SecuredStreamingServerContext]] combining the
+  * principal with the [[StreamingServerContext]]. Tools of the initial secured server, which need only the principal, are kept.
+  */
+case class SecuredStreamingMcpServer[F[_], S, E, P](
+    server: SecuredMcpServer[F, S, E, P],
+    streamingTools: List[ServerTool[?, ?, F, SecuredStreamingServerContext[F, P]]] = Nil
+) extends McpServerDef[F, SecuredStreamingServerContext[F, P]]:
+  def name: String = server.name
+  def version: String = server.version
+  def instructions: Option[String] = server.instructions
+  def showJsonSchemaMetadata: Boolean = server.showJsonSchemaMetadata
+  def originCheck: OriginCheck = server.originCheck
+  def prompts: List[ServerPrompt[F]] = server.prompts
+  def resources: List[ServerResource[F]] = server.resources
+  def resourceTemplates: List[ServerResourceTemplate[F]] = server.resourceTemplates
+  def completion: Option[CompletionHandler[F]] = server.completion
+  def loggingLevel: Option[SetLoggingLevelHandler[F]] = server.loggingLevel
+  def subscriptions: Option[ResourceSubscriptions[F]] = server.subscriptions
+
+  def securityInput: EndpointInput[S] = server.securityInput
+  def errorOutput: EndpointOutput[E] = server.errorOutput
+  def securityLogic: MonadError[F] => S => F[Either[E, P]] = server.securityLogic
+
+  def tools: List[ServerTool[?, ?, F, SecuredStreamingServerContext[F, P]]] = server.tools ++ streamingTools
+
+  def name(value: String): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.name(value))
+
+  def version(value: String): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.version(value))
+
+  def instructions(value: String): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.instructions(value))
+
+  def withJsonSchemaMetadata(value: Boolean): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withJsonSchemaMetadata(value))
+
+  def withOriginCheck(value: OriginCheck): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withOriginCheck(value))
+
+  def addTool(tool: ServerTool[?, ?, F, SecuredServerContext[F, P]]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addTool(tool))
+
+  def addTools(tools: ServerTool[?, ?, F, SecuredServerContext[F, P]]*): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addTools(tools*))
+
+  def addStreamingTool(tool: ServerTool[?, ?, F, SecuredStreamingServerContext[F, P]]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(streamingTools = streamingTools :+ tool)
+
+  def addStreamingTools(tools: ServerTool[?, ?, F, SecuredStreamingServerContext[F, P]]*): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(streamingTools = this.streamingTools ++ tools)
+
+  def addPrompt(prompt: ServerPrompt[F]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addPrompt(prompt))
+
+  def addPrompts(prompts: ServerPrompt[F]*): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addPrompts(prompts*))
+
+  def addResource(resource: ServerResource[F]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addResource(resource))
+
+  def addResources(resources: ServerResource[F]*): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addResources(resources*))
+
+  def addResourceTemplate(resourceTemplate: ServerResourceTemplate[F]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addResourceTemplate(resourceTemplate))
+
+  def addResourceTemplates(resourceTemplates: ServerResourceTemplate[F]*): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.addResourceTemplates(resourceTemplates*))
+
+  def withCompletion(handler: CompletionHandler[F]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withCompletion(handler))
+
+  def withLoggingLevel(handler: SetLoggingLevelHandler[F]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withLoggingLevel(handler))
+
+  def withSubscriptions(handler: ResourceSubscriptions[F]): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withSubscriptions(handler))

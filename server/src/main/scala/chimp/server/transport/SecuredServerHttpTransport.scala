@@ -2,7 +2,7 @@ package chimp.server.transport
 
 import chimp.server.*
 import io.circe.Json
-import sttp.model.{Header, HeaderNames, StatusCode}
+import sttp.model.Header
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
 import sttp.tapir.*
@@ -34,12 +34,8 @@ final case class SecuredServerHttpTransport[F[_], S, E, P](path: List[String]):
       me => { (principal: P) => (input: (Seq[Header], Json)) =>
         val (headers, json) = input
         given MonadError[F] = me
-        val host = headers.find(_.name.equalsIgnoreCase(HeaderNames.Host)).map(_.value)
-        val origin = headers.find(_.name.equalsIgnoreCase(HeaderNames.Origin)).map(_.value)
-        if !server.originCheck.validate(host, origin) then me.unit(Right((StatusCode.Forbidden, None)))
-        else
-          handler
-            .handleJsonRpc(json, headers, _ => SecuredServerContext[F, P](principal))
-            .map(response => Right((response.statusCode, response.body)))
+        respondToJsonRpc(server.originCheck, headers) {
+          handler.handleJsonRpc(json, headers, _ => SecuredServerContext[F, P](principal))
+        }.map(Right(_))
       }
     )

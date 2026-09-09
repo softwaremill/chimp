@@ -3,17 +3,30 @@ package chimp.server.pekko
 import chimp.client.transport.pekko.PekkoClientHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
 import chimp.protocol.Implementation
-import chimp.server.{McpServer, McpServerStreamingTests, McpServerTests, StreamingMcpServer}
+import chimp.server.transport.SecuredServerStreamingHttpTransport
+import chimp.server.{
+  McpServer,
+  McpServerStreamingTests,
+  McpServerTests,
+  SecuredMcpServerStreamingTests,
+  SecuredStreamingMcpServer,
+  StreamingMcpServer
+}
 import org.apache.pekko.http.scaladsl.Http
 import org.scalatest.Assertion
 import sttp.client4.pekkohttp.PekkoHttpBackend
+import sttp.model.Header
 import sttp.model.Uri.UriContext
 import sttp.tapir.server.pekkohttp.PekkoHttpServerInterpreter
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContext, Future}
 
-class PekkoMcpServerHttpSpec extends McpServerTests[Future] with McpServerStreamingTests[Future] with PekkoToFuture:
+class PekkoMcpServerHttpSpec
+    extends McpServerTests[Future]
+    with McpServerStreamingTests[Future]
+    with SecuredMcpServerStreamingTests[Future]
+    with PekkoToFuture:
   private val clientInfo = Implementation("chimp-server-test", "0.0.1")
 
   override protected def withServer(server: McpServer[Future])(test: McpClient[Future] => Future[Assertion]): Future[Assertion] =
@@ -30,6 +43,31 @@ class PekkoMcpServerHttpSpec extends McpServerTests[Future] with McpServerStream
       .flatMap: binding =>
         val backend = PekkoHttpBackend.usingActorSystem(actorSystem)
         val transport = PekkoClientHttpTransport(backend, uri"http://localhost:${binding.localAddress.getPort}/mcp")
+        McpClient
+          .bidirectional(transport, clientInfo)
+          .flatMap(test)
+          .transformWith: result =>
+            transport
+              .close()
+              .transformWith(_ => backend.close())
+              .transformWith(_ => binding.terminate(5.seconds))
+              .transform(_ => result)
+
+  override protected def withSecuredStreamingServer(
+      server: SecuredStreamingMcpServer[Future, String, String, User]
+  )(test: BidirectionalMcpClient[Future] => Future[Assertion]): Future[Assertion] =
+    given ExecutionContext = actorSystem.dispatcher
+    val endpoint = SecuredServerStreamingHttpTransport(List("mcp"), PekkoServerHttpTransport(List("mcp"))).serve(server)
+    Http()
+      .newServerAt("localhost", 0)
+      .bind(PekkoHttpServerInterpreter().toRoute(endpoint))
+      .flatMap: binding =>
+        val backend = PekkoHttpBackend.usingActorSystem(actorSystem)
+        val transport = PekkoClientHttpTransport(
+          backend,
+          uri"http://localhost:${binding.localAddress.getPort}/mcp",
+          headers = List(Header.authorization("Bearer", validToken))
+        )
         McpClient
           .bidirectional(transport, clientInfo)
           .flatMap(test)
