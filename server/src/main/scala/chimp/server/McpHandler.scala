@@ -143,7 +143,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   private def handleInitialize(params: Option[Json], id: RequestId): JSONRPCMessage.Response =
     val requested = params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
-    val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.Latest)
+    val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.LatestLegacy)
     val result = InitializeResult(
       protocolVersion = negotiated.name,
       capabilities = serverCapabilities,

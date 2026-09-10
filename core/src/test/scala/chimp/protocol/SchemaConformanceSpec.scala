@@ -1,51 +1,11 @@
 package chimp.protocol
 
-import com.networknt.schema.{InputFormat, SchemaRegistry, SpecificationVersion}
 import io.circe.syntax.*
-import io.circe.{Decoder, Encoder}
-import org.scalatest.flatspec.AnyFlatSpec
-import org.scalatest.matchers.should.Matchers
 
-import scala.jdk.CollectionConverters.*
+/** Schema conformance for the legacy 2025-11-25 revision. */
+class SchemaConformanceSpec extends SchemaConformance:
 
-class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
-
-  private val registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-
-  private val rootSchemaText: String =
-    val stream = getClass.getResourceAsStream("/schema/2025-11-25/schema.json")
-    require(stream != null, "MCP schema not found on the classpath at /schema/2025-11-25/schema.json")
-    val text = String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)
-    stream.close()
-    text
-
-  private val defsText: String =
-    val rootJson = io.circe.parser
-      .parse(rootSchemaText)
-      .getOrElse(
-        throw RuntimeException("Could not parse the bundled MCP schema as JSON")
-      )
-    rootJson.hcursor
-      .downField("$defs")
-      .focus
-      .getOrElse(throw RuntimeException("Schema root is missing $defs object"))
-      .noSpaces
-
-  private def validate[T: Encoder: Decoder](defName: String, value: T): Unit =
-    val encodedJson = value.asJson.deepDropNullValues
-    val encodedStr = encodedJson.noSpaces
-    val wrapper =
-      s"""{"$$schema":"https://json-schema.org/draft/2020-12/schema","$$ref":"#/$$defs/$defName","$$defs":$defsText}"""
-    val schema = registry.getSchema(wrapper, InputFormat.JSON)
-    val errors = schema.validate(encodedStr, InputFormat.JSON).asScala.toList
-    withClue(s"Encoded JSON ($defName):\n$encodedStr\nViolations:\n${errors.mkString("\n")}\n"):
-      errors shouldBe empty
-    val _ = encodedJson.as[T] match
-      case Right(decoded) =>
-        withClue(s"Round-trip mismatch ($defName):\nencoded: $encodedStr\n"):
-          decoded shouldBe value
-      case Left(err) =>
-        fail(s"Decode round-trip failed for $defName:\nencoded: $encodedStr\nerror: ${err.getMessage}")
+  override def schemaResourcePath: String = "/schema/2025-11-25/schema.json"
 
   // --- Lifecycle ---
 
@@ -53,7 +13,7 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
     validate(
       "InitializeRequestParams",
       InitializeParams(
-        protocolVersion = ProtocolVersion.Latest,
+        protocolVersion = ProtocolVersion.LatestLegacy,
         capabilities = ClientCapabilities(),
         clientInfo = Implementation(name = "chimp-test", version = "0.0.1")
       )
@@ -63,7 +23,7 @@ class SchemaConformanceSpec extends AnyFlatSpec with Matchers:
     validate(
       "InitializeResult",
       InitializeResult(
-        protocolVersion = ProtocolVersion.Latest.name,
+        protocolVersion = ProtocolVersion.LatestLegacy.name,
         capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false)))),
         serverInfo = Implementation(name = "chimp-test", version = "0.0.1"),
         instructions = Some("welcome")

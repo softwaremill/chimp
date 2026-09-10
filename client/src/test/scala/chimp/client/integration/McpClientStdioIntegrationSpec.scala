@@ -38,7 +38,7 @@ abstract class McpClientStdioIntegrationSpec[F[_]]
     toFuture(
       usingTransport(everythingServerCommand, ClientTransport.defaultTimeout): transport =>
         McpClient
-          .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
+          .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.LatestLegacy)
           .flatMap: client =>
             test(client).flatMap(assertion => client.close().map(_ => assertion))
     )
