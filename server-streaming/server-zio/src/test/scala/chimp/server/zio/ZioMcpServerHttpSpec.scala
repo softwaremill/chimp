@@ -50,7 +50,8 @@ class ZioMcpServerHttpSpec
         yield result).provideSome[Scope](Server.defaultWithPort(0))
 
   override protected def withSecuredStreamingServer(
-      server: SecuredStreamingMcpServer[Task, String, String, User]
+      server: SecuredStreamingMcpServer[Task, String, String, User],
+      token: String
   )(test: BidirectionalMcpClient[Task] => Task[Assertion]): Future[Assertion] =
     toFuture:
       val routes =
@@ -65,7 +66,7 @@ class ZioMcpServerHttpSpec
                 uri"http://localhost:$port/mcp",
                 ProtocolVersion.Latest,
                 ClientTransport.defaultTimeout,
-                headers = List(Header.authorization("Bearer", validToken))
+                headers = List(Header.authorization("Bearer", token))
               )
               .flatMap(transport => McpClient.bidirectional(transport, clientInfo))
               .flatMap(client => test(client))

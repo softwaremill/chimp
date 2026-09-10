@@ -8,8 +8,9 @@
   - `handle` — synchronous logic from input to `ToolResult`.
   - `handleWithHeaders` — synchronous logic that also receives the request headers.
   - `serverLogic` — effectful logic, with the request headers.
+  - `handleSecured` (synchronous) or `securedServerLogic` (effectful) — logic that also receives the principal made by the server's security logic; usable only on a secured server — see [transport security](transport.md).
 
-  A tool that pushes to the client while running (progress, logging) instead uses `streamingServerLogic` — see [server capabilities](capabilities.md).
+  A tool that pushes to the client while running (progress, logging) instead uses `streamingServerLogic` — see [server capabilities](capabilities.md). A secured, streaming tool uses `securedStreamingServerLogic`, which gives both the principal and the streaming context — see [transport security](transport.md).
 - Assemble tools into an `McpServer` and call `.endpoint(path)` to create a Tapir endpoint.
 
 ```scala mdoc:compile-only

@@ -39,9 +39,16 @@ class SecuredHttpMcpServerSpec extends AnyFlatSpec with Matchers:
   private def securityLogic(token: String): Either[String, User] =
     if token == validToken then Right(User("employee@example.com")) else Left("Invalid token")
 
+  private def securityLogicEffectful(token: String): Identity[Either[String, User]] = securityLogic(token)
+
   private val securedServer = McpServer[Identity]()
     .addTool(echoTool)
     .serverSecurityLogicPure(auth.bearer[String](), statusCode(StatusCode.Unauthorized).and(stringBody))(securityLogic)
+    .addTool(whoAmITool)
+
+  private val securedServerWithEffectfulSecurityLogic = McpServer[Identity]()
+    .addTool(echoTool)
+    .serverSecurityLogic(auth.bearer[String](), statusCode(StatusCode.Unauthorized).and(stringBody))(securityLogicEffectful)
     .addTool(whoAmITool)
 
   private val serverConfiguredAfterSecurity = McpServer[Identity]()
@@ -68,12 +75,25 @@ class SecuredHttpMcpServerSpec extends AnyFlatSpec with Matchers:
 
   private val securedEndpoint = securedServer.endpoint(List("mcp"))
   private val endpointConfiguredAfterSecurity = serverConfiguredAfterSecurity.endpoint(List("mcp"))
+  private val endpointWithEffectfulSecurityLogic = securedServerWithEffectfulSecurityLogic.endpoint(List("mcp"))
 
   "a secured MCP server" should "give the principal to the tool logic" in withServer(securedEndpoint): (port, backend) =>
     withClient(port, backend, validToken): client =>
       val result = client.callTool("whoAmI", Json.obj("message" -> Json.fromString("hi")))
       result.isError shouldBe false
       result.content shouldBe List(ToolContent.Text("text", "hi employee@example.com"))
+
+  it should "give the principal to the tool logic when the security logic is effectful" in
+    withServer(endpointWithEffectfulSecurityLogic): (port, backend) =>
+      withClient(port, backend, validToken): client =>
+        val result = client.callTool("whoAmI", Json.obj("message" -> Json.fromString("hi")))
+        result.isError shouldBe false
+        result.content shouldBe List(ToolContent.Text("text", "hi employee@example.com"))
+
+  it should "reject an invalid security input with the error output when the security logic is effectful" in
+    withServer(endpointWithEffectfulSecurityLogic): (port, backend) =>
+      val exception = intercept[McpAuthorizationException](withClient(port, backend, "wrong")(_ => ()))
+      exception.statusCode shouldBe StatusCode.Unauthorized.code
 
   it should "also serve the tools which do not need the principal" in withServer(securedEndpoint): (port, backend) =>
     withClient(port, backend, validToken): client =>

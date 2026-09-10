@@ -57,7 +57,8 @@ class OxMcpServerHttpSpec
         finally binding.stop()
 
   override protected def withSecuredStreamingServer(
-      server: SecuredStreamingMcpServer[Identity, String, String, User]
+      server: SecuredStreamingMcpServer[Identity, String, String, User],
+      token: String
   )(test: BidirectionalMcpClient[Identity] => Identity[Assertion]): Future[Assertion] =
     toFuture:
       supervised:
@@ -72,7 +73,7 @@ class OxMcpServerHttpSpec
                 uri"http://localhost:${binding.port}/mcp",
                 ProtocolVersion.Latest,
                 ClientTransport.defaultTimeout,
-                headers = List(Header.authorization("Bearer", validToken))
+                headers = List(Header.authorization("Bearer", token))
               )
             try test(McpClient.bidirectional(transport, clientInfo))
             finally transport.close()

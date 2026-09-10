@@ -54,7 +54,8 @@ class PekkoMcpServerHttpSpec
               .transform(_ => result)
 
   override protected def withSecuredStreamingServer(
-      server: SecuredStreamingMcpServer[Future, String, String, User]
+      server: SecuredStreamingMcpServer[Future, String, String, User],
+      token: String
   )(test: BidirectionalMcpClient[Future] => Future[Assertion]): Future[Assertion] =
     given ExecutionContext = actorSystem.dispatcher
     val endpoint = SecuredServerStreamingHttpTransport(List("mcp"), PekkoServerHttpTransport(List("mcp"))).serve(server)
@@ -66,7 +67,7 @@ class PekkoMcpServerHttpSpec
         val transport = PekkoClientHttpTransport(
           backend,
           uri"http://localhost:${binding.localAddress.getPort}/mcp",
-          headers = List(Header.authorization("Bearer", validToken))
+          headers = List(Header.authorization("Bearer", token))
         )
         McpClient
           .bidirectional(transport, clientInfo)
