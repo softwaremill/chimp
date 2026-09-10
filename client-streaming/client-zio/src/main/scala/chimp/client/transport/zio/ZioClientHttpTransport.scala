@@ -272,7 +272,7 @@ object ZioClientHttpTransport:
   def apply(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule,
       headers: Seq[Header] = Nil
@@ -306,7 +306,7 @@ object ZioClientHttpTransport:
   def scoped(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule,
       headers: Seq[Header] = Nil
@@ -316,7 +316,7 @@ object ZioClientHttpTransport:
   def layer(
       backend: StreamBackend[Task, ZioStreams],
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       reconnectSchedule: Schedule[Any, Any, Any] = defaultReconnectSchedule,
       headers: Seq[Header] = Nil
