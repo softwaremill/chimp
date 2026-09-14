@@ -93,7 +93,7 @@ import sttp.model.StatusCode
 import sttp.tapir.*
 import sttp.tapir.server.netty.sync.NettySyncServer
 
-object McpServerWithPrependedSecurity:
+object SecuredMcpServer:
   def main(args: Array[String]): Unit =
     val adder = tool("echo").input[String].handle(echo => ToolResult.text(echo))
     val mcpEndpoint = McpServer(tools = List(adder)).endpoint(List("mcp"))

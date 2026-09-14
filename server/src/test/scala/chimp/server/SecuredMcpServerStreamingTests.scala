@@ -15,12 +15,13 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import scala.concurrent.Future
 import scala.jdk.CollectionConverters.*
 
-trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers with RecoverMethods:
-  this: ToFuture[F] =>
-
+trait SecuredMcpServerTestFixtures[F[_]]:
   protected case class User(email: String)
 
   protected val validToken = "s3cret"
+
+trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers with RecoverMethods with SecuredMcpServerTestFixtures[F]:
+  this: ToFuture[F] =>
 
   /** @param token
     *   The bearer token the client authenticates with; defaults to [[validToken]] so most tests need not pass it.
