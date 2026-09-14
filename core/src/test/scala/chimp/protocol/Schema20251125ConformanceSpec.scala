@@ -3,7 +3,7 @@ package chimp.protocol
 import io.circe.syntax.*
 
 /** Schema conformance for the legacy 2025-11-25 revision. */
-class SchemaConformanceSpec extends SchemaConformance:
+class Schema20251125ConformanceSpec extends SchemaConformance:
 
   override def schemaResourcePath: String = "/schema/2025-11-25/schema.json"
 
