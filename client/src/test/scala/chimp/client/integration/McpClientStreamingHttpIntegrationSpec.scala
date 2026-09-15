@@ -42,7 +42,7 @@ abstract class McpClientStreamingHttpIntegrationSpec[F[_], B]
       usingBackend: backend =>
         usingBidirectionalTransport(backend, mcpEverythingContainer.mcpUri, ClientTransport.defaultTimeout): transport =>
           McpClient
-            .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.Latest)
+            .bidirectional[F](transport, clientInfo, rootsHandler, samplingHandler, elicitationHandler, ProtocolVersion.LatestLegacy)
             .flatMap: client =>
               test(client).flatMap(assertion => client.close().map(_ => assertion))
     )
@@ -57,7 +57,7 @@ abstract class McpClientStreamingHttpIntegrationSpec[F[_], B]
       usingBackend: backend =>
         usingBidirectionalTransport(backend, proxyContainer.mcpUri, timeout): transport =>
           McpClient
-            .bidirectional[F](transport, clientInfo, None, samplingHandler, None, ProtocolVersion.Latest)
+            .bidirectional[F](transport, clientInfo, None, samplingHandler, None, ProtocolVersion.LatestLegacy)
             .flatMap: client =>
               test(proxyContainer, client).flatMap(assertion => client.close().map(_ => assertion))
     )

@@ -26,7 +26,7 @@ import scala.util.chaining.*
 final class ClientHttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
-    protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+    protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
     headers: Seq[Header] = Nil
 ) extends ClientTransport[F]:
 

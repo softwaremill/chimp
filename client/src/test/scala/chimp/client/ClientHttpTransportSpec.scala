@@ -67,4 +67,4 @@ class ClientHttpTransportSpec extends AnyFlatSpec with Matchers:
 
     val request = backend.allInteractions.map { case (request, _) => request }.head
     request.headers.filter(_.is("Accept")) shouldBe List(Header("Accept", "application/json, text/event-stream"))
-    request.header("MCP-Protocol-Version") shouldBe Some(ProtocolVersion.Latest.name)
+    request.header("MCP-Protocol-Version") shouldBe Some(ProtocolVersion.LatestLegacy.name)

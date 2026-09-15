@@ -237,7 +237,7 @@ object OxClientHttpTransport:
   def apply(
       backend: SyncBackend,
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       headers: Seq[Header] = Nil
   )(using Ox): OxClientHttpTransport =

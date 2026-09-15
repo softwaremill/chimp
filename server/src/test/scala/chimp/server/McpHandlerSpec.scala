@@ -86,7 +86,9 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     case McpResponse.EmptyAcceptResponse => fail("Expected JsonResponse but got EmptyAcceptResponse")
 
   "McpHandler" should "respond to initialize" in:
-    val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("1"))
+    // an explicit legacy protocolVersion is required now that ProtocolVersion.Latest advances past the legacy era
+    val req: JSONRPCMessage =
+      Request(method = "initialize", params = Some(Json.obj("protocolVersion" -> "2025-11-25".asJson)), id = RequestId("1"))
     val json = req.asJson
 
     val response = handler.handleJsonRpc(json, Seq.empty)
