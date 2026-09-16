@@ -1,0 +1,33 @@
+# Expected server-conformance failures for spec version 2026-07-28.
+# These need protocol features that land in later tickets; remove each entry once its
+# scenario passes. See server-conformance/README.md for how the baseline is used.
+server:
+  # multi-round-trip requests (tasks) — T5, https://github.com/softwaremill/chimp/issues/243
+  - tasks-capability-negotiation
+  - tasks-dispatch-and-envelope
+  - tasks-lifecycle
+  - tasks-mrtr-composition
+  - tasks-mrtr-input
+  - tasks-request-headers
+  - tasks-request-state-removal
+  - tasks-required-task-error
+  - tasks-wire-fields
+  # server-to-client input requests during tools/call — T5, https://github.com/softwaremill/chimp/issues/243
+  - input-required-result-basic-elicitation
+  - input-required-result-basic-list-roots
+  - input-required-result-basic-sampling
+  - input-required-result-capability-check
+  - input-required-result-multiple-input-requests
+  - input-required-result-multi-round
+  - input-required-result-non-tool-request
+  - input-required-result-request-state
+  - input-required-result-result-type
+  - input-required-result-tampered-state
+  # full stateless lifecycle and modern HTTP header validation
+  - server-stateless
+  - http-header-validation
+  - http-custom-header-server-validation
+  # the harness records a failure in a non-primary run of these scenarios (the primary run passes)
+  - sep-2164-resource-not-found
+  - input-required-result-missing-input-response
+  - input-required-result-ignore-extra-params
