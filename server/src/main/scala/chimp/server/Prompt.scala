@@ -32,6 +32,12 @@ case class PartialPrompt(
   def serverLogic[F[_]](logic: (Map[String, String], Seq[Header]) => F[GetPromptResult]): ServerPrompt[F] =
     ServerPrompt(definition, logic)
 
+  /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
+  def securedServerLogic[F[_], P](
+      logic: (Map[String, String], P, Seq[Header]) => F[GetPromptResult]
+  ): SecuredServerPrompt[F, P] =
+    SecuredServerPrompt(definition, logic)
+
   /** Attaches synchronous logic that also receives the request headers. */
   def handleWithHeaders(logic: (Map[String, String], Seq[Header]) => GetPromptResult): ServerPrompt[Identity] =
     ServerPrompt(definition, logic)
@@ -40,6 +46,10 @@ case class PartialPrompt(
   def handle(logic: Map[String, String] => GetPromptResult): ServerPrompt[Identity] =
     handleWithHeaders((args, _) => logic(args))
 
+  /** Attaches synchronous logic over the supplied argument values and the principal; usable only on a [[SecuredMcpServer]]. */
+  def handleSecured[P](logic: (Map[String, String], P) => GetPromptResult): SecuredServerPrompt[Identity, P] =
+    securedServerLogic[Identity, P]((args, principal, _) => logic(args, principal))
+
   private def definition: Prompt =
     Prompt(name, title, description, Option.when(arguments.nonEmpty)(arguments))
 
@@ -47,3 +57,9 @@ end PartialPrompt
 
 /** A fully-defined prompt: its metadata plus the logic producing its messages. */
 case class ServerPrompt[F[_]](definition: Prompt, logic: (Map[String, String], Seq[Header]) => F[GetPromptResult])
+
+/** A prompt whose logic also receives the principal made by a [[SecuredMcpServer]]. */
+case class SecuredServerPrompt[F[_], P](
+    definition: Prompt,
+    logic: (Map[String, String], P, Seq[Header]) => F[GetPromptResult]
+)
