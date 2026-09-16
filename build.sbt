@@ -238,7 +238,16 @@ lazy val serverConformance = (project in file("server-conformance"))
       val args = spaceDelimited("<args>").parsed.toList
       val jar = assembly.value
       val rootDir = (LocalRootProject / baseDirectory).value
-      val baseline = (rootDir / "conformance-baseline.yml").getAbsolutePath
+      // pick a per-spec-version baseline (conformance-baseline-<version>.yml) when one exists, else the default
+      val specVersion = args.sliding(2).collectFirst {
+        case Seq("--requirements", v) => v
+        case Seq("--spec-version", v) => v
+      }
+      val baseline = specVersion
+        .map(v => rootDir / s"conformance-baseline-$v.yml")
+        .filter(_.exists)
+        .getOrElse(rootDir / "conformance-baseline.yml")
+        .getAbsolutePath
       val log = streams.value.log
 
       val urlPromise = scala.concurrent.Promise[String]()

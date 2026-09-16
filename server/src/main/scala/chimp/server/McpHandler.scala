@@ -81,7 +81,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
               JSONRPCMessage.Error(id = id, error = ProtocolMeta.unsupportedVersionError(version, ProtocolVersion.supported.map(_.name)))
             ).unit
           case _ =>
-            dispatch(method, params, id, headers, makeContext)
+            val isModern = ProtocolMeta.requestedVersion(requestMeta).flatMap(ProtocolVersion.from).exists(_.isModern)
+            dispatch(method, params, id, headers, makeContext, isModern)
       case Right(notification: JSONRPCMessage.Notification) =>
         logger.debug(s"Received notification: ${notification.method}")
         McpResponse.EmptyAcceptResponse.unit
@@ -89,42 +90,65 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         jsonResponse(protocolError(RequestId("null"), JSONRPCErrorCodes.InvalidRequest.code, "Invalid request type")).unit
   end doHandleJsonRpc
 
-  private def dispatch(method: String, params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(
-      using MonadError[F]
-  ): F[McpResponse] =
+  private def dispatch(
+      method: String,
+      params: Option[Json],
+      id: RequestId,
+      headers: Seq[Header],
+      makeContext: Option[ProgressToken] => C,
+      isModern: Boolean
+  )(using MonadError[F]): F[McpResponse] =
+    // a 2026-07-28 result carries resultType and serverInfo; a cacheable one also carries TTL and cache scope
+    def wrap(cacheable: Boolean)(message: JSONRPCMessage): JSONRPCMessage = message match
+      case JSONRPCMessage.Response(jsonrpc, rid, result) if isModern =>
+        JSONRPCMessage.Response(jsonrpc, rid, modernResult(result, cacheable))
+      case other => other
     method match
       case "initialize" =>
         jsonResponse(handleInitialize(params, id)).unit
       case "server/discover" =>
         jsonResponse(handleDiscover(id)).unit
       case "ping" =>
-        jsonResponse(JSONRPCMessage.Response(id = id, result = Json.obj())).unit
+        jsonResponse(wrap(cacheable = false)(JSONRPCMessage.Response(id = id, result = Json.obj()))).unit
       case "tools/list" =>
-        jsonResponse(JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefinitions).asJson)).unit
+        jsonResponse(wrap(cacheable = true)(JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefinitions).asJson))).unit
       case "tools/call" =>
-        handleToolsCall(params, id, headers, makeContext).map(jsonResponse)
+        handleToolsCall(params, id, headers, makeContext).map(wrap(cacheable = false)).map(jsonResponse)
       case "resources/list" if hasResources =>
-        jsonResponse(JSONRPCMessage.Response(id = id, result = ListResourcesResult(server.resources.map(_.definition)).asJson)).unit
+        jsonResponse(
+          wrap(cacheable = true)(JSONRPCMessage.Response(id = id, result = ListResourcesResult(server.resources.map(_.definition)).asJson))
+        ).unit
       case "resources/templates/list" if hasResources =>
         jsonResponse(
-          JSONRPCMessage.Response(id = id, result = ListResourceTemplatesResult(server.resourceTemplates.map(_.definition)).asJson)
+          wrap(cacheable = true)(
+            JSONRPCMessage.Response(id = id, result = ListResourceTemplatesResult(server.resourceTemplates.map(_.definition)).asJson)
+          )
         ).unit
       case "resources/read" if hasResources =>
-        handleResourcesRead(params, id, headers).map(jsonResponse)
+        handleResourcesRead(params, id, headers).map(wrap(cacheable = true)).map(jsonResponse)
       case "resources/subscribe" if server.subscriptions.isDefined =>
         handleSubscribe(params, id, subscribe = true).map(jsonResponse)
       case "resources/unsubscribe" if server.subscriptions.isDefined =>
         handleSubscribe(params, id, subscribe = false).map(jsonResponse)
       case "prompts/list" if server.prompts.nonEmpty =>
-        jsonResponse(JSONRPCMessage.Response(id = id, result = ListPromptsResult(server.prompts.map(_.definition)).asJson)).unit
+        jsonResponse(
+          wrap(cacheable = true)(JSONRPCMessage.Response(id = id, result = ListPromptsResult(server.prompts.map(_.definition)).asJson))
+        ).unit
       case "prompts/get" if server.prompts.nonEmpty =>
-        handlePromptsGet(params, id, headers).map(jsonResponse)
+        handlePromptsGet(params, id, headers).map(wrap(cacheable = false)).map(jsonResponse)
       case "completion/complete" if server.completion.isDefined =>
-        handleComplete(params, id).map(jsonResponse)
+        handleComplete(params, id).map(wrap(cacheable = false)).map(jsonResponse)
       case "logging/setLevel" if server.loggingLevel.isDefined =>
         handleSetLoggingLevel(params, id).map(jsonResponse)
       case other =>
         jsonResponse(protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")).unit
+
+  // wraps a result object with the 2026-07-28 modern-result fields
+  private def modernResult(result: Json, cacheable: Boolean): Json =
+    val serverInfo = Json.obj(ProtocolMeta.ServerInfo -> Implementation(server.name, server.version).asJson.deepDropNullValues)
+    val meta = result.hcursor.downField("_meta").focus.getOrElse(Json.obj()).deepMerge(serverInfo)
+    val base = result.deepMerge(Json.obj("resultType" -> Json.fromString("complete"), "_meta" -> meta))
+    if cacheable then base.deepMerge(Json.obj("ttlMs" -> Json.fromLong(0L), "cacheScope" -> Json.fromString("private"))) else base
 
   private def protocolError(id: RequestId, code: Int, message: String, data: Option[Json] = None): JSONRPCMessage.Error =
     logger.debug(s"Protocol error (id=$id, code=$code): $message")
