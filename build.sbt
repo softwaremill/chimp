@@ -25,7 +25,7 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
   Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
   Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
   Test / parallelExecution := false,
-  scalacOptions ++= Seq("-Wunused:all", "-Werror", "-Yfuture-lazy-vals", "-java-output-version", "21")
+  scalacOptions ++= Seq("-Wunused:all", "-Werror", "-Yfuture-lazy-vals", "-java-output-version", "11")
 )
 
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
