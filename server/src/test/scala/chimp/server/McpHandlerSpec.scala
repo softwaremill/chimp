@@ -103,6 +103,19 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     // nulls should be dropped
     respJson.hcursor.downField("result").downField("instructions").focus shouldBe None
 
+  it should "respond to server/discover without an initialize handshake" in:
+    val req: JSONRPCMessage = Request(method = "server/discover", id = RequestId("disc"))
+    val response = handler.handleJsonRpc(req.asJson, Seq.empty)
+    val respJson = extractJsonFromResponse(response)
+
+    respJson.as[JSONRPCMessage].getOrElse(fail("Failed to decode response")) match
+      case Response(_, _, result) =>
+        val resultObj = result.as[InitializeResult].getOrElse(fail("Failed to decode result"))
+        resultObj.protocolVersion shouldBe ProtocolVersion.Latest.name
+        resultObj.capabilities.tools.isDefined shouldBe true
+        resultObj.serverInfo.name should include("Chimp MCP server")
+      case _ => fail("Expected Response")
+
   it should "list available tools" in:
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("2"))
     val json = req.asJson

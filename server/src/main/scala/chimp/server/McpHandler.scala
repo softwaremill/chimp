@@ -76,6 +76,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         method match
           case "initialize" =>
             jsonResponse(handleInitialize(params, id)).unit
+          case "server/discover" =>
+            jsonResponse(JSONRPCMessage.Response(id = id, result = discoveryResult(ProtocolVersion.Latest).asJson)).unit
           case "ping" =>
             jsonResponse(JSONRPCMessage.Response(id = id, result = Json.obj())).unit
           case "tools/list" =>
@@ -117,24 +119,27 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
 
-  private def handleInitialize(params: Option[Json], id: RequestId): JSONRPCMessage.Response =
-    val requested = params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
-    val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.Latest)
-    val capabilities = ServerCapabilities(
-      logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
-      completions = Option.when(server.completion.isDefined)(Json.obj()),
-      prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
-      resources =
-        Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
-      tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
-    )
-    val result = InitializeResult(
-      protocolVersion = negotiated.name,
-      capabilities = capabilities,
+  private def serverCapabilities: ServerCapabilities = ServerCapabilities(
+    logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
+    completions = Option.when(server.completion.isDefined)(Json.obj()),
+    prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
+    resources =
+      Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
+    tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
+  )
+
+  private def discoveryResult(protocolVersion: ProtocolVersion): InitializeResult =
+    InitializeResult(
+      protocolVersion = protocolVersion.name,
+      capabilities = serverCapabilities,
       serverInfo = Implementation(server.name, server.version),
       instructions = server.instructions
     )
-    JSONRPCMessage.Response(id = id, result = result.asJson)
+
+  private def handleInitialize(params: Option[Json], id: RequestId): JSONRPCMessage.Response =
+    val requested = params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
+    val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.Latest)
+    JSONRPCMessage.Response(id = id, result = discoveryResult(negotiated).asJson)
 
   private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
       MonadError[F]
