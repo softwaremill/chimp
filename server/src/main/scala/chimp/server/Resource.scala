@@ -41,25 +41,31 @@ case class PartialResource(
     copy(size = Some(value))
 
   /** Attaches effectful logic, with access to the request headers, producing the resource's contents (or an error). */
-  def serverLogic[F[_]](logic: Seq[Header] => F[Either[ResourceError, List[ResourceContents]]]): ServerResource[F] =
-    ServerResource(definition, logic)
+  def serverLogic[F[_]](
+      logic: Seq[Header] => F[Either[ResourceError, List[ResourceContents]]]
+  ): ServerResource[F, ServerContext[F]] =
+    ServerResource(definition, (_, headers) => logic(headers))
 
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](
       logic: (P, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
-  ): SecuredServerResource[F, P] =
-    SecuredServerResource(definition, logic)
+  ): ServerResource[F, SecuredServerContext[F, P]] =
+    ServerResource(definition, (context, headers) => logic(context.principal, headers))
 
   /** Attaches synchronous logic that also receives the request headers. */
-  def handleWithHeaders(logic: Seq[Header] => Either[ResourceError, List[ResourceContents]]): ServerResource[Identity] =
-    ServerResource(definition, logic)
+  def handleWithHeaders(
+      logic: Seq[Header] => Either[ResourceError, List[ResourceContents]]
+  ): ServerResource[Identity, ServerContext[Identity]] =
+    serverLogic[Identity](logic)
 
   /** Attaches synchronous logic producing the resource's contents (or an error). */
-  def handle(logic: () => Either[ResourceError, List[ResourceContents]]): ServerResource[Identity] =
+  def handle(logic: () => Either[ResourceError, List[ResourceContents]]): ServerResource[Identity, ServerContext[Identity]] =
     handleWithHeaders(_ => logic())
 
   /** Attaches synchronous logic over the principal; usable only on a [[SecuredMcpServer]]. */
-  def handleSecured[P](logic: P => Either[ResourceError, List[ResourceContents]]): SecuredServerResource[Identity, P] =
+  def handleSecured[P](
+      logic: P => Either[ResourceError, List[ResourceContents]]
+  ): ServerResource[Identity, SecuredServerContext[Identity, P]] =
     securedServerLogic[Identity, P]((principal, _) => logic(principal))
 
   private def definition: Resource = Resource(uri, name.getOrElse(uri), title, description, mimeType, size)
@@ -67,12 +73,9 @@ case class PartialResource(
 end PartialResource
 
 /** A fully-defined resource: its metadata plus the logic reading its contents. */
-case class ServerResource[F[_]](definition: Resource, read: Seq[Header] => F[Either[ResourceError, List[ResourceContents]]])
-
-/** A resource whose read logic also receives the principal made by a [[SecuredMcpServer]]. */
-case class SecuredServerResource[F[_], P](
+case class ServerResource[F[_], -C <: ServerContext[F]](
     definition: Resource,
-    read: (P, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
+    read: (C, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
 )
 
 /** A resource template being defined, before its read logic is attached. */
@@ -98,29 +101,35 @@ case class PartialResourceTemplate(
   /** Attaches effectful logic reading a matched URI; receives the extracted variables, the full URI, and the request headers. */
   def serverLogic[F[_]](
       logic: (Map[String, String], String, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
-  ): ServerResourceTemplate[F] =
-    ServerResourceTemplate(definition, UriTemplate.compile(uriTemplate), logic)
+  ): ServerResourceTemplate[F, ServerContext[F]] =
+    ServerResourceTemplate(definition, UriTemplate.compile(uriTemplate), (vars, uri, _, headers) => logic(vars, uri, headers))
 
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](
       logic: (Map[String, String], String, P, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
-  ): SecuredServerResourceTemplate[F, P] =
-    SecuredServerResourceTemplate(definition, UriTemplate.compile(uriTemplate), logic)
+  ): ServerResourceTemplate[F, SecuredServerContext[F, P]] =
+    ServerResourceTemplate(
+      definition,
+      UriTemplate.compile(uriTemplate),
+      (vars, uri, context, headers) => logic(vars, uri, context.principal, headers)
+    )
 
   /** Attaches synchronous logic that also receives the request headers. */
   def handleWithHeaders(
       logic: (Map[String, String], String, Seq[Header]) => Either[ResourceError, List[ResourceContents]]
-  ): ServerResourceTemplate[Identity] =
-    ServerResourceTemplate(definition, UriTemplate.compile(uriTemplate), logic)
+  ): ServerResourceTemplate[Identity, ServerContext[Identity]] =
+    serverLogic[Identity](logic)
 
   /** Attaches synchronous logic receiving the extracted variables and the full URI. */
-  def handle(logic: (Map[String, String], String) => Either[ResourceError, List[ResourceContents]]): ServerResourceTemplate[Identity] =
+  def handle(
+      logic: (Map[String, String], String) => Either[ResourceError, List[ResourceContents]]
+  ): ServerResourceTemplate[Identity, ServerContext[Identity]] =
     handleWithHeaders((vars, uri, _) => logic(vars, uri))
 
   /** Attaches synchronous logic over the extracted variables, the full URI, and the principal; usable only on a [[SecuredMcpServer]]. */
   def handleSecured[P](
       logic: (Map[String, String], String, P) => Either[ResourceError, List[ResourceContents]]
-  ): SecuredServerResourceTemplate[Identity, P] =
+  ): ServerResourceTemplate[Identity, SecuredServerContext[Identity, P]] =
     securedServerLogic[Identity, P]((vars, uri, principal, _) => logic(vars, uri, principal))
 
   private def definition: ResourceTemplate =
@@ -129,17 +138,10 @@ case class PartialResourceTemplate(
 end PartialResourceTemplate
 
 /** A fully-defined resource template: its metadata, a compiled URI matcher, and the logic reading matched URIs. */
-case class ServerResourceTemplate[F[_]](
+case class ServerResourceTemplate[F[_], -C <: ServerContext[F]](
     definition: ResourceTemplate,
     matcher: UriTemplate,
-    read: (Map[String, String], String, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
-)
-
-/** A resource template whose read logic also receives the principal made by a [[SecuredMcpServer]]. */
-case class SecuredServerResourceTemplate[F[_], P](
-    definition: ResourceTemplate,
-    matcher: UriTemplate,
-    read: (Map[String, String], String, P, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
+    read: (Map[String, String], String, C, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
 )
 
 /** A compiled URI template that matches concrete URIs and extracts their `{variable}` values. */

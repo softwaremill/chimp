@@ -59,7 +59,7 @@ trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers w
       .streaming
       .addStreamingTool(whoAmITool)
 
-  private def whoAmIPrompt: SecuredServerPrompt[F, User] =
+  private def whoAmIPrompt: ServerPrompt[F, SecuredServerContext[F, User]] =
     prompt("whoAmI")
       .description("Greets the caller")
       .securedServerLogic[F, User]((_, user, _) =>

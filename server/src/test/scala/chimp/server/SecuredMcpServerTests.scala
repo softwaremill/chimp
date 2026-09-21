@@ -39,7 +39,7 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
       .input[EchoInput]
       .securedServerLogic[F, User]((in, user, _) => monad.unit(ToolResult.text(s"${in.message} ${user.email}")))
 
-  private def greetingResource: ServerResource[F] =
+  private def greetingResource: ServerResource[F, ServerContext[F]] =
     resource("test://greeting")
       .name("greeting")
       .mimeType("text/plain")
@@ -47,7 +47,19 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
         monad.unit(Right(List(ResourceContents.Text(uri = "test://greeting", text = "hello", mimeType = Some("text/plain")))))
       )
 
-  private def whoAmIPrompt: SecuredServerPrompt[F, User] =
+  private def publicWhoAmIPrompt: ServerPrompt[F, ServerContext[F]] =
+    prompt("whoAmI")
+      .serverLogic[F]((_, _) => monad.unit(GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = "public"))))))
+
+  private def publicWhoAmIResource: ServerResource[F, ServerContext[F]] =
+    resource("test://whoami")
+      .serverLogic[F](_ => monad.unit(Right(List(ResourceContents.Text(uri = "test://whoami", text = "public")))))
+
+  private def publicWhoAmIResourceTemplate: ServerResourceTemplate[F, ServerContext[F]] =
+    resourceTemplate("test://user/{id}")
+      .serverLogic[F]((_, uri, _) => monad.unit(Right(List(ResourceContents.Text(uri = uri, text = "public")))))
+
+  private def whoAmIPrompt: ServerPrompt[F, SecuredServerContext[F, User]] =
     prompt("whoAmI")
       .description("Greets the caller.")
       .argument("name", required = true)
@@ -59,7 +71,7 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
         )
       )
 
-  private def whoAmIResource: SecuredServerResource[F, User] =
+  private def whoAmIResource: ServerResource[F, SecuredServerContext[F, User]] =
     resource("test://whoami")
       .name("whoami")
       .mimeType("text/plain")
@@ -67,7 +79,7 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
         monad.unit(Right(List(ResourceContents.Text(uri = "test://whoami", text = user.email, mimeType = Some("text/plain")))))
       )
 
-  private def whoAmIResourceTemplate: SecuredServerResourceTemplate[F, User] =
+  private def whoAmIResourceTemplate: ServerResourceTemplate[F, SecuredServerContext[F, User]] =
     resourceTemplate("test://user/{id}")
       .name("user")
       .securedServerLogic[F, User]((vars, uri, user, _) =>
@@ -96,7 +108,9 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
 
   private def securedServerWithPromptAndResources: SecuredMcpServer[F, String, String, User] =
     McpServer[F]()
-      .addResource(greetingResource)
+      .addPrompts(publicWhoAmIPrompt)
+      .addResources(greetingResource, publicWhoAmIResource)
+      .addResourceTemplates(publicWhoAmIResourceTemplate)
       .serverSecurityLogicPure(auth.bearer[String](), statusCode(StatusCode.Unauthorized).and(stringBody))(securityLogic)
       .addPrompts(whoAmIPrompt)
       .addResources(whoAmIResource)
@@ -130,6 +144,12 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
     withSecuredServer(serverConfiguredAfterSecurity): client =>
       monad.unit(client.serverInfo shouldBe Implementation("secured-server", "2.0.0"))
 
+  it should "expose complete prompt and resource collections" in Future {
+    securedServerWithPromptAndResources.prompts.map(_.definition.name) shouldBe List("whoAmI")
+    securedServerWithPromptAndResources.resources.map(_.definition.uri) shouldBe List("test://greeting", "test://whoami")
+    securedServerWithPromptAndResources.resourceTemplates.map(_.definition.uriTemplate) shouldBe List("test://user/{id}")
+  }
+
   it should "serve a resource which was added after the security logic" in
     withSecuredServer(serverConfiguredAfterSecurity): client =>
       client.serverCapabilities.resources shouldBe defined
@@ -148,11 +168,15 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
     withSecuredServer(securedServerWithPromptAndResources): client =>
       client.serverCapabilities.prompts shouldBe defined
       client
-        .getPrompt("whoAmI", Map("name" -> "Ada"))
-        .map: result =>
-          result.messages shouldBe List(
-            PromptMessage(Role.User, ToolContent.Text(text = "Hello Ada from employee@example.com"))
-          )
+        .listPrompts()
+        .flatMap: listed =>
+          listed.prompts.map(_.name) shouldBe List("whoAmI")
+          client
+            .getPrompt("whoAmI", Map("name" -> "Ada"))
+            .map: result =>
+              result.messages shouldBe List(
+                PromptMessage(Role.User, ToolContent.Text(text = "Hello Ada from employee@example.com"))
+              )
 
   it should "give the principal to the resource logic" in
     withSecuredServer(securedServerWithPromptAndResources): client =>
@@ -179,11 +203,15 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
   it should "give the principal to the resource template logic" in
     withSecuredServer(securedServerWithPromptAndResources): client =>
       client
-        .readResource("test://user/42")
-        .map: result =>
-          result.contents.head match
-            case ResourceContents.Text(_, text, _, _) => text shouldBe "42 employee@example.com"
-            case other                                => fail(s"expected text contents, got $other")
+        .listResourceTemplates()
+        .flatMap: listed =>
+          listed.resourceTemplates.map(_.uriTemplate) shouldBe List("test://user/{id}")
+          client
+            .readResource("test://user/42")
+            .map: result =>
+              result.contents.head match
+                case ResourceContents.Text(_, text, _, _) => text shouldBe "42 employee@example.com"
+                case other                                => fail(s"expected text contents, got $other")
 
   it should "reject an invalid security input with HTTP 401 before any tool logic runs" in
     recoverToExceptionIf[McpAuthorizationException] {
