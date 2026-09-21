@@ -224,7 +224,8 @@ case class SecuredMcpServer[F[_], S, E, P](
   def loggingLevel: Option[SetLoggingLevelHandler[F]] = server.loggingLevel
   def subscriptions: Option[ResourceSubscriptions[F]] = server.subscriptions
 
-  def tools: List[ServerTool[?, ?, F, SecuredServerContext[F, P]]] = server.tools ++ securedTools
+  def tools: List[ServerTool[?, ?, F, SecuredServerContext[F, P]]] =
+    mergeBy(server.tools, securedTools)(_.name)
 
   def prompts: List[ServerPrompt[F, SecuredServerContext[F, P]]] =
     mergeBy(server.prompts, securedPrompts)(_.definition.name)
@@ -314,7 +315,8 @@ case class SecuredStreamingMcpServer[F[_], S, E, P](
   def errorOutput: EndpointOutput[E] = server.errorOutput
   def securityLogic: MonadError[F] => S => F[Either[E, P]] = server.securityLogic
 
-  def tools: List[ServerTool[?, ?, F, SecuredStreamingServerContext[F, P]]] = server.tools ++ streamingTools
+  def tools: List[ServerTool[?, ?, F, SecuredStreamingServerContext[F, P]]] =
+    mergeBy(server.tools, streamingTools)(_.name)
 
   def name(value: String): SecuredStreamingMcpServer[F, S, E, P] =
     copy(server = server.name(value))

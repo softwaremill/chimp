@@ -33,6 +33,12 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
       .input[EchoInput]
       .serverLogic[F]((in, _) => monad.unit(ToolResult.text(in.message)))
 
+  private def publicWhoAmITool: ServerTool[EchoInput, NoStructuredOutput, F, ServerContext[F]] =
+    tool("whoAmI")
+      .description("Echoes a message.")
+      .input[EchoInput]
+      .serverLogic[F]((in, _) => monad.unit(ToolResult.text(s"${in.message} public")))
+
   private def whoAmITool: ServerTool[EchoInput, NoStructuredOutput, F, SecuredServerContext[F, User]] =
     tool("whoAmI")
       .description("Echoes a message and the caller's email.")
@@ -88,13 +94,13 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
 
   private def securedServer: SecuredMcpServer[F, String, String, User] =
     McpServer[F]()
-      .addTool(echoTool)
+      .addTools(echoTool, publicWhoAmITool)
       .serverSecurityLogicPure(auth.bearer[String](), statusCode(StatusCode.Unauthorized).and(stringBody))(securityLogic)
       .addTool(whoAmITool)
 
   private def securedServerWithEffectfulSecurityLogic: SecuredMcpServer[F, String, String, User] =
     McpServer[F]()
-      .addTool(echoTool)
+      .addTools(echoTool, publicWhoAmITool)
       .serverSecurityLogic(auth.bearer[String](), statusCode(StatusCode.Unauthorized).and(stringBody))(securityLogicEffectful)
       .addTool(whoAmITool)
 
@@ -134,7 +140,7 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
       client
         .listTools()
         .flatMap: tools =>
-          tools.tools.map(_.name) should contain allOf ("echo", "whoAmI")
+          tools.tools.map(_.name) shouldBe List("echo", "whoAmI")
           client
             .callTool("echo", Json.obj("message" -> Json.fromString("hi")))
             .map: result =>
@@ -145,6 +151,7 @@ trait SecuredMcpServerTests[F[_]] extends AsyncFlatSpec with Matchers with Recov
       monad.unit(client.serverInfo shouldBe Implementation("secured-server", "2.0.0"))
 
   it should "expose complete prompt and resource collections" in Future {
+    securedServer.tools.map(_.name) shouldBe List("echo", "whoAmI")
     securedServerWithPromptAndResources.prompts.map(_.definition.name) shouldBe List("whoAmI")
     securedServerWithPromptAndResources.resources.map(_.definition.uri) shouldBe List("test://greeting", "test://whoami")
     securedServerWithPromptAndResources.resourceTemplates.map(_.definition.uriTemplate) shouldBe List("test://user/{id}")
