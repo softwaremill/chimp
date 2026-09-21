@@ -14,4 +14,4 @@ class DiscoverResultSpec extends AnyFlatSpec with Matchers:
       ttlMs = 0.millis,
       cacheScope = CacheScope.Private
     )
-    discover.getSupportedVersions shouldBe List(Right(ProtocolVersion.V2026_07_28), Left("1900-01-01"))
+    discover.parsedSupportedVersions shouldBe List(Right(ProtocolVersion.V2026_07_28), Left("1900-01-01"))

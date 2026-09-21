@@ -12,7 +12,7 @@ object ProtocolVersion:
   val LatestLegacy: ProtocolVersion = V2025_11_25
 
   /** All revisions the server supports, newest first; reported by `server/discover`. */
-  val supported: List[ProtocolVersion] = List(V2026_07_28, V2025_11_25, V2025_06_18)
+  val supported: List[ProtocolVersion] = values.toList.reverse
 
   def from(s: String): Option[ProtocolVersion] = values.find(_.name == s)
   def negotiate(requested: String): ProtocolVersion = from(requested).getOrElse(Latest)

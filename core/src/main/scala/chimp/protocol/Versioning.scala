@@ -3,9 +3,9 @@ package chimp.protocol
 import io.circe.syntax.*
 import io.circe.{Codec, Decoder, Encoder, Json}
 
-import scala.concurrent.duration.{DurationLong, FiniteDuration}
+import scala.concurrent.duration.{Duration, DurationLong, FiniteDuration}
 
-// the wire encodes ttlMs as an integer number of milliseconds; file-private so it does not leak into the wider protocol scope
+/** The wire encodes `ttlMs` as an integer number of milliseconds; file-private so it does not leak into the wider protocol scope. */
 private given Codec[FiniteDuration] =
   Codec.from(Decoder.decodeLong.map(_.millis), Encoder.encodeLong.contramap(_.toMillis))
 
@@ -13,14 +13,10 @@ private given Codec[FiniteDuration] =
   * and capabilities travel with each request instead of an `initialize` handshake.
   */
 object ProtocolMeta:
-  val ProtocolVersion: String = "io.modelcontextprotocol/protocolVersion"
+  val ProtocolVersionKey: String = "io.modelcontextprotocol/protocolVersion"
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"
   val ServerInfo: String = "io.modelcontextprotocol/serverInfo"
-
-  /** The protocol version a modern request declares in its `_meta`, if any. Its absence marks a legacy (handshake-based) request. */
-  def requestedVersion(meta: Option[Map[String, Json]]): Option[String] =
-    meta.flatMap(_.get(ProtocolVersion)).flatMap(_.asString)
 
   /** An `UnsupportedProtocolVersion` error (`-32022`) naming the versions the server supports, so the client can retry with one of them. */
   def unsupportedVersionError(requested: String, supported: List[String]): JSONRPCErrorObject =
@@ -30,7 +26,17 @@ object ProtocolMeta:
       data = Some(Json.obj("requested" -> requested.asJson, "supported" -> supported.asJson))
     )
 
-/** Whether a cached `server/discover` response may be shared across authorization contexts (`Public`) or not (`Private`). */
+/** The type of a modern (2026-07-28+) result. A closed set on the wire; only `complete` exists today. */
+enum ResultType(val name: String):
+  case Complete extends ResultType("complete")
+
+object ResultType:
+  given Encoder[ResultType] = Encoder.instance(resultType => Json.fromString(resultType.name))
+  given Decoder[ResultType] = Decoder.decodeString.emap:
+    case "complete" => Right(Complete)
+    case other      => Left(s"Unknown result type: $other")
+
+/** Whether a cached response may be shared across authorization contexts (`Public`) or not (`Private`). */
 enum CacheScope:
   case Private, Public
 
@@ -41,6 +47,13 @@ object CacheScope:
     case "public"  => Right(Public)
     case other     => Left(s"Unknown cache scope: $other")
 
+/** Cache hints a modern cacheable result carries: how long it may be cached (`ttlMs`) and in what scope. */
+final case class CacheHints(ttlMs: FiniteDuration, cacheScope: CacheScope) derives Codec
+
+object CacheHints:
+  /** chimp does not cache results yet: a zero TTL in the private scope. */
+  val Default: CacheHints = CacheHints(Duration.Zero, CacheScope.Private)
+
 /** Result of `server/discover` (2026-07-28): the server's supported protocol versions, capabilities and identity, learned without a
   * handshake. `serverInfo` travels in `_meta` under [[ProtocolMeta.ServerInfo]].
   */
@@ -50,11 +63,11 @@ final case class DiscoverResult(
     ttlMs: FiniteDuration,
     cacheScope: CacheScope,
     instructions: Option[String] = None,
-    resultType: String = "complete",
+    resultType: ResultType = ResultType.Complete,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec:
-  /** [[supportedVersions]] parsed: `Right` for a version this build knows as a [[ProtocolVersion]], `Left` with the raw string for one it
-    * does not recognise (e.g. a newer revision). Kept lazy of the wire so an unknown version never fails decoding.
+  /** [[supportedVersions]] parsed into [[ProtocolVersion]] values: `Right` for a revision this build recognises, `Left` with the raw string
+    * for one it does not (e.g. a newer revision). The wire keeps the raw strings, so an unknown version never fails to decode.
     */
-  def getSupportedVersions: List[Either[String, ProtocolVersion]] =
+  def parsedSupportedVersions: List[Either[String, ProtocolVersion]] =
     supportedVersions.map(version => ProtocolVersion.from(version).toRight(version))

@@ -238,11 +238,16 @@ lazy val serverConformance = (project in file("server-conformance"))
       val args = spaceDelimited("<args>").parsed.toList
       val jar = assembly.value
       val rootDir = (LocalRootProject / baseDirectory).value
-      // pick a per-spec-version baseline (conformance-baseline-<version>.yml) when one exists, else the default
-      val specVersion = args.sliding(2).collectFirst {
-        case Seq("--requirements", v) => v
-        case Seq("--spec-version", v) => v
-      }
+      val specVersion = args
+        .sliding(2)
+        .collectFirst {
+          case Seq("--requirements", v) => v
+          case Seq("--spec-version", v) => v
+        }
+        .orElse(args.collectFirst {
+          case a if a.startsWith("--requirements=") => a.stripPrefix("--requirements=")
+          case a if a.startsWith("--spec-version=") => a.stripPrefix("--spec-version=")
+        })
       val baseline = specVersion
         .map(v => rootDir / s"conformance-baseline-$v.yml")
         .filter(_.exists)

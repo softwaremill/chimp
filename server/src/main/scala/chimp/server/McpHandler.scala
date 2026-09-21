@@ -73,16 +73,14 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case Left(err) =>
         jsonResponse(protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}")).unit
       case Right(JSONRPCMessage.Request(_, method, params: Option[Json], id)) =>
-        val requestMeta = params.flatMap(_.hcursor.downField("_meta").as[Map[String, Json]].toOption)
-        // a modern request declares its version in _meta; reject an unsupported one with -32022 so the client can retry
-        ProtocolMeta.requestedVersion(requestMeta) match
+        val requestedVersion = params.flatMap(_.hcursor.downField("_meta").downField(ProtocolMeta.ProtocolVersionKey).as[String].toOption)
+        requestedVersion match
           case Some(version) if ProtocolVersion.from(version).isEmpty =>
             jsonResponse(
               JSONRPCMessage.Error(id = id, error = ProtocolMeta.unsupportedVersionError(version, ProtocolVersion.supported.map(_.name)))
             ).unit
           case _ =>
-            val isModern = ProtocolMeta.requestedVersion(requestMeta).flatMap(ProtocolVersion.from).exists(_.isModern)
-            dispatch(method, params, id, headers, makeContext, isModern)
+            dispatch(method, params, id, headers, makeContext, requestedVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
       case Right(notification: JSONRPCMessage.Notification) =>
         logger.debug(s"Received notification: ${notification.method}")
         McpResponse.EmptyAcceptResponse.unit
@@ -98,57 +96,55 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       makeContext: Option[ProgressToken] => C,
       isModern: Boolean
   )(using MonadError[F]): F[McpResponse] =
-    // a 2026-07-28 result carries resultType and serverInfo; a cacheable one also carries TTL and cache scope
-    def wrap(cacheable: Boolean)(message: JSONRPCMessage): JSONRPCMessage = message match
+    def wrap(cacheHints: Option[CacheHints])(message: JSONRPCMessage): JSONRPCMessage = message match
       case JSONRPCMessage.Response(jsonrpc, rid, result) if isModern =>
-        JSONRPCMessage.Response(jsonrpc, rid, modernResult(result, cacheable))
+        JSONRPCMessage.Response(jsonrpc, rid, modernResult(result, cacheHints))
       case other => other
+    val cacheHints = Some(CacheHints.Default)
     method match
       case "initialize" =>
         jsonResponse(handleInitialize(params, id)).unit
       case "server/discover" =>
         jsonResponse(handleDiscover(id)).unit
       case "ping" =>
-        jsonResponse(wrap(cacheable = false)(JSONRPCMessage.Response(id = id, result = Json.obj()))).unit
+        jsonResponse(wrap(None)(JSONRPCMessage.Response(id = id, result = Json.obj()))).unit
       case "tools/list" =>
-        jsonResponse(wrap(cacheable = true)(JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefinitions).asJson))).unit
+        jsonResponse(wrap(cacheHints)(JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefinitions).asJson))).unit
       case "tools/call" =>
-        handleToolsCall(params, id, headers, makeContext).map(wrap(cacheable = false)).map(jsonResponse)
+        handleToolsCall(params, id, headers, makeContext).map(wrap(None)).map(jsonResponse)
       case "resources/list" if hasResources =>
         jsonResponse(
-          wrap(cacheable = true)(JSONRPCMessage.Response(id = id, result = ListResourcesResult(server.resources.map(_.definition)).asJson))
+          wrap(cacheHints)(JSONRPCMessage.Response(id = id, result = ListResourcesResult(server.resources.map(_.definition)).asJson))
         ).unit
       case "resources/templates/list" if hasResources =>
         jsonResponse(
-          wrap(cacheable = true)(
+          wrap(cacheHints)(
             JSONRPCMessage.Response(id = id, result = ListResourceTemplatesResult(server.resourceTemplates.map(_.definition)).asJson)
           )
         ).unit
       case "resources/read" if hasResources =>
-        handleResourcesRead(params, id, headers).map(wrap(cacheable = true)).map(jsonResponse)
+        handleResourcesRead(params, id, headers).map(wrap(cacheHints)).map(jsonResponse)
       case "resources/subscribe" if server.subscriptions.isDefined =>
         handleSubscribe(params, id, subscribe = true).map(jsonResponse)
       case "resources/unsubscribe" if server.subscriptions.isDefined =>
         handleSubscribe(params, id, subscribe = false).map(jsonResponse)
       case "prompts/list" if server.prompts.nonEmpty =>
         jsonResponse(
-          wrap(cacheable = true)(JSONRPCMessage.Response(id = id, result = ListPromptsResult(server.prompts.map(_.definition)).asJson))
+          wrap(cacheHints)(JSONRPCMessage.Response(id = id, result = ListPromptsResult(server.prompts.map(_.definition)).asJson))
         ).unit
       case "prompts/get" if server.prompts.nonEmpty =>
-        handlePromptsGet(params, id, headers).map(wrap(cacheable = false)).map(jsonResponse)
+        handlePromptsGet(params, id, headers).map(wrap(None)).map(jsonResponse)
       case "completion/complete" if server.completion.isDefined =>
-        handleComplete(params, id).map(wrap(cacheable = false)).map(jsonResponse)
+        handleComplete(params, id).map(wrap(None)).map(jsonResponse)
       case "logging/setLevel" if server.loggingLevel.isDefined =>
         handleSetLoggingLevel(params, id).map(jsonResponse)
       case other =>
         jsonResponse(protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")).unit
 
-  // wraps a result object with the 2026-07-28 modern-result fields
-  private def modernResult(result: Json, cacheable: Boolean): Json =
-    val serverInfo = Json.obj(ProtocolMeta.ServerInfo -> Implementation(server.name, server.version).asJson.deepDropNullValues)
-    val meta = result.hcursor.downField("_meta").focus.getOrElse(Json.obj()).deepMerge(serverInfo)
-    val base = result.deepMerge(Json.obj("resultType" -> Json.fromString("complete"), "_meta" -> meta))
-    if cacheable then base.deepMerge(Json.obj("ttlMs" -> Json.fromLong(0L), "cacheScope" -> Json.fromString("private"))) else base
+  private def modernResult(result: Json, cacheHints: Option[CacheHints]): Json =
+    val meta = result.hcursor.downField("_meta").focus.getOrElse(Json.obj()).deepMerge(serverInfoMeta)
+    val enriched = result.deepMerge(Json.obj("resultType" -> ResultType.Complete.asJson, "_meta" -> meta))
+    cacheHints.fold(enriched)(hints => enriched.deepMerge(hints.asJson))
 
   private def protocolError(id: RequestId, code: Int, message: String, data: Option[Json] = None): JSONRPCMessage.Error =
     logger.debug(s"Protocol error (id=$id, code=$code): $message")
@@ -156,7 +152,11 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
 
-  private def serverCapabilities: ServerCapabilities = ServerCapabilities(
+  private val serverImplementation: Implementation = Implementation(server.name, server.version)
+  private val serverInfoJson: Json = serverImplementation.asJson
+  private val serverInfoMeta: Json = Json.obj(ProtocolMeta.ServerInfo -> serverInfoJson)
+
+  private val serverCapabilities: ServerCapabilities = ServerCapabilities(
     logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
     completions = Option.when(server.completion.isDefined)(Json.obj()),
     prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
@@ -165,28 +165,28 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
   )
 
+  private val discoverResult: DiscoverResult = DiscoverResult(
+    supportedVersions = ProtocolVersion.supported.map(_.name),
+    capabilities = serverCapabilities,
+    ttlMs = CacheHints.Default.ttlMs,
+    cacheScope = CacheHints.Default.cacheScope,
+    instructions = server.instructions,
+    _meta = Some(Map(ProtocolMeta.ServerInfo -> serverInfoJson))
+  )
+
   private def handleInitialize(params: Option[Json], id: RequestId): JSONRPCMessage.Response =
     val requested = params.flatMap(_.hcursor.downField("protocolVersion").as[String].toOption)
     val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.LatestLegacy)
     val result = InitializeResult(
       protocolVersion = negotiated.name,
       capabilities = serverCapabilities,
-      serverInfo = Implementation(server.name, server.version),
+      serverInfo = serverImplementation,
       instructions = server.instructions
     )
     JSONRPCMessage.Response(id = id, result = result.asJson)
 
-  // server/discover (2026-07-28): advertise supported versions, capabilities and identity without a handshake
   private def handleDiscover(id: RequestId): JSONRPCMessage.Response =
-    val result = DiscoverResult(
-      supportedVersions = ProtocolVersion.supported.map(_.name),
-      capabilities = serverCapabilities,
-      ttlMs = scala.concurrent.duration.Duration.Zero,
-      cacheScope = CacheScope.Private,
-      instructions = server.instructions,
-      _meta = Some(Map(ProtocolMeta.ServerInfo -> Implementation(server.name, server.version).asJson))
-    )
-    JSONRPCMessage.Response(id = id, result = result.asJson)
+    JSONRPCMessage.Response(id = id, result = discoverResult.asJson)
 
   private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
       MonadError[F]
