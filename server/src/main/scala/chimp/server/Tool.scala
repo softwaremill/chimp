@@ -109,6 +109,12 @@ case class Tool[I, O](
   ): ServerTool[I, O, F, StreamingServerContext[F]] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
 
+  /** Attaches effectful logic with access to a [[TaskContext]], so the tool can request input from the client while running as a task
+    * (Tasks extension). Register it with `addTaskTool`; such a tool is always answered with a task.
+    */
+  def taskLogic[F[_]](logic: (I, TaskContext[F], Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, TaskContext[F]] =
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
+
   /** Attaches synchronous logic that also receives the request headers. */
   def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult[O]): ServerTool[I, O, Identity, ServerContext[Identity]] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (i, _, headers) => logic(i, headers))
