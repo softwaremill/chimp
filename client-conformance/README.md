@@ -22,17 +22,18 @@ The sbt task pins the harness to the version set in `conformanceHarnessV` in [`b
 
 ## How to run
 
-Run the full requirement set:
+Run a full requirement set (CI runs both revisions):
 
 ```bash
 sbt 'clientConformance/conformance client --requirements 2025-11-25'
+sbt 'clientConformance/conformance client --requirements 2026-07-28'
 ```
 
-Run one scenario during development:
+Run one scenario during development (pass the spec version):
 
 ```bash
 sbt 'clientConformance/conformance client --scenario initialize --spec-version 2025-11-25'
-sbt 'clientConformance/conformance client --scenario tools_call --spec-version 2025-11-25'
+sbt 'clientConformance/conformance client --scenario tools_call --spec-version 2026-07-28'
 ```
 
 The sbt task downloads `@modelcontextprotocol/conformance` with npm; `npx` must be available on the PATH.
@@ -44,8 +45,10 @@ with `McpClient`, return exit code 0 on success. Once it passes, remove the entr
 
 ## The baseline file
 
-[`conformance-baseline.yml`](../conformance-baseline.yml) lists scenarios that are known to fail today. The harness
-uses it like this:
+Each spec revision keeps its own baseline, selected from the run's `--requirements` (or `--spec-version`):
+[`conformance-baseline-2025-11-25.yml`](../conformance-baseline-2025-11-25.yml) and
+[`conformance-baseline-2026-07-28.yml`](../conformance-baseline-2026-07-28.yml). Each file lists the scenarios (in its
+`server:` and `client:` sections) known to fail today. The harness uses the chosen file like this:
 
 | Scenario result | In baseline? | Exit code | Meaning                               |
 |-----------------|--------------|-----------|---------------------------------------|
