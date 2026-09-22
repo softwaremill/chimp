@@ -106,6 +106,86 @@ object SecuredMcpServer:
     NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
 ```
 
-The result of the security logic does not reach the tool logic. If a tool needs data from the caller, read the request headers with `handleWithHeaders` (or `serverLogic` with headers).
+The result of the security logic of `prependSecurity` does not reach the tool, prompt, or resource logic. Use `prependSecurity` if they do not need data from the caller. If they need such data, read the request headers with `handleWithHeaders` (or `serverLogic` with headers), or give them a principal, as below.
 
 For all the security inputs - API keys, basic and bearer authorization, OAuth2 flows - see the [Tapir endpoint security documentation](https://tapir.softwaremill.com/en/latest/endpoint/security.html).
+
+### Giving the security result to tools, prompts, and resources
+
+To validate the caller one time and give the result to the tool, prompt, or resource logic, use `serverSecurityLogic` (or `serverSecurityLogicPure`, if the logic needs no effect). It takes the same security input and error output as `prependSecurity`, and makes a principal - a value of your own type, such as the identity of the caller.
+
+The server gives the principal to the logic of each tool, prompt, or resource which you add to it. Define such handlers with `handleSecured`, or with `securedServerLogic` if the logic needs an effect. Handlers which do not need the principal keep their usual logic. The other builders of `McpServer` stay available, so you can configure the server before or after you add the security logic:
+
+```scala
+import chimp.protocol.ResourceContents
+import chimp.server.*
+import sttp.model.StatusCode
+import sttp.shared.Identity
+import sttp.tapir.*
+import sttp.tapir.server.netty.sync.NettySyncServer
+
+case class User(email: String)
+
+object McpServerWithPrincipal:
+  def main(args: Array[String]): Unit =
+    val echo = tool("echo").input[String].handle(message => ToolResult.text(message))
+    val whoAmI = tool("whoAmI").input[String].handleSecured[User]((_, user) => ToolResult.text(user.email))
+    val profile = resource("user://profile")
+      .handleSecured[User](user => Right(List(ResourceContents.Text(uri = "user://profile", text = user.email))))
+
+    val securedEndpoint = McpServer[Identity]()
+      .serverSecurityLogicPure(
+        auth.bearer[String](),
+        statusCode(StatusCode.Unauthorized).and(stringBody)
+      )(token => if token == "s3cret" then Right(User("employee@example.com")) else Left("Invalid token"))
+      .name("my-mcp-server")
+      .addTools(echo, whoAmI)
+      .addResource(profile)
+      .endpoint(List("mcp"))
+
+    NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
+```
+
+The security logic runs one time for each request, before the server handles the MCP message. If it gives a rejection, the server sends the error output and no tool, prompt, or resource logic runs. This is necessary if the client must get an HTTP status code, because a tool which rejects a call can only give a JSON-RPC error with status code 200.
+
+### Combining security with streaming
+
+`.streaming` on a secured server gives a `SecuredStreamingMcpServer`, which accepts streaming tools alongside the plain secured ones. Define such a tool with `securedStreamingServerLogic`, which gives both the principal and the `StreamingServerContext`:
+
+```scala
+import chimp.protocol.LoggingLevel
+import chimp.server.*
+import chimp.server.ox.OxServerHttpTransport
+import chimp.server.transport.SecuredServerStreamingHttpTransport
+import io.circe.Json
+import sttp.model.StatusCode
+import sttp.shared.Identity
+import sttp.tapir.*
+import sttp.tapir.server.netty.sync.NettySyncServer
+
+case class User(email: String)
+
+object McpServerWithPrincipalAndStreaming:
+  def main(args: Array[String]): Unit =
+    val whoAmI = tool("whoAmI")
+      .input[String]
+      .securedStreamingServerLogic[Identity, User]: (_, user, ctx, _) =>
+        ctx.log(LoggingLevel.Info, Json.fromString(s"called by ${user.email}"))
+        ToolResult.text(user.email)
+
+    val securedStreamingServer = McpServer[Identity]()
+      .serverSecurityLogicPure(
+        auth.bearer[String](),
+        statusCode(StatusCode.Unauthorized).and(stringBody)
+      )(token => if token == "s3cret" then Right(User("employee@example.com")) else Left("Invalid token"))
+      .streaming
+      .addStreamingTool(whoAmI)
+
+    // `OxServerHttpTransport` is one effect backend's streaming machinery; substitute your own (Pekko, ZIO, ...).
+    val backend = OxServerHttpTransport(List("mcp"))
+    val securedEndpoint = SecuredServerStreamingHttpTransport(List("mcp"), backend).serve(securedStreamingServer)
+
+    NettySyncServer().port(8080).addEndpoint(securedEndpoint).startAndWait()
+```
+
+`SecuredServerStreamingHttpTransport` takes an existing `ServerStreamingHttpTransport` as its source of streaming machinery, rather than extending it, so the same effect-specific backend instance - `OxServerHttpTransport`, `PekkoServerHttpTransport`, `ZioServerHttpTransport` - serves both a plain `StreamingMcpServer` and a `SecuredStreamingMcpServer`.
