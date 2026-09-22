@@ -4,4 +4,4 @@ addSbtPlugin("com.softwaremill.sbt-softwaremill" % "sbt-softwaremill-common" % s
 addSbtPlugin("com.softwaremill.sbt-softwaremill" % "sbt-softwaremill-publish" % sbtSoftwareMillVersion)
 addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.9.1")
 addSbtPlugin("io.spray" % "sbt-revolver" % "0.10.0")
-addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.4.2")
+addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.5.0")

@@ -42,6 +42,6 @@ abstract class McpClientHttpIntegrationSpec[F[_], B]
     toFuture(
       usingBackend: backend =>
         usingTransport(backend, mcpEverythingContainer.mcpUri): transport =>
-          McpClient(transport, clientInfo, ProtocolVersion.Latest).flatMap: client =>
+          McpClient(transport, clientInfo, ProtocolVersion.LatestLegacy).flatMap: client =>
             test(client).flatMap(assertion => client.close().map(_ => assertion))
     )

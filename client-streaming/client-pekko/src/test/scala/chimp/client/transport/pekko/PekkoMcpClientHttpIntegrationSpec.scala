@@ -22,5 +22,5 @@ class PekkoMcpClientHttpIntegrationSpec
   override def usingBidirectionalTransport[A](b: StreamBackend[Future, PekkoStreams], uri: Uri, timeout: FiniteDuration)(
       use: ClientBidirectionalTransport[Future] => Future[A]
   ): Future[A] =
-    val transport = PekkoClientHttpTransport(b, uri, ProtocolVersion.Latest, timeout)
+    val transport = PekkoClientHttpTransport(b, uri, ProtocolVersion.LatestLegacy, timeout)
     monad.ensure2(use(transport), transport.close())

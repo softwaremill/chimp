@@ -41,8 +41,10 @@ and what result shape it wants. Remove the corresponding entry from the baseline
 
 ## The baseline file
 
-[`conformance-baseline.yml`](../conformance-baseline.yml) lists scenarios that are known to fail today. The harness
-uses it like this:
+[`conformance-baseline.yml`](../conformance-baseline.yml) lists scenarios that are known to fail today. When a
+`conformance-baseline-<version>.yml` exists for the run's spec version (e.g.
+[`conformance-baseline-2026-07-28.yml`](../conformance-baseline-2026-07-28.yml) for `--requirements 2026-07-28`), the sbt
+task uses it instead — each spec revision keeps its own baseline. The harness uses the chosen file like this:
 
 | Scenario result | In baseline? | Exit code | Meaning                               |
 |-----------------|--------------|-----------|---------------------------------------|

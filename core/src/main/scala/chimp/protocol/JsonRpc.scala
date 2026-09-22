@@ -68,3 +68,4 @@ enum JSONRPCErrorCodes(val code: Int):
   case InvocationError extends JSONRPCErrorCodes(-32000)
   case ResourceNotFound extends JSONRPCErrorCodes(-32002)
   case MissingRequiredClientCapability extends JSONRPCErrorCodes(-32003)
+  case UnsupportedProtocolVersion extends JSONRPCErrorCodes(-32022)

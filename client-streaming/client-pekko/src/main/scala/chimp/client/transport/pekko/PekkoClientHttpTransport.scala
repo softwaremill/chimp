@@ -354,7 +354,7 @@ object PekkoClientHttpTransport:
   def apply(
       backend: StreamBackend[Future, PekkoStreams],
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest,
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       reconnectSettings: RestartSettings = defaultReconnectSettings,
       headers: Seq[Header] = Nil

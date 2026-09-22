@@ -145,7 +145,7 @@ object McpClient:
   def apply[F[_]](
       transport: ClientTransport[F],
       clientInfo: Implementation,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
   ): F[McpClient[F]] =
     McpClientImpl.create(transport, clientInfo, protocolVersion)
 
@@ -172,6 +172,6 @@ object McpClient:
       rootsHandler: Option[() => F[ListRootsResult]] = None,
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
-      protocolVersion: ProtocolVersion = ProtocolVersion.Latest
+      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
   ): F[BidirectionalMcpClient[F]] =
     McpClientImpl.createBidirectional(transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler)

@@ -20,4 +20,4 @@ class ZioMcpClientHttpIntegrationSpec extends McpClientStreamingHttpIntegrationS
   override def usingBidirectionalTransport[A](b: StreamBackend[Task, ZioStreams], uri: Uri, timeout: FiniteDuration)(
       use: ClientBidirectionalTransport[Task] => Task[A]
   ): Task[A] =
-    ZIO.scoped(ZioClientHttpTransport.scoped(b, uri, ProtocolVersion.Latest, timeout).flatMap(use))
+    ZIO.scoped(ZioClientHttpTransport.scoped(b, uri, ProtocolVersion.LatestLegacy, timeout).flatMap(use))
