@@ -6,6 +6,7 @@
   - `handle` — synchronous logic from the argument values to `GetPromptResult`.
   - `handleWithHeaders` — synchronous logic that also receives the request headers.
   - `serverLogic` — effectful logic, with the request headers.
+  - `handleSecured` (synchronous) or `securedServerLogic` (effectful) — logic that also receives the principal made by the server's security logic; usable only on a secured server — see [transport security](transport.md).
 - Register prompts with `.addPrompt` / `.addPrompts`.
 
 ```scala mdoc:compile-only

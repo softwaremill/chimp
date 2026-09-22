@@ -32,6 +32,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   private val promptsByName = server.prompts.map(prompt => prompt.definition.name -> prompt).toMap
   private val resourcesByUri = server.resources.map(resource => resource.definition.uri -> resource).toMap
   private val hasResources = server.resources.nonEmpty || server.resourceTemplates.nonEmpty
+  private val hasPrompts = server.prompts.nonEmpty
   private val toolDefinitions = server.tools.map(toolToDefinition)
 
   private def toJsonSchema(toolSchema: ToolSchema): Json = toolSchema match
@@ -89,15 +90,15 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
               JSONRPCMessage.Response(id = id, result = ListResourceTemplatesResult(server.resourceTemplates.map(_.definition)).asJson)
             ).unit
           case "resources/read" if hasResources =>
-            handleResourcesRead(params, id, headers).map(jsonResponse)
+            handleResourcesRead(params, id, headers, makeContext).map(jsonResponse)
           case "resources/subscribe" if server.subscriptions.isDefined =>
             handleSubscribe(params, id, subscribe = true).map(jsonResponse)
           case "resources/unsubscribe" if server.subscriptions.isDefined =>
             handleSubscribe(params, id, subscribe = false).map(jsonResponse)
-          case "prompts/list" if server.prompts.nonEmpty =>
+          case "prompts/list" if hasPrompts =>
             jsonResponse(JSONRPCMessage.Response(id = id, result = ListPromptsResult(server.prompts.map(_.definition)).asJson)).unit
-          case "prompts/get" if server.prompts.nonEmpty =>
-            handlePromptsGet(params, id, headers).map(jsonResponse)
+          case "prompts/get" if hasPrompts =>
+            handlePromptsGet(params, id, headers, makeContext).map(jsonResponse)
           case "completion/complete" if server.completion.isDefined =>
             handleComplete(params, id).map(jsonResponse)
           case "logging/setLevel" if server.loggingLevel.isDefined =>
@@ -123,7 +124,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val capabilities = ServerCapabilities(
       logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
       completions = Option.when(server.completion.isDefined)(Json.obj()),
-      prompts = Option.when(server.prompts.nonEmpty)(ServerPromptsCapability(listChanged = Some(false))),
+      prompts = Option.when(hasPrompts)(ServerPromptsCapability(listChanged = Some(false))),
       resources =
         Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
       tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
@@ -178,17 +179,22 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       ).asJson
     )
 
-  private def handleResourcesRead(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =
+  private def handleResourcesRead(
+      params: Option[Json],
+      id: RequestId,
+      headers: Seq[Header],
+      makeContext: Option[ProgressToken] => C
+  )(using MonadError[F]): F[JSONRPCMessage] =
     decodeParams[ReadResourceParams](params, id): params =>
+      val context = makeContext(None)
       resourcesByUri.get(params.uri) match
-        case Some(resource) => resource.read(headers).map(resourceReadResponse(id, params.uri))
+        case Some(resource) => resource.read(context, headers).map(resourceReadResponse(id, params.uri))
         case None           =>
-          val templateMatch = server.resourceTemplates.iterator
+          server.resourceTemplates.iterator
             .map(template => (template, template.matcher.matchUri(params.uri)))
-            .collectFirst { case (template, Some(vars)) => (template, vars) }
-          templateMatch match
-            case Some((template, vars)) => template.read(vars, params.uri, headers).map(resourceReadResponse(id, params.uri))
-            case None                   =>
+            .collectFirst { case (template, Some(vars)) => template.read(vars, params.uri, context, headers) } match
+            case Some(result) => result.map(resourceReadResponse(id, params.uri))
+            case None         =>
               protocolError(
                 id,
                 JSONRPCErrorCodes.ResourceNotFound.code,
@@ -221,13 +227,18 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   private def emptyResult(id: RequestId): JSONRPCMessage = JSONRPCMessage.Response(id = id, result = Json.obj())
 
-  private def handlePromptsGet(params: Option[Json], id: RequestId, headers: Seq[Header])(using MonadError[F]): F[JSONRPCMessage] =
+  private def handlePromptsGet(
+      params: Option[Json],
+      id: RequestId,
+      headers: Seq[Header],
+      makeContext: Option[ProgressToken] => C
+  )(using MonadError[F]): F[JSONRPCMessage] =
     decodeParams[GetPromptParams](params, id): params =>
       promptsByName.get(params.name) match
         case Some(prompt) =>
           prompt
-            .logic(params.arguments.getOrElse(Map.empty), headers)
-            .map(result => JSONRPCMessage.Response(id = id, result = result.asJson))
+            .logic(params.arguments.getOrElse(Map.empty), makeContext(None), headers)
+            .map(promptResult => JSONRPCMessage.Response(id = id, result = promptResult.asJson))
         case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown prompt: ${params.name}").unit
 
   private def handleComplete(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
