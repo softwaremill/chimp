@@ -113,6 +113,12 @@ trait BidirectionalMcpClient[F[_]] extends McpClient[F]:
   /** Registers a listener for notifications pushed by the server (e.g. resource updates, tool/prompt list changes, log messages). */
   def onServerNotification(listener: ServerNotificationListener[F]): F[Unit]
 
+  /** Removes a listener previously registered with [[onServerNotification]]. Listeners are compared by reference; removing a listener that
+    * was not registered has no effect. Used by the effect-specific `serverNotifications` streams to release their listener when the stream
+    * finishes.
+    */
+  def removeServerNotification(listener: ServerNotificationListener[F]): F[Unit]
+
 object McpClient:
   /** Creates an unidirectional [[McpClient]] over the given [[chimp.client.transport.ClientTransport]] and performs the initialization
     * handshake with the server.
