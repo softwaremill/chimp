@@ -31,11 +31,11 @@ lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
 lazy val root = (project in file("."))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     publishArtifact := false,
     name := "chimp",
-    updateDocs := Def.taskDyn {
+    updateDocs := Def.uncached(Def.taskDyn {
       val log = sLog.value
       val org = organization.value
       val releaseVersion = version.value
@@ -46,7 +46,7 @@ lazy val root = (project in file("."))
         (docs / mdoc).toTask("").value
         files ++ Seq(file("generated-docs/out"))
       }
-    }.value
+    }.value)
   )
   .aggregate(
     core,
@@ -66,7 +66,7 @@ lazy val root = (project in file("."))
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
 lazy val core: Project = (project in file("core"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-core",
     libraryDependencies ++= Seq(
@@ -80,7 +80,7 @@ lazy val core: Project = (project in file("core"))
   )
 
 lazy val server: Project = (project in file("server"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-server",
     libraryDependencies ++= Seq(
@@ -96,7 +96,7 @@ lazy val server: Project = (project in file("server"))
   .dependsOn(core, client % "test->compile")
 
 lazy val serverZio: Project = (project in file("server-streaming/server-zio"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-server-zio",
     libraryDependencies ++= Seq(
@@ -111,7 +111,7 @@ lazy val serverZio: Project = (project in file("server-streaming/server-zio"))
   .dependsOn(server % "compile->compile;test->test", clientZio % "test->compile")
 
 lazy val serverOx: Project = (project in file("server-streaming/server-ox"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-server-ox",
     libraryDependencies ++= Seq(
@@ -123,7 +123,7 @@ lazy val serverOx: Project = (project in file("server-streaming/server-ox"))
   .dependsOn(server % "compile->compile;test->test", clientOx % "test->compile")
 
 lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-server-pekko",
     libraryDependencies ++= Seq(
@@ -135,7 +135,7 @@ lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"
   .dependsOn(server % "compile->compile;test->test", clientPekko % "test->compile")
 
 lazy val client: Project = (project in file("client"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-client",
     libraryDependencies ++= Seq(
@@ -149,7 +149,7 @@ lazy val client: Project = (project in file("client"))
   .dependsOn(core)
 
 lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-client-zio",
     libraryDependencies ++= Seq(
@@ -163,7 +163,7 @@ lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
   .dependsOn(client % "compile->compile;test->test")
 
 lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-client-ox",
     libraryDependencies ++= Seq(
@@ -175,7 +175,7 @@ lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
   .dependsOn(client % "compile->compile;test->test")
 
 lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     name := "chimp-client-pekko",
     libraryDependencies ++= Seq(
@@ -188,7 +188,7 @@ lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"
   .dependsOn(client % "compile->compile;test->test")
 
 lazy val examples = (project in file("examples"))
-  .settings(commonSettings: _*)
+  .settings(commonSettings*)
   .settings(
     publishArtifact := false,
     name := "examples",
@@ -198,7 +198,7 @@ lazy val examples = (project in file("examples"))
       "com.softwaremill.sttp.tapir" %% "tapir-zio-http-server" % tapirV,
       "ch.qos.logback" % "logback-classic" % logbackV
     ),
-    verifyExamplesCompileUsingScalaCli := VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value)
+    verifyExamplesCompileUsingScalaCli := Def.uncached(VerifyExamplesCompileUsingScalaCli(sLog.value, sourceDirectory.value))
   )
   .dependsOn(server, serverOx, client, clientOx)
 
@@ -206,13 +206,13 @@ import sbtassembly.AssemblyPlugin.autoImport.*
 
 lazy val assemblySettings = Seq(
   assembly / assemblyMergeStrategy := {
-    case PathList("META-INF", "MANIFEST.MF")     => MergeStrategy.discard
-    case PathList("META-INF", "INDEX.LIST")      => MergeStrategy.discard
-    case PathList("META-INF", "DEPENDENCIES")    => MergeStrategy.discard
-    case PathList("META-INF", "services", _ @_*) => MergeStrategy.concat
-    case PathList("META-INF", xs @ _*) if xs.lastOption.exists(s => s.endsWith(".SF") || s.endsWith(".DSA") || s.endsWith(".RSA")) =>
+    case PathList("META-INF", "MANIFEST.MF")  => MergeStrategy.discard
+    case PathList("META-INF", "INDEX.LIST")   => MergeStrategy.discard
+    case PathList("META-INF", "DEPENDENCIES") => MergeStrategy.discard
+    case PathList("META-INF", "services", _*) => MergeStrategy.concat
+    case PathList("META-INF", xs*) if xs.lastOption.exists(s => s.endsWith(".SF") || s.endsWith(".DSA") || s.endsWith(".RSA")) =>
       MergeStrategy.discard
-    case PathList("META-INF", _ @_*)   => MergeStrategy.first
+    case PathList("META-INF", _*)      => MergeStrategy.first
     case PathList("module-info.class") => MergeStrategy.discard
     case _                             => MergeStrategy.first
   }
@@ -220,8 +220,8 @@ lazy val assemblySettings = Seq(
 
 lazy val serverConformance = (project in file("server-conformance"))
   .enablePlugins(AssemblyPlugin)
-  .settings(commonSettings: _*)
-  .settings(assemblySettings: _*)
+  .settings(commonSettings*)
+  .settings(assemblySettings*)
   .settings(
     publishArtifact := false,
     name := "server-conformance",
@@ -236,7 +236,7 @@ lazy val serverConformance = (project in file("server-conformance"))
 
       import scala.sys.process.*
       val args = spaceDelimited("<args>").parsed.toList
-      val jar = assembly.value
+      val jar = fileConverter.value.toPath(assembly.value).toFile
       val rootDir = (LocalRootProject / baseDirectory).value
       val baseline = (rootDir / "conformance-baseline.yml").getAbsolutePath
       val log = streams.value.log
@@ -256,7 +256,7 @@ lazy val serverConformance = (project in file("server-conformance"))
             more = reader.readLine()
           }
         } catch {
-          case t: Throwable => urlPromise.tryFailure(t)
+          case t: Throwable => urlPromise.tryFailure(t): Unit
         }
       })
       readerThread.setDaemon(true)
@@ -294,8 +294,8 @@ lazy val serverConformance = (project in file("server-conformance"))
 
 lazy val clientConformance = (project in file("client-conformance"))
   .enablePlugins(AssemblyPlugin)
-  .settings(commonSettings: _*)
-  .settings(assemblySettings: _*)
+  .settings(commonSettings*)
+  .settings(assemblySettings*)
   .settings(
     publishArtifact := false,
     name := "client-conformance",
@@ -309,7 +309,7 @@ lazy val clientConformance = (project in file("client-conformance"))
 
       import scala.sys.process.*
       val args = spaceDelimited("<args>").parsed.toList
-      val jar = assembly.value
+      val jar = fileConverter.value.toPath(assembly.value).toFile
       val baseDir = baseDirectory.value
       val rootDir = (LocalRootProject / baseDirectory).value
       val wrapper = (baseDir / "bin" / "chimp-conformance-client").getAbsolutePath
