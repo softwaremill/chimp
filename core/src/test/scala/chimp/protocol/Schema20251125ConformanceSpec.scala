@@ -205,16 +205,14 @@ class Schema20251125ConformanceSpec extends SchemaConformance:
   // --- Elicitation ---
 
   it should "produce ElicitRequestParams (form variant) that match the spec schema" in:
-    validate(
-      "ElicitRequestParams",
-      ElicitParams(
-        message = "what is your name?",
-        requestedSchema = io.circe.Json.obj(
-          "type" -> "object".asJson,
-          "properties" -> io.circe.Json.obj("name" -> io.circe.Json.obj("type" -> "string".asJson))
-        )
+    val params: ElicitParams = ElicitParams.Form(
+      message = "what is your name?",
+      requestedSchema = io.circe.Json.obj(
+        "type" -> "object".asJson,
+        "properties" -> io.circe.Json.obj("name" -> io.circe.Json.obj("type" -> "string".asJson))
       )
     )
+    validate("ElicitRequestParams", params)
 
   it should "produce ElicitResult that match the spec schema" in:
     validate(

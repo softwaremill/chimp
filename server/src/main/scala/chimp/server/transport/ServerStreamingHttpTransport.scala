@@ -45,10 +45,15 @@ abstract class ServerStreamingHttpTransport[F[_], S](path: List[String]) extends
         val origin = headers.find(_.name.equalsIgnoreCase(HeaderNames.Origin)).map(_.value)
         if !server.originCheck.validate(host, origin) then me.unit(Right((StatusCode.Forbidden, emptyStream)))
         else
-          eventStream { sink =>
-            val makeContext: Option[ProgressToken] => StreamingServerContext[F] =
-              token => SinkStreamingServerContext(sink, token)
-            handler.handleJsonRpc(json, headers, makeContext).map(_.body)
-          }.map(events => Right((StatusCode.Ok, events)))
+          handler.validateRequest(json, headers) match
+            // a modern validation error is an immediate plain error carrying its own HTTP status, not a 200 SSE stream
+            case Some(rejection) =>
+              eventStream(_ => me.unit(rejection.body)).map(events => Right((rejection.statusCode, events)))
+            case None =>
+              eventStream { sink =>
+                val makeContext: Option[ProgressToken] => StreamingServerContext[F] =
+                  token => SinkStreamingServerContext(sink, token)
+                handler.handleJsonRpc(json, headers, makeContext).map(_.body)
+              }.map(events => Right((StatusCode.Ok, events)))
       }
     )

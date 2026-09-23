@@ -34,14 +34,14 @@ import sttp.shared.Identity
     println("\n--- calling echo ---")
     val echoResult = client.callTool("echo", Json.obj("message" -> Json.fromString("hello chimp")))
     echoResult.content.foreach:
-      case ToolContent.Text(_, text) => println(text)
-      case other                     => println(s"(non-text content: $other)")
+      case ToolContent.Text(_, text, _, _) => println(text)
+      case other                           => println(s"(non-text content: $other)")
 
     println("\n--- calling get-sum ---")
     val sumResult = client.callTool("get-sum", Json.obj("a" -> Json.fromInt(7), "b" -> Json.fromInt(35)))
     sumResult.content.foreach:
-      case ToolContent.Text(_, text) => println(text)
-      case other                     => println(s"(non-text content: $other)")
+      case ToolContent.Text(_, text, _, _) => println(text)
+      case other                           => println(s"(non-text content: $other)")
   finally
     client.close()
     backend.close()
