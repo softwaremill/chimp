@@ -88,7 +88,12 @@ final case class ListResourceTemplatesResult(
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 
-final case class ReadResourceParams(uri: String, _meta: Option[Map[String, Json]] = None) derives Codec
+final case class ReadResourceParams(
+    uri: String,
+    inputResponses: Option[Map[String, InputResponse]] = None,
+    requestState: Option[String] = None,
+    _meta: Option[Map[String, Json]] = None
+) derives Codec
 final case class ReadResourceRequest(method: String = "resources/read", params: ReadResourceParams) derives Codec
 final case class ReadResourceResult(contents: List[ResourceContents], _meta: Option[Map[String, Json]] = None) derives Codec
 

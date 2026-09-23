@@ -129,3 +129,56 @@ class Schema20260728ConformanceSpec extends SchemaConformance:
   it should "produce TextContent with annotations that matches the spec schema" in:
     val text: ToolContent = ToolContent.Text(text = "hi", annotations = Some(Annotations(audience = Some(List(Role.Assistant)))))
     validate("TextContent", text)
+
+  // T5: MRTR / input-required types
+  private val sampleInputResponses: Map[String, InputResponse] =
+    Map("approve" -> InputResponse.Elicit(ElicitResult(action = ElicitAction.Accept, content = Some(Map("ok" -> true.asJson)))))
+  private val requestMeta: Map[String, io.circe.Json] =
+    Map(ProtocolMeta.ProtocolVersionKey -> "2026-07-28".asJson, ProtocolMeta.ClientCapabilities -> io.circe.Json.obj())
+
+  it should "produce ElicitRequestParams (url variant) that match the spec schema" in:
+    val params: ElicitParams = ElicitParams.Url(message = "authorize here", url = "https://example.com/consent")
+    validate("ElicitRequestParams", params)
+
+  it should "produce an InputRequiredResult that matches the spec schema" in:
+    val request: InputRequest = InputRequest.Elicit(
+      ElicitRequest(params =
+        ElicitParams.Form(
+          message = "your name?",
+          requestedSchema = io.circe.Json.obj("type" -> "object".asJson, "properties" -> io.circe.Json.obj())
+        )
+      )
+    )
+    validate(
+      "InputRequiredResult",
+      InputRequiredResult(inputRequests = Map("name" -> request), requestState = Some("state-1"))
+    )
+
+  it should "produce CallToolRequestParams carrying inputResponses and requestState that match the spec schema" in:
+    validate(
+      "CallToolRequestParams",
+      CallToolParams(
+        name = "review",
+        arguments = io.circe.Json.obj(),
+        inputResponses = Some(sampleInputResponses),
+        requestState = Some("state-1"),
+        _meta = Some(requestMeta)
+      )
+    )
+
+  it should "produce GetPromptRequestParams carrying inputResponses that match the spec schema" in:
+    validate(
+      "GetPromptRequestParams",
+      GetPromptParams(name = "greet", inputResponses = Some(sampleInputResponses), requestState = Some("s"), _meta = Some(requestMeta))
+    )
+
+  it should "produce ReadResourceRequestParams carrying inputResponses that match the spec schema" in:
+    validate(
+      "ReadResourceRequestParams",
+      ReadResourceParams(
+        uri = "file:///x",
+        inputResponses = Some(sampleInputResponses),
+        requestState = Some("s"),
+        _meta = Some(requestMeta)
+      )
+    )
