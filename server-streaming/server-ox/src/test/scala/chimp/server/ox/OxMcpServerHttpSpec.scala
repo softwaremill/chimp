@@ -45,7 +45,7 @@ class OxMcpServerHttpSpec
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, backend, ox) =>
       given Ox = ox
       val transport =
-        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.Latest, ClientTransport.defaultTimeout)
+        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.LatestLegacy, ClientTransport.defaultTimeout)
       try test(McpClient.bidirectional(transport, clientInfo))
       finally transport.close()
 
@@ -72,7 +72,7 @@ class OxMcpServerHttpSpec
       val transport = OxClientHttpTransport(
         backend,
         uri"http://localhost:$port/mcp",
-        ProtocolVersion.Latest,
+        ProtocolVersion.LatestLegacy,
         ClientTransport.defaultTimeout,
         headers = List(Header.authorization("Bearer", token))
       )
