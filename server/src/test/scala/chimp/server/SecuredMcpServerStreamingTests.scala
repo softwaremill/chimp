@@ -59,6 +59,20 @@ trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers w
       .streaming
       .addStreamingTool(whoAmITool)
 
+  private def whoAmIPrompt: ServerPrompt[F, SecuredServerContext[F, User]] =
+    prompt("whoAmI")
+      .description("Greets the caller")
+      .securedServerLogic[F, User]((_, user, _) =>
+        monad.unit(GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = user.email)))))
+      )
+
+  private def securedStreamingServerWithPrompt: SecuredStreamingMcpServer[F, String, String, User] =
+    McpServer[F]()
+      .serverSecurityLogicPure(auth.bearer[String](), statusCode(StatusCode.Unauthorized).and(stringBody))(securityLogic)
+      .streaming
+      .addStreamingTool(whoAmITool)
+      .addPrompt(whoAmIPrompt)
+
   private def assertWhoAmIDeliversPrincipal(client: BidirectionalMcpClient[F]): F[Assertion] =
     val messages = ConcurrentLinkedQueue[Json]()
     val listener: ServerNotification => F[Unit] = {
@@ -78,6 +92,12 @@ trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers w
 
   it should "give the principal to a streaming tool when the security logic is effectful" in
     withSecuredStreamingServer(securedStreamingServerWithEffectfulSecurityLogic)(assertWhoAmIDeliversPrincipal)
+
+  it should "give the principal to the prompt logic" in
+    withSecuredStreamingServer(securedStreamingServerWithPrompt): client =>
+      client
+        .getPrompt("whoAmI")
+        .map(_.messages shouldBe List(PromptMessage(Role.User, ToolContent.Text(text = "employee@example.com"))))
 
   it should "reject an invalid security input with the error output, before any tool logic runs" in
     recoverToExceptionIf[McpAuthorizationException] {
