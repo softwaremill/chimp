@@ -17,17 +17,18 @@ The sbt task pins the harness to the version set in `conformanceHarnessV` in [`b
 
 ## How to run
 
-Run the full requirement set:
+Run a full requirement set (CI runs both revisions):
 
 ```bash
 sbt 'serverConformance/conformance server --requirements 2025-11-25'
+sbt 'serverConformance/conformance server --requirements 2026-07-28'
 ```
 
-Run one scenario during development:
+Run one scenario during development (pass the spec version):
 
 ```bash
 sbt 'serverConformance/conformance server --scenario ping --spec-version 2025-11-25'
-sbt 'serverConformance/conformance server --scenario server-initialize --spec-version 2025-11-25'
+sbt 'serverConformance/conformance server --scenario server-discover --spec-version 2026-07-28'
 ```
 
 The sbt task downloads `@modelcontextprotocol/conformance` with npm; `npx` must be available on the PATH.
@@ -41,10 +42,10 @@ and what result shape it wants. Remove the corresponding entry from the baseline
 
 ## The baseline file
 
-[`conformance-baseline.yml`](../conformance-baseline.yml) lists scenarios that are known to fail today. When a
-`conformance-baseline-<version>.yml` exists for the run's spec version (e.g.
-[`conformance-baseline-2026-07-28.yml`](../conformance-baseline-2026-07-28.yml) for `--requirements 2026-07-28`), the sbt
-task uses it instead — each spec revision keeps its own baseline. The harness uses the chosen file like this:
+Each spec revision keeps its own baseline, selected from the run's `--requirements` (or `--spec-version`):
+[`conformance-baseline-2025-11-25.yml`](../conformance-baseline-2025-11-25.yml) and
+[`conformance-baseline-2026-07-28.yml`](../conformance-baseline-2026-07-28.yml). Each file lists the scenarios (in its
+`server:` and `client:` sections) known to fail today. The harness uses the chosen file like this:
 
 | Scenario result | In baseline? | Exit code | Meaning                               |
 |-----------------|--------------|-----------|---------------------------------------|
