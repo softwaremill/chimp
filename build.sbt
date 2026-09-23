@@ -18,20 +18,20 @@ val conformanceHarnessV = "0.2.0-alpha.11"
 
 lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
 
-lazy val commonSettings = commonSmlBuildSettings ++ ossPublishSettings ++ Seq(
-  organization := "com.softwaremill.chimp",
-  scalaVersion := "3.3.8",
-  Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s",
-  Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s",
-  Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration"),
-  Test / parallelExecution := false,
-  scalacOptions ++= Seq("-Wunused:all", "-Werror", "-Yfuture-lazy-vals", "-java-output-version", "11")
-)
+commonSmlBuildSettings
+ossPublishSettings
+
+organization := "com.softwaremill.chimp"
+scalaVersion := "3.3.8"
+Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s"
+Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s"
+Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration")
+Test / parallelExecution := false
+scalacOptions ++= Seq("-Wunused:all", "-Werror", "-Yfuture-lazy-vals", "-java-output-version", "11")
 
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
 lazy val root = (project in file("."))
-  .settings(commonSettings*)
   .settings(
     publishArtifact := false,
     name := "chimp",
@@ -66,7 +66,6 @@ lazy val root = (project in file("."))
 val conformance = inputKey[Unit]("Run the MCP conformance harness via npx, extra args are passed through")
 
 lazy val core: Project = (project in file("core"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-core",
     libraryDependencies ++= Seq(
@@ -80,7 +79,6 @@ lazy val core: Project = (project in file("core"))
   )
 
 lazy val server: Project = (project in file("server"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-server",
     libraryDependencies ++= Seq(
@@ -96,7 +94,6 @@ lazy val server: Project = (project in file("server"))
   .dependsOn(core, client % "test->compile")
 
 lazy val serverZio: Project = (project in file("server-streaming/server-zio"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-server-zio",
     libraryDependencies ++= Seq(
@@ -111,7 +108,6 @@ lazy val serverZio: Project = (project in file("server-streaming/server-zio"))
   .dependsOn(server % "compile->compile;test->test", clientZio % "test->compile")
 
 lazy val serverOx: Project = (project in file("server-streaming/server-ox"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-server-ox",
     libraryDependencies ++= Seq(
@@ -123,7 +119,6 @@ lazy val serverOx: Project = (project in file("server-streaming/server-ox"))
   .dependsOn(server % "compile->compile;test->test", clientOx % "test->compile")
 
 lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-server-pekko",
     libraryDependencies ++= Seq(
@@ -135,7 +130,6 @@ lazy val serverPekko: Project = (project in file("server-streaming/server-pekko"
   .dependsOn(server % "compile->compile;test->test", clientPekko % "test->compile")
 
 lazy val client: Project = (project in file("client"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-client",
     libraryDependencies ++= Seq(
@@ -149,7 +143,6 @@ lazy val client: Project = (project in file("client"))
   .dependsOn(core)
 
 lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-client-zio",
     libraryDependencies ++= Seq(
@@ -163,7 +156,6 @@ lazy val clientZio: Project = (project in file("client-streaming/client-zio"))
   .dependsOn(client % "compile->compile;test->test")
 
 lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-client-ox",
     libraryDependencies ++= Seq(
@@ -175,7 +167,6 @@ lazy val clientOx: Project = (project in file("client-streaming/client-ox"))
   .dependsOn(client % "compile->compile;test->test")
 
 lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"))
-  .settings(commonSettings*)
   .settings(
     name := "chimp-client-pekko",
     libraryDependencies ++= Seq(
@@ -188,7 +179,6 @@ lazy val clientPekko: Project = (project in file("client-streaming/client-pekko"
   .dependsOn(client % "compile->compile;test->test")
 
 lazy val examples = (project in file("examples"))
-  .settings(commonSettings*)
   .settings(
     publishArtifact := false,
     name := "examples",
@@ -220,7 +210,6 @@ lazy val assemblySettings = Seq(
 
 lazy val serverConformance = (project in file("server-conformance"))
   .enablePlugins(AssemblyPlugin)
-  .settings(commonSettings*)
   .settings(assemblySettings*)
   .settings(
     publishArtifact := false,
@@ -294,7 +283,6 @@ lazy val serverConformance = (project in file("server-conformance"))
 
 lazy val clientConformance = (project in file("client-conformance"))
   .enablePlugins(AssemblyPlugin)
-  .settings(commonSettings*)
   .settings(assemblySettings*)
   .settings(
     publishArtifact := false,
@@ -327,7 +315,6 @@ compileDocs :=
 
 lazy val docs: Project = (project in file("generated-docs"))
   .enablePlugins(MdocPlugin)
-  .settings(commonSettings)
   .settings(
     mdocIn := file("docs"),
     moduleName := "chimp-docs",
