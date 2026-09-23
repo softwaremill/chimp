@@ -48,6 +48,8 @@ jobs:
         run: sbt -v test
       - name: Client conformance tests (2025-11-25)
         run: sbt -v "clientConformance/conformance client --requirements 2025-11-25"
+      - name: Client conformance tests (2026-07-28)
+        run: sbt -v "clientConformance/conformance client --requirements 2026-07-28"
       - name: Server conformance tests (2025-11-25)
         run: sbt -v "serverConformance/conformance server --requirements 2025-11-25"
       - name: Server conformance tests (2026-07-28)

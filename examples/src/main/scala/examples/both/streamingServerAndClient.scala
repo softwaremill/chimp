@@ -43,7 +43,7 @@ case class NoInput() derives Codec, Schema
           case ServerNotification.LoggingMessage(params) => println(s"notification: ${params.data}")
           case _                                         => ()
         val result = client.callTool("noisy", Json.obj())
-        result.content.collect { case ToolContent.Text(_, text) => text }.foreach(text => println(s"result: $text"))
+        result.content.collect { case ToolContent.Text(_, text, _, _) => text }.foreach(text => println(s"result: $text"))
         client.close()
       finally backend.close()
     finally binding.stop()
