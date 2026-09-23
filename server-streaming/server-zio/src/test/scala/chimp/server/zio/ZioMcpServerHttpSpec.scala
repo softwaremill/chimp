@@ -30,7 +30,7 @@ class ZioMcpServerHttpSpec extends McpServerTests[Task] with McpServerStreamingT
           port <- Server.install(routes)
           result <- HttpClientZioBackend().flatMap: backend =>
             ZioClientHttpTransport
-              .scoped(backend, uri"http://localhost:$port/mcp", ProtocolVersion.Latest, ClientTransport.defaultTimeout)
+              .scoped(backend, uri"http://localhost:$port/mcp", ProtocolVersion.LatestLegacy, ClientTransport.defaultTimeout)
               .flatMap(transport => McpClient.bidirectional(transport, clientInfo))
               .flatMap(client => test(client))
               .ensuring(backend.close().ignore)

@@ -34,7 +34,7 @@ class OxMcpServerHttpSpec extends McpServerTests[Identity] with McpServerStreami
               OxClientHttpTransport(
                 backend,
                 uri"http://localhost:${binding.port}/mcp",
-                ProtocolVersion.Latest,
+                ProtocolVersion.LatestLegacy,
                 ClientTransport.defaultTimeout
               )
             try test(McpClient.bidirectional(transport, clientInfo))

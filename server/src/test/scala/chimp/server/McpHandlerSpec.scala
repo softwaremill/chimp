@@ -83,7 +83,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   private def extractJsonFromResponse(response: McpResponse): Json = response match
     case McpResponse.JsonResponse(json)  => json
-    case McpResponse.EmptyAcceptResponse => fail("Expected JsonResponse but got EmptyAcceptResponse")
+    case McpResponse.JsonError(_, json)  => json
+    case McpResponse.EmptyAcceptResponse => fail("Expected a body but got EmptyAcceptResponse")
 
   "McpHandler" should "respond to initialize" in:
     val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("1"))
@@ -126,12 +127,48 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
       case _ => fail("Expected Error")
 
   it should "process a request declaring a supported modern protocol version" in:
-    val params = Json.obj("_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28")))
+    val params = Json.obj(
+      "_meta" -> Json.obj(
+        ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"),
+        ProtocolMeta.ClientCapabilities -> Json.obj()
+      )
+    )
     val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("m"))
     val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
     respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
       case Response(_, _, result) => result.as[ListToolsResponse].isRight shouldBe true
       case _                      => fail("Expected Response")
+
+  it should "reject a modern request whose _meta omits clientCapabilities with -32602 and HTTP 400" in:
+    val params = Json.obj("_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28")))
+    val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("mc"))
+    val response = handler.handleJsonRpc(req.asJson, Seq.empty)
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) => err.code shouldBe JSONRPCErrorCodes.InvalidParams.code
+      case _                => fail("Expected Error")
+
+  it should "reject a modern request with a header/_meta version mismatch with -32020 and HTTP 400" in:
+    val params = Json.obj(
+      "_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> Json.obj())
+    )
+    val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("hm"))
+    val response = handler.handleJsonRpc(req.asJson, Seq(Header(ProtocolMeta.ProtocolVersionHeader, "2025-11-25")))
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) => err.code shouldBe JSONRPCErrorCodes.HeaderMismatch.code
+      case _                => fail("Expected Error")
+
+  it should "reject a modern removed method (initialize) with -32601 and HTTP 404" in:
+    val params = Json.obj(
+      "_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> Json.obj())
+    )
+    val req: JSONRPCMessage = Request(method = "initialize", params = Some(params), id = RequestId("ri"))
+    val response = handler.handleJsonRpc(req.asJson, Seq.empty)
+    response.statusCode shouldBe sttp.model.StatusCode.NotFound
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) => err.code shouldBe JSONRPCErrorCodes.MethodNotFound.code
+      case _                => fail("Expected Error")
 
   it should "serve a classic initialize with no modern protocol version rather than rejecting it with -32022" in:
     val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("legacy-init"))
