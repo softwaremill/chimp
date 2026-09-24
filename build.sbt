@@ -16,7 +16,8 @@ val testcontainersScalaV = "0.41.8"
 val pekkoV = "1.7.0"
 val conformanceHarnessV = "0.2.0-alpha.11"
 
-lazy val verifyExamplesCompileUsingScalaCli = taskKey[Unit]("Verify that each example compiles using Scala CLI")
+lazy val verifyExamplesCompileUsingScalaCli: TaskKey[Unit] = taskKey[Unit]("Verify that each example compiles using Scala CLI")
+lazy val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
 
 commonSmlBuildSettings
 ossPublishSettings
@@ -309,8 +310,6 @@ lazy val clientConformance = (project in file("client-conformance"))
     }
   )
   .dependsOn(clientOx)
-
-lazy val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
 
 lazy val docs: Project = (project in file("generated-docs"))
   .enablePlugins(MdocPlugin)
