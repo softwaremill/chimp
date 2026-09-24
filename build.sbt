@@ -46,7 +46,8 @@ lazy val root = (project in file("."))
         (docs / mdoc).toTask("").value
         files ++ Seq(file("generated-docs/out"))
       }
-    }.value)
+    }.value),
+    compileDocs := (docs / mdoc).toTask(" --out target/chimp-docs").value
   )
   .aggregate(
     core,
@@ -309,9 +310,7 @@ lazy val clientConformance = (project in file("client-conformance"))
   )
   .dependsOn(clientOx)
 
-val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
-compileDocs :=
-  (docs / mdoc).toTask(" --out target/chimp-docs").value
+lazy val compileDocs: TaskKey[Unit] = taskKey[Unit]("Compiles docs module throwing away its output")
 
 lazy val docs: Project = (project in file("generated-docs"))
   .enablePlugins(MdocPlugin)
