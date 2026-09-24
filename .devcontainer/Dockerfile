@@ -7,7 +7,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install sbt
-RUN curl -fL "https://github.com/sbt/sbt/releases/download/v1.12.0/sbt-1.12.0.tgz" | tar xz -C /tmp && \
+RUN curl -fL "https://github.com/sbt/sbt/releases/download/v2.0.9/sbt-2.0.9.tgz" | tar xz -C /tmp && \
     mv /tmp/sbt/bin/sbt /usr/local/bin/ && \
     mv /tmp/sbt/bin/sbt-launch.jar /usr/local/bin/ && \
     chmod +x /usr/local/bin/sbt && \
