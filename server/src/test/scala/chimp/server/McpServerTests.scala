@@ -74,8 +74,8 @@ trait McpServerTests[F[_]] extends AsyncFlatSpec with Matchers:
       .getPrompt("greet", Map("name" -> "World"))
       .map: result =>
         result.messages.head.content match
-          case ToolContent.Text(_, text) => text should include("World")
-          case other                     => fail(s"expected text content, got $other")
+          case ToolContent.Text(_, text, _, _) => text should include("World")
+          case other                           => fail(s"expected text content, got $other")
 
   it should "return completion suggestions" in withServer(sampleServer): client =>
     client

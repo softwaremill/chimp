@@ -1,6 +1,6 @@
 package chimp.server
 
-import chimp.protocol.{GetPromptResult, Prompt, PromptArgument}
+import chimp.protocol.{GetPromptResult, Icon, Prompt, PromptArgument}
 import sttp.model.Header
 import sttp.shared.Identity
 
@@ -12,13 +12,17 @@ case class PartialPrompt(
     name: String,
     title: Option[String] = None,
     description: Option[String] = None,
-    arguments: List[PromptArgument] = Nil
+    arguments: List[PromptArgument] = Nil,
+    icons: Option[List[Icon]] = None
 ):
   def title(value: String): PartialPrompt =
     copy(title = Some(value))
 
   def description(value: String): PartialPrompt =
     copy(description = Some(value))
+
+  def icons(value: List[Icon]): PartialPrompt =
+    copy(icons = Some(value))
 
   /** Declares a single argument the prompt accepts. */
   def argument(name: String, description: Option[String] = None, required: Boolean = false): PartialPrompt =
@@ -41,7 +45,7 @@ case class PartialPrompt(
     handleWithHeaders((args, _) => logic(args))
 
   private def definition: Prompt =
-    Prompt(name, title, description, Option.when(arguments.nonEmpty)(arguments))
+    Prompt(name, title, description, Option.when(arguments.nonEmpty)(arguments), icons = icons)
 
 end PartialPrompt
 

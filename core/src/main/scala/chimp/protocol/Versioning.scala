@@ -17,6 +17,7 @@ object ProtocolMeta:
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"
   val ServerInfo: String = "io.modelcontextprotocol/serverInfo"
+  val SubscriptionId: String = "io.modelcontextprotocol/subscriptionId"
 
   /** An `UnsupportedProtocolVersion` error (`-32022`) naming the versions the server supports, so the client can retry with one of them. */
   def unsupportedVersionError(requested: String, supported: List[String]): JSONRPCErrorObject =

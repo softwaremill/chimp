@@ -10,6 +10,8 @@ final case class Resource(
     description: Option[String] = None,
     mimeType: Option[String] = None,
     size: Option[Long] = None,
+    icons: Option[List[Icon]] = None,
+    annotations: Option[Annotations] = None,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 
@@ -19,6 +21,8 @@ final case class ResourceTemplate(
     title: Option[String] = None,
     description: Option[String] = None,
     mimeType: Option[String] = None,
+    icons: Option[List[Icon]] = None,
+    annotations: Option[Annotations] = None,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 
