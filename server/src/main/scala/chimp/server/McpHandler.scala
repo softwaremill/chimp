@@ -12,19 +12,23 @@ import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
 
 enum McpResponse:
   case JsonResponse(json: Json)
+  case JsonError(status: StatusCode, json: Json)
   case EmptyAcceptResponse
 
   def statusCode: StatusCode = this match
-    case JsonResponse(_)     => StatusCode.Ok
-    case EmptyAcceptResponse => StatusCode.Accepted
+    case JsonResponse(_)      => StatusCode.Ok
+    case JsonError(status, _) => status
+    case EmptyAcceptResponse  => StatusCode.Accepted
 
   def body: Option[Json] = this match
     case JsonResponse(json)  => Some(json)
+    case JsonError(_, json)  => Some(json)
     case EmptyAcceptResponse => None
 
   def withNullsDroppedDeep: McpResponse = this match
-    case JsonResponse(json)  => JsonResponse(json.deepDropNullValues)
-    case EmptyAcceptResponse => this
+    case JsonResponse(json)      => JsonResponse(json.deepDropNullValues)
+    case JsonError(status, json) => JsonError(status, json.deepDropNullValues)
+    case EmptyAcceptResponse     => this
 
 private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
   private val logger = LoggerFactory.getLogger(classOf[McpHandler[?, ?]])
@@ -73,14 +77,9 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case Left(err) =>
         jsonResponse(protocolError(RequestId("null"), JSONRPCErrorCodes.ParseError.code, s"Parse error: ${err.message}")).unit
       case Right(JSONRPCMessage.Request(_, method, params: Option[Json], id)) =>
-        val requestedVersion = params.flatMap(_.hcursor.downField("_meta").downField(ProtocolMeta.ProtocolVersionKey).as[String].toOption)
-        requestedVersion match
-          case Some(version) if ProtocolVersion.from(version).isEmpty =>
-            jsonResponse(
-              JSONRPCMessage.Error(id = id, error = ProtocolMeta.unsupportedVersionError(version, ProtocolVersion.supported.map(_.name)))
-            ).unit
-          case _ =>
-            dispatch(method, params, id, headers, makeContext, requestedVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
+        requestRejection(method, params, headers, id) match
+          case Some(rejection) => rejection.unit
+          case None            => dispatch(method, params, id, headers, makeContext, isModernRequest(method, params, headers))
       case Right(notification: JSONRPCMessage.Notification) =>
         logger.debug(s"Received notification: ${notification.method}")
         McpResponse.EmptyAcceptResponse.unit
@@ -151,6 +150,116 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message, data = data))
 
   private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
+
+  // request methods a 2026-07-28 client may call (server/discover is handled separately as the era-agnostic bootstrap)
+  private val modernMethods: Set[String] =
+    Set(
+      "tools/list",
+      "tools/call",
+      "resources/list",
+      "resources/templates/list",
+      "resources/read",
+      "prompts/list",
+      "prompts/get",
+      "completion/complete"
+    )
+
+  private def jsonError(id: RequestId, status: StatusCode, code: Int, message: String, data: Option[Json] = None): McpResponse =
+    logger.debug(s"Modern request rejected (id=$id, http=${status.code}, code=$code): $message")
+    val envelope: JSONRPCMessage = JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message, data = data))
+    McpResponse.JsonError(status, envelope.asJson)
+
+  /** Whether the request follows the modern (2026-07-28) rules: it declares a version in `_meta` or via a modern `MCP-Protocol-Version`
+    * header. `server/discover` is the era-agnostic bootstrap and is never treated as modern here.
+    */
+  private def isModernRequest(method: String, params: Option[Json], headers: Seq[Header]): Boolean =
+    val metaVersion = params.flatMap(_.hcursor.downField("_meta").downField(ProtocolMeta.ProtocolVersionKey).as[String].toOption)
+    val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
+    method != "server/discover" && (metaVersion.isDefined || headerVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
+
+  /** The rejection to send for an invalid request, or `None` if it may be dispatched. Runs no tool logic, so a transport can call it before
+    * deciding how to respond (a modern validation error is a plain-JSON HTTP error, not an SSE stream).
+    */
+  def requestRejection(method: String, params: Option[Json], headers: Seq[Header], id: RequestId): Option[McpResponse] =
+    val meta = params.flatMap(_.hcursor.downField("_meta").focus)
+    val metaVersion = meta.flatMap(_.hcursor.get[String](ProtocolMeta.ProtocolVersionKey).toOption)
+    val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
+    if isModernRequest(method, params, headers) then modernRejection(method, params, meta, metaVersion, headerVersion, headers, id)
+    else
+      metaVersion match
+        case Some(version) if ProtocolVersion.from(version).isEmpty =>
+          Some(
+            jsonResponse(
+              JSONRPCMessage.Error(id = id, error = ProtocolMeta.unsupportedVersionError(version, ProtocolVersion.supported.map(_.name)))
+            )
+          )
+        case _ => None
+
+  /** Parses `request` and returns the rejection for an invalid (modern) request, or `None`; runs no tool logic. */
+  def validateRequest(request: Json, headers: Seq[Header]): Option[McpResponse] =
+    request.as[JSONRPCMessage] match
+      case Right(JSONRPCMessage.Request(_, method, params: Option[Json], id)) => requestRejection(method, params, headers, id)
+      case _                                                                  => None
+
+  /** Validates a modern (2026-07-28) request; `Some` is the rejection to send, `None` means it may be dispatched. */
+  private def modernRejection(
+      method: String,
+      params: Option[Json],
+      meta: Option[Json],
+      metaVersion: Option[String],
+      headerVersion: Option[String],
+      headers: Seq[Header],
+      id: RequestId
+  ): Option[McpResponse] =
+    val declared = metaVersion.orElse(headerVersion)
+    if declared.exists(version => ProtocolVersion.from(version).isEmpty) then
+      val envelope: JSONRPCMessage =
+        JSONRPCMessage.Error(id = id, error = ProtocolMeta.unsupportedVersionError(declared.get, ProtocolVersion.supported.map(_.name)))
+      Some(McpResponse.JsonError(StatusCode.BadRequest, envelope.asJson))
+    else if headerVersion.isDefined && metaVersion.isDefined && headerVersion != metaVersion then
+      Some(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.HeaderMismatch.code, "MCP-Protocol-Version header does not match _meta"))
+    else if metaVersion.isEmpty then
+      Some(
+        jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.InvalidParams.code, s"Missing ${ProtocolMeta.ProtocolVersionKey} in _meta")
+      )
+    else if meta.flatMap(_.hcursor.downField(ProtocolMeta.ClientCapabilities).focus).isEmpty then
+      Some(
+        jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.InvalidParams.code, s"Missing ${ProtocolMeta.ClientCapabilities} in _meta")
+      )
+    else if !modernMethods.contains(method) then
+      Some(jsonError(id, StatusCode.NotFound, JSONRPCErrorCodes.MethodNotFound.code, s"Method not found: $method"))
+    else if headers.exists(_.name.equalsIgnoreCase("Host")) then
+      // SEP-2243 standard request headers only apply over HTTP (identified by the Host header); stdio carries no such headers
+      headerValidationError(method, params, headers, id)
+    else None
+
+  /** SEP-2243 standard request headers: `Mcp-Method` must equal the body method, and for `tools/call` `Mcp-Name` must equal `params.name`
+    * (both case-sensitive, surrounding whitespace ignored). A missing or mismatched header is a 400.
+    */
+  private def headerValidationError(method: String, params: Option[Json], headers: Seq[Header], id: RequestId): Option[McpResponse] =
+    def header(name: String): Option[String] = headers.collectFirst { case h if h.name.equalsIgnoreCase(name) => h.value.trim }
+    if !header("Mcp-Method").contains(method) then
+      Some(
+        jsonError(
+          id,
+          StatusCode.BadRequest,
+          JSONRPCErrorCodes.InvalidParams.code,
+          "Mcp-Method header missing or does not match the request method"
+        )
+      )
+    else if method == "tools/call" then
+      val bodyName = params.flatMap(_.hcursor.get[String]("name").toOption)
+      if bodyName.exists(name => !header("Mcp-Name").contains(name)) then
+        Some(
+          jsonError(
+            id,
+            StatusCode.BadRequest,
+            JSONRPCErrorCodes.InvalidParams.code,
+            "Mcp-Name header missing or does not match params.name"
+          )
+        )
+      else None
+    else None
 
   private val serverImplementation: Implementation = Implementation(server.name, server.version)
   private val serverInfoJson: Json = serverImplementation.asJson
