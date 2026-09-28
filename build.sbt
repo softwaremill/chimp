@@ -251,7 +251,7 @@ lazy val serverConformance = (project in file("server-conformance"))
       val baseline = specVersion
         .map(v => rootDir / s"conformance-baseline-$v.yml")
         .filter(_.exists)
-        .getOrElse(rootDir / "conformance-baseline.yml")
+        .getOrElse(rootDir / "conformance-baseline-2025-11-25.yml")
         .getAbsolutePath
       val log = streams.value.log
 
@@ -327,8 +327,23 @@ lazy val clientConformance = (project in file("client-conformance"))
       val baseDir = baseDirectory.value
       val rootDir = (LocalRootProject / baseDirectory).value
       val wrapper = (baseDir / "bin" / "chimp-conformance-client").getAbsolutePath
+      val specVersion = args
+        .sliding(2)
+        .collectFirst {
+          case Seq("--requirements", v) => v
+          case Seq("--spec-version", v) => v
+        }
+        .orElse(args.collectFirst {
+          case a if a.startsWith("--requirements=") => a.stripPrefix("--requirements=")
+          case a if a.startsWith("--spec-version=") => a.stripPrefix("--spec-version=")
+        })
+      val baseline = specVersion
+        .map(v => rootDir / s"conformance-baseline-$v.yml")
+        .filter(_.exists)
+        .getOrElse(rootDir / "conformance-baseline-2025-11-25.yml")
+        .getAbsolutePath
       val cmd = List("npx", s"@modelcontextprotocol/conformance@$conformanceHarnessV") ++ args ++
-        List("--command", wrapper, "--expected-failures", (rootDir / "conformance-baseline.yml").getAbsolutePath)
+        List("--command", wrapper, "--expected-failures", baseline)
       val rc = Process(cmd, rootDir, "CHIMP_CLIENT_CONFORMANCE_JAR" -> jar.getAbsolutePath).!
       if (rc != 0) sys.error(s"conformance harness exited with code $rc")
     }

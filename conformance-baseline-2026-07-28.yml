@@ -1,6 +1,6 @@
-# Expected server-conformance failures for spec version 2026-07-28.
+# Expected conformance failures for spec version 2026-07-28 (server and client).
 # These need protocol features that land in later tickets; remove each entry once its
-# scenario passes. See server-conformance/README.md for how the baseline is used.
+# scenario passes. See server-conformance/README.md and client-conformance/README.md.
 server:
   # multi-round-trip requests (tasks) — T5, https://github.com/softwaremill/chimp/issues/243
   - tasks-capability-negotiation
@@ -31,3 +31,43 @@ server:
   - sep-2164-resource-not-found
   - input-required-result-missing-input-response
   - input-required-result-ignore-extra-params
+client:
+  # OAuth client flows — chimp's client has no full OAuth support yet
+  - auth/authorization-server-migration
+  - auth/basic-cimd
+  - auth/client-credentials-basic
+  - auth/client-credentials-jwt
+  - auth/dpop
+  - auth/dpop-nonce
+  - auth/enterprise-managed-authorization
+  - auth/iss-normalized
+  - auth/iss-not-advertised
+  - auth/iss-supported
+  - auth/iss-supported-missing
+  - auth/iss-unexpected
+  - auth/iss-wrong-issuer
+  - auth/metadata-default
+  - auth/metadata-issuer-mismatch
+  - auth/metadata-var1
+  - auth/metadata-var2
+  - auth/metadata-var3
+  - auth/offline-access-not-supported
+  - auth/offline-access-scope
+  - auth/pre-registration
+  - auth/scope-from-scopes-supported
+  - auth/scope-from-www-authenticate
+  - auth/scope-omitted-when-undefined
+  - auth/scope-retry-limit
+  - auth/scope-step-up
+  - auth/token-endpoint-auth-basic
+  - auth/token-endpoint-auth-none
+  - auth/token-endpoint-auth-post
+  - auth/wif-jwt-bearer
+  # modern (2026-07-28) client era: stateless lifecycle, request _meta, HTTP headers — T10-T12, #248/#249/#250
+  - tools_call
+  - http-custom-headers
+  - http-invalid-tool-headers
+  - json-schema-2020-12-preservation
+  - json-schema-ref-no-deref
+  - request-metadata
+  - sep-2322-client-request-state
