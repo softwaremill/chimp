@@ -23,7 +23,8 @@ final case class ServerCapabilities(
     completions: Option[Json] = None,
     prompts: Option[ServerPromptsCapability] = None,
     resources: Option[ServerResourcesCapability] = None,
-    tools: Option[ServerToolsCapability] = None
+    tools: Option[ServerToolsCapability] = None,
+    extensions: Option[Map[String, Json]] = None
 ) derives Codec
 
 final case class InitializeParams(

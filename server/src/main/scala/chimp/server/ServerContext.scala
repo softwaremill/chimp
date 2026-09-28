@@ -10,6 +10,13 @@ trait ServerContext[F[_]]
 object ServerContext:
   def noop[F[_]]: ServerContext[F] = new ServerContext[F] {}
 
+/** A [[ServerContext]] for a tool running as a task, letting it request input from the client mid-execution (Tasks extension,
+  * experimental). Requesting input moves the task to `input_required`, surfacing `key -> request` via `tasks/get`; the tool resumes with
+  * the response once the client answers with `tasks/update`.
+  */
+trait TaskContext[F[_]] extends ServerContext[F]:
+  def requestInput(key: String, request: Json): F[Json]
+
 trait StreamingServerContext[F[_]] extends ServerContext[F]:
   def reportProgress(progress: Double, total: Option[Double] = None, message: Option[String] = None): F[Unit]
   def log(level: LoggingLevel, data: Json, logger: Option[String] = None): F[Unit]
