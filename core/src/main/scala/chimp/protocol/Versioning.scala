@@ -17,6 +17,7 @@ object ProtocolMeta:
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"
   val ServerInfo: String = "io.modelcontextprotocol/serverInfo"
+  val SubscriptionId: String = "io.modelcontextprotocol/subscriptionId"
 
   /** An `UnsupportedProtocolVersion` error (`-32022`) naming the versions the server supports, so the client can retry with one of them. */
   def unsupportedVersionError(requested: String, supported: List[String]): JSONRPCErrorObject =
@@ -26,15 +27,19 @@ object ProtocolMeta:
       data = Some(Json.obj("requested" -> requested.asJson, "supported" -> supported.asJson))
     )
 
-/** The type of a modern (2026-07-28+) result. A closed set on the wire; only `complete` exists today. */
+/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `incomplete` for one that needs another round trip (MRTR
+  * input-required).
+  */
 enum ResultType(val name: String):
   case Complete extends ResultType("complete")
+  case Incomplete extends ResultType("incomplete")
 
 object ResultType:
   given Encoder[ResultType] = Encoder.instance(resultType => Json.fromString(resultType.name))
   given Decoder[ResultType] = Decoder.decodeString.emap:
-    case "complete" => Right(Complete)
-    case other      => Left(s"Unknown result type: $other")
+    case "complete"   => Right(Complete)
+    case "incomplete" => Right(Incomplete)
+    case other        => Left(s"Unknown result type: $other")
 
 /** Whether a cached response may be shared across authorization contexts (`Public`) or not (`Private`). */
 enum CacheScope:

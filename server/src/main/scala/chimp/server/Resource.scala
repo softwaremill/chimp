@@ -1,6 +1,6 @@
 package chimp.server
 
-import chimp.protocol.{Resource, ResourceContents, ResourceTemplate}
+import chimp.protocol.{Annotations, Icon, Resource, ResourceContents, ResourceTemplate}
 import sttp.model.Header
 import sttp.shared.Identity
 
@@ -23,7 +23,9 @@ case class PartialResource(
     title: Option[String] = None,
     description: Option[String] = None,
     mimeType: Option[String] = None,
-    size: Option[Long] = None
+    size: Option[Long] = None,
+    icons: Option[List[Icon]] = None,
+    annotations: Option[Annotations] = None
 ):
   def name(value: String): PartialResource =
     copy(name = Some(value))
@@ -40,6 +42,12 @@ case class PartialResource(
   def size(value: Long): PartialResource =
     copy(size = Some(value))
 
+  def icons(value: List[Icon]): PartialResource =
+    copy(icons = Some(value))
+
+  def annotations(value: Annotations): PartialResource =
+    copy(annotations = Some(value))
+
   /** Attaches effectful logic, with access to the request headers, producing the resource's contents (or an error). */
   def serverLogic[F[_]](logic: Seq[Header] => F[Either[ResourceError, List[ResourceContents]]]): ServerResource[F] =
     ServerResource(definition, logic)
@@ -52,7 +60,7 @@ case class PartialResource(
   def handle(logic: () => Either[ResourceError, List[ResourceContents]]): ServerResource[Identity] =
     handleWithHeaders(_ => logic())
 
-  private def definition: Resource = Resource(uri, name.getOrElse(uri), title, description, mimeType, size)
+  private def definition: Resource = Resource(uri, name.getOrElse(uri), title, description, mimeType, size, icons, annotations)
 
 end PartialResource
 
@@ -65,7 +73,9 @@ case class PartialResourceTemplate(
     name: Option[String] = None,
     title: Option[String] = None,
     description: Option[String] = None,
-    mimeType: Option[String] = None
+    mimeType: Option[String] = None,
+    icons: Option[List[Icon]] = None,
+    annotations: Option[Annotations] = None
 ):
   def name(value: String): PartialResourceTemplate =
     copy(name = Some(value))
@@ -78,6 +88,12 @@ case class PartialResourceTemplate(
 
   def mimeType(value: String): PartialResourceTemplate =
     copy(mimeType = Some(value))
+
+  def icons(value: List[Icon]): PartialResourceTemplate =
+    copy(icons = Some(value))
+
+  def annotations(value: Annotations): PartialResourceTemplate =
+    copy(annotations = Some(value))
 
   /** Attaches effectful logic reading a matched URI; receives the extracted variables, the full URI, and the request headers. */
   def serverLogic[F[_]](
@@ -96,7 +112,7 @@ case class PartialResourceTemplate(
     handleWithHeaders((vars, uri, _) => logic(vars, uri))
 
   private def definition: ResourceTemplate =
-    ResourceTemplate(uriTemplate, name.getOrElse(uriTemplate), title, description, mimeType)
+    ResourceTemplate(uriTemplate, name.getOrElse(uriTemplate), title, description, mimeType, icons, annotations)
 
 end PartialResourceTemplate
 
