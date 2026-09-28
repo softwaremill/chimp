@@ -34,3 +34,37 @@ class Schema20260728ConformanceSpec extends SchemaConformance:
     val msg: JSONRPCMessage =
       JSONRPCMessage.Error(id = RequestId(1), error = ProtocolMeta.unsupportedVersionError("1900-01-01", List("2026-07-28", "2025-11-25")))
     validate("UnsupportedProtocolVersionError", msg)
+
+  it should "produce a SubscriptionFilter that matches the spec schema" in:
+    validate(
+      "SubscriptionFilter",
+      SubscriptionFilter(resourceSubscriptions = Some(List("file:///x")), resourcesListChanged = Some(true), toolsListChanged = Some(false))
+    )
+
+  it should "produce SubscriptionsListenRequestParams that match the spec schema" in:
+    validate(
+      "SubscriptionsListenRequestParams",
+      SubscriptionsListenParams(
+        notifications = SubscriptionFilter(resourcesListChanged = Some(true)),
+        _meta = Some(Map(ProtocolMeta.ProtocolVersionKey -> "2026-07-28".asJson, ProtocolMeta.ClientCapabilities -> io.circe.Json.obj()))
+      )
+    )
+
+  it should "produce a SubscriptionsListenResult that matches the spec schema" in:
+    validate(
+      "SubscriptionsListenResult",
+      SubscriptionsListenResult(_meta =
+        Some(
+          Map(
+            ProtocolMeta.ServerInfo -> Implementation(name = "chimp", version = "1.0").asJson.deepDropNullValues,
+            ProtocolMeta.SubscriptionId -> "sub-1".asJson
+          )
+        )
+      )
+    )
+
+  it should "produce SubscriptionsAcknowledgedNotificationParams that match the spec schema" in:
+    validate(
+      "SubscriptionsAcknowledgedNotificationParams",
+      SubscriptionsAcknowledgedParams(notifications = SubscriptionFilter(promptsListChanged = Some(true)))
+    )
