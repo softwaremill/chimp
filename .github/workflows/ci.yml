@@ -26,7 +26,7 @@ jobs:
           distribution: 'temurin'
           java-version: 21
           cache: 'sbt'
-      - uses: sbt/setup-sbt@3e125ece5c3e5248e18da9ed8d2cce3d335ec8dd # v1, specifically v1.1.14
+      - uses: sbt/setup-sbt@ce95da69b39609ea153bad087708da5f37366897 # v1, specifically v1.5.10
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -45,13 +45,13 @@ jobs:
       - name: Compile documentation
         run: sbt -v compileDocs
       - name: Unit tests
-        run: sbt -v test
+        run: sbt -v testFull
       - name: Client conformance tests
         run: sbt -v "clientConformance/conformance client --requirements 2025-11-25"
       - name: Server conformance tests
         run: sbt -v "serverConformance/conformance server --requirements 2025-11-25"
       - name: Integration tests
-        run: sbt -v "testOnly -- -n Integration"
+        run: sbt -v "testOnly * -- -n Integration"
       - uses: actions/upload-artifact@v5
         if: success() || failure()
         with:
