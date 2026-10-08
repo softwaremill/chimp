@@ -57,8 +57,8 @@ final class ClientStdioTransport(
   private val incomingHandler = AtomicReference[JSONRPCMessage => Identity[Unit]](_ => ())
   private val closed = AtomicBoolean(false)
 
-  private val readerThread = startDaemon("mcp-stdio-reader", readLoop _)
-  private val stderrThread = startDaemon("mcp-stdio-stderr", drainStderr _)
+  private val readerThread = startDaemon("mcp-stdio-reader", readLoop)
+  private val stderrThread = startDaemon("mcp-stdio-stderr", drainStderr)
 
   private def startDaemon(name: String, body: () => Unit): Thread =
     val thread = Thread(() => body())

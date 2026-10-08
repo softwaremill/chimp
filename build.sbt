@@ -23,12 +23,12 @@ commonSmlBuildSettings
 ossPublishSettings
 
 organization := "com.softwaremill.chimp"
-scalaVersion := "3.3.8"
+scalaVersion := "3.9.0"
 Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.Assertion:s"
 Test / scalacOptions += "-Wconf:msg=unused value of type org.scalatest.compatible.Assertion:s"
 Test / test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-l", "Integration")
 Test / parallelExecution := false
-scalacOptions ++= Seq("-Wunused:all", "-Werror", "-Yfuture-lazy-vals", "-java-output-version", "11")
+scalacOptions ++= Seq("-Wunused:all", "-Werror", "-java-output-version", "17")
 
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestV % Test
 
