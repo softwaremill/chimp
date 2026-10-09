@@ -153,3 +153,16 @@ object BidirectionalPekkoClient:
 ```
 
 More runnable examples live in [`examples/`](https://github.com/softwaremill/chimp/tree/master/examples/src/main/scala/examples).
+
+## Parallel web search and fetch
+
+The [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) example connects to a public server with `ClientHttpTransport`. It lists the tools, calls `web_search` with your query, and calls `web_fetch` with your URL. It prints the returned text and closes the client and HTTP backend.
+
+From the repository root, use [Scala CLI](https://scala-cli.virtuslab.org/) to run the example:
+
+```bash
+scala-cli run examples/src/main/scala/examples/client/parallelSearchClient.scala --jvm 21 -- \
+  "Scala MCP client HTTP transport" "https://chimp.softwaremill.com/client/transport.html"
+```
+
+The file declares its dependencies. No API key or local server is required. The anonymous endpoint is free for light use and has rate limits. This example calls the tools directly.
