@@ -43,3 +43,18 @@ def listen(client: BidirectionalMcpClient[Task]): Task[Unit] =
     case _                                          => ZIO.unit
   }
 ```
+
+The streaming client modules also expose the notifications as a stream native to the effect backend, through the `serverNotifications` extension. The stream registers a listener when it is run and removes it when it finishes. With ZIO it is a `ZStream`:
+
+```scala mdoc:compile-only
+import chimp.client.*
+import chimp.client.notifications.ServerNotification
+import chimp.client.transport.zio.*
+import zio.Task
+import zio.stream.ZStream
+
+def notifications(client: BidirectionalMcpClient[Task]): ZStream[Any, Throwable, ServerNotification] =
+  client.serverNotifications
+```
+
+The `chimp-client-ox` module gives an `ox.flow.Flow[ServerNotification]`, and `chimp-client-pekko` gives a Pekko `Source[ServerNotification, NotUsed]`.
