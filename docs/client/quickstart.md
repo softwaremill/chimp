@@ -28,7 +28,7 @@ object QuickstartClient:
     val client = McpClient[Identity](transport, Implementation("my-client", "0.1.0"))
 
     val result = client.callTool("adder", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
-    result.content.collect { case ToolContent.Text(_, text) => text }.foreach(println)
+    result.content.collect { case t: ToolContent.Text => t.text }.foreach(println)
 
     client.close()
     backend.close()
