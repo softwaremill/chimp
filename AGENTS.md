@@ -43,3 +43,7 @@ ALWAYS use ASD-STE100 Simplified Technical English for documentation, responses 
 ### 6 - Code comments
 
 NEVER add any comments in the code, unless you're asked to do so.
+
+### 7 - Commits
+
+Use `/commit` skill to keep the common style of commit messages.

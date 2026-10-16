@@ -29,16 +29,32 @@ case class PartialPrompt(
     copy(arguments = arguments ++ args)
 
   /** Attaches effectful logic, with access to the request headers, producing the prompt's messages. */
-  def serverLogic[F[_]](logic: (Map[String, String], Seq[Header]) => F[GetPromptResult]): ServerPrompt[F] =
-    ServerPrompt(definition, logic)
+  def serverLogic[F[_]](
+      logic: (Map[String, String], Seq[Header]) => F[GetPromptResult]
+  ): ServerPrompt[F, ServerContext[F]] =
+    ServerPrompt(definition, (args, _, headers) => logic(args, headers))
+
+  /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
+  def securedServerLogic[F[_], P](
+      logic: (Map[String, String], P, Seq[Header]) => F[GetPromptResult]
+  ): ServerPrompt[F, SecuredServerContext[F, P]] =
+    ServerPrompt(definition, (args, context, headers) => logic(args, context.principal, headers))
 
   /** Attaches synchronous logic that also receives the request headers. */
-  def handleWithHeaders(logic: (Map[String, String], Seq[Header]) => GetPromptResult): ServerPrompt[Identity] =
-    ServerPrompt(definition, logic)
+  def handleWithHeaders(
+      logic: (Map[String, String], Seq[Header]) => GetPromptResult
+  ): ServerPrompt[Identity, ServerContext[Identity]] =
+    serverLogic[Identity](logic)
 
   /** Attaches synchronous logic over just the supplied argument values. */
-  def handle(logic: Map[String, String] => GetPromptResult): ServerPrompt[Identity] =
+  def handle(logic: Map[String, String] => GetPromptResult): ServerPrompt[Identity, ServerContext[Identity]] =
     handleWithHeaders((args, _) => logic(args))
+
+  /** Attaches synchronous logic over the supplied argument values and the principal; usable only on a [[SecuredMcpServer]]. */
+  def handleSecured[P](
+      logic: (Map[String, String], P) => GetPromptResult
+  ): ServerPrompt[Identity, SecuredServerContext[Identity, P]] =
+    securedServerLogic[Identity, P]((args, principal, _) => logic(args, principal))
 
   private def definition: Prompt =
     Prompt(name, title, description, Option.when(arguments.nonEmpty)(arguments))
@@ -46,4 +62,7 @@ case class PartialPrompt(
 end PartialPrompt
 
 /** A fully-defined prompt: its metadata plus the logic producing its messages. */
-case class ServerPrompt[F[_]](definition: Prompt, logic: (Map[String, String], Seq[Header]) => F[GetPromptResult])
+case class ServerPrompt[F[_], -C <: ServerContext[F]](
+    definition: Prompt,
+    logic: (Map[String, String], C, Seq[Header]) => F[GetPromptResult]
+)
