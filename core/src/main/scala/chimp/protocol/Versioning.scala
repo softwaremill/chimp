@@ -13,6 +13,8 @@ private given Codec[FiniteDuration] =
   * and capabilities travel with each request instead of an `initialize` handshake.
   */
 object ProtocolMeta:
+  /** HTTP header carrying the protocol version on modern (2026-07-28+) requests; must agree with the `_meta` version. */
+  val ProtocolVersionHeader: String = "MCP-Protocol-Version"
   val ProtocolVersionKey: String = "io.modelcontextprotocol/protocolVersion"
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"
@@ -27,15 +29,19 @@ object ProtocolMeta:
       data = Some(Json.obj("requested" -> requested.asJson, "supported" -> supported.asJson))
     )
 
-/** The type of a modern (2026-07-28+) result. A closed set on the wire; only `complete` exists today. */
+/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `incomplete` for one that needs another round trip (MRTR
+  * input-required).
+  */
 enum ResultType(val name: String):
   case Complete extends ResultType("complete")
+  case Incomplete extends ResultType("incomplete")
 
 object ResultType:
   given Encoder[ResultType] = Encoder.instance(resultType => Json.fromString(resultType.name))
   given Decoder[ResultType] = Decoder.decodeString.emap:
-    case "complete" => Right(Complete)
-    case other      => Left(s"Unknown result type: $other")
+    case "complete"   => Right(Complete)
+    case "incomplete" => Right(Incomplete)
+    case other        => Left(s"Unknown result type: $other")
 
 /** Whether a cached response may be shared across authorization contexts (`Public`) or not (`Private`). */
 enum CacheScope:

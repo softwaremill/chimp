@@ -2,7 +2,14 @@ package chimp.protocol
 
 import io.circe.{Codec, Json}
 
-final case class Implementation(name: String, version: String, title: Option[String] = None) derives Codec
+final case class Implementation(
+    name: String,
+    version: String,
+    title: Option[String] = None,
+    icons: Option[List[Icon]] = None,
+    websiteUrl: Option[String] = None,
+    description: Option[String] = None
+) derives Codec
 
 final case class ClientRootsCapability(listChanged: Option[Boolean] = None) derives Codec
 

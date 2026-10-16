@@ -74,7 +74,7 @@ class ZioMcpServerHttpSpec
               .scoped(
                 backend,
                 uri"http://localhost:$port/mcp",
-                ProtocolVersion.Latest,
+                ProtocolVersion.LatestLegacy,
                 ClientTransport.defaultTimeout,
                 headers = headers
               )

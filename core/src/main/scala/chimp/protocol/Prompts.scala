@@ -26,6 +26,7 @@ final case class Prompt(
     title: Option[String] = None,
     description: Option[String] = None,
     arguments: Option[List[PromptArgument]] = None,
+    icons: Option[List[Icon]] = None,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 
@@ -42,6 +43,8 @@ final case class ListPromptsResult(
 final case class GetPromptParams(
     name: String,
     arguments: Option[Map[String, String]] = None,
+    inputResponses: Option[Map[String, InputResponse]] = None,
+    requestState: Option[String] = None,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 final case class GetPromptRequest(method: String = "prompts/get", params: GetPromptParams) derives Codec
@@ -53,4 +56,4 @@ final case class GetPromptResult(
 
 final case class PromptListChangedNotification(method: String = "notifications/prompts/list_changed") derives Codec
 
-final case class PromptReference(`type`: String = "ref/prompt", name: String) derives Codec
+final case class PromptReference(`type`: String = "ref/prompt", name: String, title: Option[String] = None) derives Codec
