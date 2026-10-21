@@ -54,7 +54,7 @@ import io.circe.Json
   val client = McpClient(transport, Implementation("my-client", "0.1.0"))
 
   val result = client.callTool("adder", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
-  val _ = result.content.collect { case ToolContent.Text(_, text) => println(text) }
+  val _ = result.content.collect { case t: ToolContent.Text => println(t.text) }
 
   client.close()
   backend.close()
@@ -96,7 +96,7 @@ import io.circe.Json
   val client = McpClient(transport, Implementation("my-client", "0.1.0"))
 
   val result = client.callTool("echo", Json.obj("message" -> Json.fromString("hello")))
-  val _ = result.content.collect { case ToolContent.Text(_, text) => println(text) }
+  val _ = result.content.collect { case t: ToolContent.Text => println(t.text) }
 
   client.close()
 ```
@@ -160,7 +160,7 @@ import sttp.shared.Identity
       case _                                         => ()
 
     val result = client.callTool("work", Json.obj("steps" -> Json.fromInt(3)))
-    val _ = result.content.collect { case ToolContent.Text(_, text) => println(text) }
+    val _ = result.content.collect { case t: ToolContent.Text => println(t.text) }
 
     client.close()
     backend.close()

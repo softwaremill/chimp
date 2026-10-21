@@ -572,8 +572,8 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     featureResult("prompts/get", Some(params), "p2") match
       case Response(_, _, result) =>
         result.as[GetPromptResult].getOrElse(fail("result")).messages.head.content match
-          case ToolContent.Text(_, text) => text should include("World")
-          case _                         => fail("Expected text content")
+          case ToolContent.Text(_, text, _, _) => text should include("World")
+          case _                               => fail("Expected text content")
       case _ => fail("Expected Response")
 
   it should "return completion values" in:
