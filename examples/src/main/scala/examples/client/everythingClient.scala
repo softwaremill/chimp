@@ -1,5 +1,5 @@
 //> using dep com.softwaremill.chimp::chimp-client:0.6.0
-//> using dep com.softwaremill.sttp.client4::core:4.0.23
+//> using dep com.softwaremill.sttp.client4::core:4.0.27
 //> using dep ch.qos.logback:logback-classic:1.5.32
 
 // Start the bundled mcp/everything server before running this example:
