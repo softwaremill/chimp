@@ -33,7 +33,7 @@ case class AddInput(a: Int, b: Int) derives Codec, Schema
         val tools = client.listTools()
         println(s"tools: ${tools.tools.map(_.name).mkString(", ")}")
         val result = client.callTool("adder", Json.obj("a" -> Json.fromInt(2), "b" -> Json.fromInt(3)))
-        result.content.collect { case ToolContent.Text(_, text) => text }.foreach(text => println(s"2 + 3 = $text"))
+        result.content.collect { case ToolContent.Text(_, text, _, _) => text }.foreach(text => println(s"2 + 3 = $text"))
         client.close()
       finally backend.close()
     finally binding.stop()
