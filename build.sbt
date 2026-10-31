@@ -88,7 +88,7 @@ lazy val server: Project = (project in file("server"))
       "com.softwaremill.sttp.tapir" %% "tapir-core" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe" % tapirV,
       "com.softwaremill.sttp.tapir" %% "tapir-apispec-docs" % tapirV,
-      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.12.0",
+      "com.softwaremill.sttp.apispec" %% "jsonschema-circe" % "0.12.1",
       "com.softwaremill.sttp.tapir" %% "tapir-netty-server-sync" % tapirV % Test,
       "com.softwaremill.sttp.client4" %% "core" % sttpClientV % Test
     )
