@@ -31,10 +31,11 @@ abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) exte
 
   final def serve(server: StreamingMcpServer[F]): ServerEndpoint[Caps, F] =
     val handler = new McpHandler[F, StreamingServerContext[F]](server)
-    val endpoint = infallibleEndpoint.post
+    val endpoint = sttp.tapir.endpoint.post
       .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
       .in(extractFromRequest(_.headers))
       .in(jsonBody[Json])
+      .errorOut(jsonRejectionOutput)
       .out(statusCode)
       .out(sseBody)
 
@@ -47,6 +48,6 @@ abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) exte
           val makeContext: Option[ProgressToken] => StreamingServerContext[F] =
             token => SinkStreamingServerContext(sink, token)
           handler.handleJsonRpc(json, headers, makeContext).map(_.body)
-        }.map(Right(_))
+        }
       }
     )

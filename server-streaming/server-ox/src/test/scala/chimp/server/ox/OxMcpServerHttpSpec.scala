@@ -108,6 +108,13 @@ class OxMcpServerHttpSpec
       .body(body.noSpaces)
       .send(backend)
 
+  // a rejection is a plain JSON error (not an SSE stream), so HTTP clients and the conformance harness can read its code
+  private def shouldBePlainHeaderMismatch(response: sttp.client4.Response[Either[String, String]]): Assertion =
+    response.code shouldBe StatusCode.BadRequest
+    response.header("Content-Type").getOrElse("") should startWith("application/json")
+    val body = response.body.fold(identity, identity)
+    io.circe.parser.parse(body).flatMap(_.hcursor.downField("error").get[Int]("code")) shouldBe Right(-32020)
+
   "Streaming HTTP transport" should "serve a 2026-07-28 tools/call end to end" in:
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(modernServer)): (port, backend, _) =>
       val params = Json.obj("name" -> "echo".asJson, "arguments" -> Json.obj("message" -> "modern hello".asJson))
@@ -120,15 +127,13 @@ class OxMcpServerHttpSpec
   it should "reject a 2026-07-28 request without Mcp-Method with a plain HTTP 400 and -32020" in:
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(modernServer)): (port, backend, _) =>
       val response = modernPost(port, backend, "tools/list", Json.obj(), Map.empty)
-      response.code shouldBe StatusCode.BadRequest
-      response.body.fold(identity, identity) should include("-32020")
+      shouldBePlainHeaderMismatch(response)
 
   "Secured streaming HTTP transport" should "reject a 2026-07-28 request without Mcp-Method with a plain HTTP 400 and -32020" in:
     val endpoint = SecuredServerStreamingHttpTransport(List("mcp"), OxServerHttpTransport(List("mcp"))).serve(securedStreamingServer)
     withHttpServer(endpoint): (port, backend, _) =>
       val response = modernPost(port, backend, "tools/list", Json.obj(), Map("Authorization" -> s"Bearer $validToken"))
-      response.code shouldBe StatusCode.BadRequest
-      response.body.fold(identity, identity) should include("-32020")
+      shouldBePlainHeaderMismatch(response)
 
   private def withHttpServer(
       endpoint: ServerEndpoint[OxStreams & WebSockets, Identity]
