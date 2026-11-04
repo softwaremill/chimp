@@ -171,6 +171,46 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
       case Error(_, _, err) => err.code shouldBe JSONRPCErrorCodes.MethodNotFound.code
       case _                => fail("Expected Error")
 
+  // SEP-2243 standard request headers, checked only over HTTP (a Host header is present)
+  private val headersHandler = McpHandler(featuresServer.addTool(echoTool))
+  private val modernMeta =
+    "_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> Json.obj())
+
+  private def modernHttpCall(method: String, params: Json, extraHeaders: (String, String)*): McpResponse =
+    val req: JSONRPCMessage = Request(method = method, params = Some(params.deepMerge(Json.obj(modernMeta))), id = RequestId("h"))
+    val headers = Header("Host", "localhost") +: extraHeaders.map(Header(_, _))
+    headersHandler.handleJsonRpc(req.asJson, headers)
+
+  private def shouldBeHeaderMismatch(response: McpResponse): org.scalatest.Assertion =
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) => err.code shouldBe JSONRPCErrorCodes.HeaderMismatch.code
+      case other            => fail(s"Expected Error, got $other")
+
+  private val nameShapedCalls = List(
+    ("tools/call", Json.obj("name" -> Json.fromString("echo"), "arguments" -> Json.obj("message" -> Json.fromString("hi"))), "echo"),
+    ("prompts/get", Json.obj("name" -> Json.fromString("greet"), "arguments" -> Json.obj("name" -> Json.fromString("Ann"))), "greet"),
+    ("resources/read", Json.obj("uri" -> Json.fromString("test://text")), "test://text")
+  )
+
+  it should "reject a modern HTTP request with a missing or mismatched Mcp-Method header with -32020 and HTTP 400" in:
+    shouldBeHeaderMismatch(modernHttpCall("tools/list", Json.obj()))
+    shouldBeHeaderMismatch(modernHttpCall("tools/list", Json.obj(), "Mcp-Method" -> "prompts/list"))
+    shouldBeHeaderMismatch(modernHttpCall("tools/list", Json.obj(), "Mcp-Method" -> "TOOLS/LIST"))
+
+  it should "reject a modern HTTP request with a missing or mismatched Mcp-Name header with -32020 and HTTP 400" in:
+    for (method, params, _) <- nameShapedCalls do
+      withClue(method):
+        shouldBeHeaderMismatch(modernHttpCall(method, params, "Mcp-Method" -> method))
+        shouldBeHeaderMismatch(modernHttpCall(method, params, "Mcp-Method" -> method, "Mcp-Name" -> "wrong"))
+
+  it should "serve a modern HTTP request whose Mcp-Method and Mcp-Name headers match the body (whitespace ignored)" in:
+    for (method, params, name) <- nameShapedCalls do
+      val response = modernHttpCall(method, params, "mcp-method" -> method, "MCP-NAME" -> s"  $name  ")
+      withClue(method):
+        response.statusCode shouldBe sttp.model.StatusCode.Ok
+        extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) shouldBe a[Response]
+
   it should "serve a classic initialize with no modern protocol version rather than rejecting it with -32022" in:
     val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("legacy-init"))
     val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
