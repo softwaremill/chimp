@@ -64,7 +64,6 @@ client:
   - auth/token-endpoint-auth-post
   - auth/wif-jwt-bearer
   # modern (2026-07-28) client era: stateless lifecycle, request _meta, HTTP headers — T10-T12, #248/#249/#250
-  - tools_call
   - http-custom-headers
   - http-invalid-tool-headers
   - json-schema-2020-12-preservation
