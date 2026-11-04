@@ -50,8 +50,8 @@ class OxMcpServerHttpSpec
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, backend, ox) =>
       given Ox = ox
       val transport =
-        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.LatestLegacy, ClientTransport.defaultTimeout)
-      try test(McpClient.bidirectional(transport, clientInfo))
+        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.Latest, ClientTransport.defaultTimeout)
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
       finally transport.close()
 
   override protected def withSecuredServer(
@@ -77,11 +77,11 @@ class OxMcpServerHttpSpec
       val transport = OxClientHttpTransport(
         backend,
         uri"http://localhost:$port/mcp",
-        ProtocolVersion.LatestLegacy,
+        ProtocolVersion.Latest,
         ClientTransport.defaultTimeout,
         headers = List(Header.authorization("Bearer", token))
       )
-      try test(McpClient.bidirectional(transport, clientInfo))
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
       finally transport.close()
 
   // 2026-07-28 requests over raw HTTP: chimp's client does not write the modern `_meta` or the SEP-2243 headers yet

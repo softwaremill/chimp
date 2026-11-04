@@ -43,14 +43,14 @@ class ZioMcpServerHttpSpec
       server: StreamingMcpServer[Task]
   )(test: BidirectionalMcpClient[Task] => Task[Assertion]): Future[Assertion] =
     withHttpServer(ZioServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
-      McpClient.bidirectional(transport, clientInfo).flatMap(test)
+      McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest).flatMap(test)
 
   override protected def withSecuredServer(
       server: SecuredMcpServer[Task, String, String, User],
       token: String
   )(test: McpClient[Task] => Task[Assertion]): Future[Assertion] =
     withHttpServer(server.endpoint(List("mcp")), List(Header.authorization("Bearer", token))): transport =>
-      McpClient(transport, clientInfo).flatMap(test)
+      McpClient(transport, clientInfo, ProtocolVersion.Latest).flatMap(test)
 
   override protected def withSecuredStreamingServer(
       server: SecuredStreamingMcpServer[Task, String, String, User],
@@ -58,7 +58,7 @@ class ZioMcpServerHttpSpec
   )(test: BidirectionalMcpClient[Task] => Task[Assertion]): Future[Assertion] =
     val endpoint = SecuredServerStreamingHttpTransport(List("mcp"), ZioServerHttpTransport(List("mcp"))).serve(server)
     withHttpServer(endpoint, List(Header.authorization("Bearer", token))): transport =>
-      McpClient.bidirectional(transport, clientInfo).flatMap(test)
+      McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest).flatMap(test)
 
   private def withHttpServer(
       endpoint: ServerEndpoint[ZioStreams & WebSockets, Task],
@@ -74,7 +74,7 @@ class ZioMcpServerHttpSpec
               .scoped(
                 backend,
                 uri"http://localhost:$port/mcp",
-                ProtocolVersion.LatestLegacy,
+                ProtocolVersion.Latest,
                 ClientTransport.defaultTimeout,
                 headers = headers
               )

@@ -114,7 +114,7 @@ final class OxClientHttpTransport private (
 
   private def post(msg: JSONRPCMessage): Response[Either[String, InputStream]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion, state.ask(_.sessionId), ClientTransport.encode(msg), headers)
+      .basePostRequest(uri, protocolVersion, state.ask(_.sessionId), msg, headers)
       .response(asInputStreamUnsafe)
       .send(backend)
 
