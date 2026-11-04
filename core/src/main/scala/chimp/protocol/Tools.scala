@@ -171,6 +171,8 @@ object ToolContent:
 final case class CallToolParams(
     name: String,
     arguments: Json,
+    inputResponses: Option[Map[String, InputResponse]] = None,
+    requestState: Option[String] = None,
     _meta: Option[Map[String, Json]] = None
 ) derives Codec
 

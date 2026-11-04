@@ -67,7 +67,11 @@ object Main:
           case "elicitation-sep1034-client-defaults" =>
             supervised:
               val oxTransport = OxClientHttpTransport(backend, serverUrl, protocolVersion)
-              val handler = (req: ElicitRequest) => ElicitResult(ElicitAction.Accept, Some(defaultsFrom(req.params.requestedSchema)))
+              val handler = (req: ElicitRequest) =>
+                val requestedSchema = req.params match
+                  case ElicitParams.Form(_, schema, _, _) => schema
+                  case _: ElicitParams.Url                => Json.obj()
+                ElicitResult(ElicitAction.Accept, Some(defaultsFrom(requestedSchema)))
               val client = McpClient.bidirectional[Identity](
                 oxTransport,
                 clientInfo,

@@ -27,15 +27,19 @@ object ProtocolMeta:
       data = Some(Json.obj("requested" -> requested.asJson, "supported" -> supported.asJson))
     )
 
-/** The type of a modern (2026-07-28+) result. A closed set on the wire; only `complete` exists today. */
+/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `incomplete` for one that needs another round trip (MRTR
+  * input-required).
+  */
 enum ResultType(val name: String):
   case Complete extends ResultType("complete")
+  case Incomplete extends ResultType("incomplete")
 
 object ResultType:
   given Encoder[ResultType] = Encoder.instance(resultType => Json.fromString(resultType.name))
   given Decoder[ResultType] = Decoder.decodeString.emap:
-    case "complete" => Right(Complete)
-    case other      => Left(s"Unknown result type: $other")
+    case "complete"   => Right(Complete)
+    case "incomplete" => Right(Incomplete)
+    case other        => Left(s"Unknown result type: $other")
 
 /** Whether a cached response may be shared across authorization contexts (`Public`) or not (`Private`). */
 enum CacheScope:
