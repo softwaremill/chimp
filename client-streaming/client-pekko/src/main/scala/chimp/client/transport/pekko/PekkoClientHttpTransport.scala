@@ -185,7 +185,7 @@ final class PekkoClientHttpTransport private (
       .ask(_.sessionId)
       .flatMap: session =>
         ClientHttpTransport
-          .basePostRequest(uri, protocolVersion, session, ClientTransport.encode(msg), headers)
+          .basePostRequest(uri, protocolVersion, session, msg, headers)
           .response(asStreamUnsafe(PekkoStreams))
           .send(backend)
 

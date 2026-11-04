@@ -13,6 +13,8 @@ private given Codec[FiniteDuration] =
   * and capabilities travel with each request instead of an `initialize` handshake.
   */
 object ProtocolMeta:
+  /** HTTP header carrying the protocol version on modern (2026-07-28+) requests; must agree with the `_meta` version. */
+  val ProtocolVersionHeader: String = "MCP-Protocol-Version"
   val ProtocolVersionKey: String = "io.modelcontextprotocol/protocolVersion"
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"

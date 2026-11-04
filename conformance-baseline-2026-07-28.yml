@@ -23,9 +23,9 @@ server:
   - input-required-result-request-state
   - input-required-result-result-type
   - input-required-result-tampered-state
-  # full stateless lifecycle and modern HTTP header validation
+  # full stateless lifecycle (needs subscription serving)
   - server-stateless
-  - http-header-validation
+  # x-mcp-header custom headers in the tool DSL — T13, https://github.com/softwaremill/chimp/issues/251
   - http-custom-header-server-validation
   # the harness records a failure in a non-primary run of these scenarios (the primary run passes)
   - sep-2164-resource-not-found
@@ -64,7 +64,6 @@ client:
   - auth/token-endpoint-auth-post
   - auth/wif-jwt-bearer
   # modern (2026-07-28) client era: stateless lifecycle, request _meta, HTTP headers — T10-T12, #248/#249/#250
-  - tools_call
   - http-custom-headers
   - http-invalid-tool-headers
   - json-schema-2020-12-preservation
