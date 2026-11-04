@@ -7,7 +7,7 @@
   - `handleWithHeaders` — synchronous read logic that also receives the request headers.
   - `serverLogic` — effectful read logic, with the request headers.
   - `handleSecured` (synchronous) or `securedServerLogic` (effectful) — logic that also receives the principal made by the server's security logic; usable only on a secured server — see [transport security](transport.md).
-- Register with `.addResource` / `.addResourceTemplate`. Subscriptions are wired with `.withSubscriptions`.
+- Register with `.addResource` / `.addResourceTemplate`. Subscriptions are wired with `.withSubscriptions`; they serve legacy clients only, as `2026-07-28` removed `resources/{,un}subscribe` (see [protocol versions in server capabilities](capabilities.md)).
 
 ```scala mdoc:compile-only
 import chimp.server.*
