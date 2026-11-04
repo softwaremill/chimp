@@ -119,8 +119,9 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
   it should "reject a request declaring an unsupported protocol version with -32022" in:
     val params = Json.obj("_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("1900-01-01")))
     val req: JSONRPCMessage = Request(method = "tools/list", params = Some(params), id = RequestId("v"))
-    val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
-    respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
+    val response = handler.handleJsonRpc(req.asJson, Seq.empty)
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
       case Error(_, _, err) =>
         err.code shouldBe JSONRPCErrorCodes.UnsupportedProtocolVersion.code
         err.data.flatMap(_.hcursor.downField("supported").as[List[String]].toOption).getOrElse(Nil) should contain("2026-07-28")
@@ -184,6 +185,15 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     respJson.as[JSONRPCMessage].getOrElse(fail("decode")) match
       case Response(_, _, result) => result.as[ListToolsResponse].isRight shouldBe true
       case other                  => fail(s"expected ListToolsResponse, got $other")
+
+  it should "serve a legacy client that stamps a legacy protocol version into _meta (initialize, ping, tools/list)" in:
+    val params = Json.obj("_meta" -> Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2025-11-25")))
+    for method <- List("initialize", "ping", "tools/list") do
+      val req: JSONRPCMessage = Request(method = method, params = Some(params), id = RequestId(s"legacy-meta-$method"))
+      val response = handler.handleJsonRpc(req.asJson, Seq.empty)
+      withClue(method):
+        response.statusCode shouldBe sttp.model.StatusCode.Ok
+        extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) shouldBe a[Response]
 
   it should "list available tools" in:
     val req: JSONRPCMessage = Request(method = "tools/list", id = RequestId("2"))

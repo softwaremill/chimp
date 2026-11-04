@@ -170,13 +170,15 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val envelope: JSONRPCMessage = JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message, data = data))
     McpResponse.JsonError(status, envelope.asJson)
 
-  /** Whether the request follows the modern (2026-07-28) rules: it declares a version in `_meta` or via a modern `MCP-Protocol-Version`
-    * header. `server/discover` is the era-agnostic bootstrap and is never treated as modern here.
+  /** Whether the request follows the modern (2026-07-28) rules: it declares a modern version in `_meta` or via the `MCP-Protocol-Version`
+    * header. A known legacy version in `_meta` keeps the legacy rules; an unknown one is treated as modern, so it gets the modern `-32022`
+    * with HTTP 400. `server/discover` is the era-agnostic bootstrap and is never treated as modern here.
     */
   private def isModernRequest(method: String, params: Option[Json], headers: Seq[Header]): Boolean =
     val metaVersion = params.flatMap(_.hcursor.downField("_meta").downField(ProtocolMeta.ProtocolVersionKey).as[String].toOption)
     val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
-    method != "server/discover" && (metaVersion.isDefined || headerVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
+    val metaIsModern = metaVersion.exists(version => ProtocolVersion.from(version).forall(_.isModern))
+    method != "server/discover" && (metaIsModern || headerVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
 
   /** The rejection to send for an invalid request, or `None` if it may be dispatched. Runs no tool logic, so a transport can call it before
     * deciding how to respond (a modern validation error is a plain-JSON HTTP error, not an SSE stream).
