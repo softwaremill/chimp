@@ -13,7 +13,7 @@ val zioProcessV = "0.8.1"
 val zioHttpV = "3.11.6"
 val oxV = "1.1.0"
 val testcontainersScalaV = "0.41.8"
-val pekkoV = "1.7.1"
+val pekkoV = "2.0.0"
 val conformanceHarnessV = "0.2.0-alpha.11"
 
 lazy val verifyExamplesCompileUsingScalaCli: TaskKey[Unit] = taskKey[Unit]("Verify that each example compiles using Scala CLI")
