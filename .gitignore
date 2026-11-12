@@ -23,6 +23,14 @@ Thumbs.db
 
 # Local Sphinx build artifacts
 generated-docs/out/.venv/
+<<<<<<< ours
 generated-docs/out/_build/
 
 .no-mistakes.yaml
+=======
+generated-docs/out/_build/ 
+
+# TraceVault — local only, do not commit
+.tracevault/
+.claude/settings.local.json
+>>>>>>> theirs
