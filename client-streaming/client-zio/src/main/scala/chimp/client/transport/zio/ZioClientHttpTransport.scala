@@ -103,7 +103,7 @@ final class ZioClientHttpTransport private (
   private def post(msg: JSONRPCMessage): Task[Response[Either[String, Stream[Throwable, Byte]]]] =
     sessionRef.get.flatMap: session =>
       ClientHttpTransport
-        .basePostRequest(uri, protocolVersion, session, ClientTransport.encode(msg), headers)
+        .basePostRequest(uri, protocolVersion, session, msg, headers)
         .response(asStreamUnsafe(ZioStreams))
         .send(backend)
 

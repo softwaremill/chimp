@@ -35,19 +35,20 @@ final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](
       .in(extractFromRequest(_.headers))
       .in(jsonBody[Json])
       .errorOut(server.errorOutput)
+      .errorOutEither(jsonRejectionOutput)
       .out(statusCode)
       .out(backend.sseBody)
 
     ServerEndpoint(
       mcpEndpoint,
-      server.securityLogic,
+      me => (s: S) => me.map(server.securityLogic(me)(s))(_.left.map(Left(_))),
       me => { (principal: P) => (input: (Seq[Header], Json)) =>
         val (headers, json) = input
         given MonadError[F] = me
-        respondWithEventStream(server.originCheck, headers, backend) { sink =>
+        respondWithEventStream(server.originCheck, headers, backend, handler.validateRequest(json, headers)) { sink =>
           val makeContext: Option[ProgressToken] => SecuredStreamingServerContext[F, P] =
             token => SinkSecuredStreamingServerContext(sink, token, principal)
           handler.handleJsonRpc(json, headers, makeContext).map(_.body)
-        }.map(Right(_))
+        }.map(_.left.map(Right(_)))
       }
     )

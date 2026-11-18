@@ -20,8 +20,8 @@ object McpClientImpl:
   ): F[McpClient[F]] =
     given MonadError[F] = transport.monad
     val clientCapabilities = ClientCapabilities()
-    initialize(transport, clientInfo, protocolVersion, clientCapabilities, correlator).map: initResult =>
-      new Impl[F](transport, clientInfo, protocolVersion, clientCapabilities, correlator, initResult)
+    connect(transport, clientInfo, protocolVersion, clientCapabilities, correlator).map: server =>
+      new Impl[F](transport, clientInfo, protocolVersion, clientCapabilities, correlator, server)
 
   def createBidirectional[F[_]](
       transport: ClientBidirectionalTransport[F],
@@ -45,16 +45,76 @@ object McpClientImpl:
     transport
       .onIncoming(incomingHandler)
       .flatMap: _ =>
-        initialize(transport, clientInfo, protocolVersion, clientCapabilities, correlator).map: initResult =>
+        connect(transport, clientInfo, protocolVersion, clientCapabilities, correlator).map: server =>
           new BidirectionalImpl[F](
             transport,
             clientInfo,
             protocolVersion,
             clientCapabilities,
             correlator,
-            initResult,
+            server,
             serverNotificationListeners
           )
+
+  /** What the client learns about the server when it connects. */
+  private final case class ConnectedServer(capabilities: ServerCapabilities, serverInfo: Implementation)
+
+  /** Legacy versions run the `initialize` handshake; a modern (2026-07-28) version has no handshake and asks `server/discover` instead. */
+  private def connect[F[_]](
+      transport: ClientTransport[F],
+      clientInfo: Implementation,
+      protocolVersion: ProtocolVersion,
+      clientCapabilities: ClientCapabilities,
+      correlator: Correlator
+  ): F[ConnectedServer] =
+    given MonadError[F] = transport.monad
+    if protocolVersion.isModern then
+      discover(transport, requestMeta(protocolVersion, clientInfo, clientCapabilities), protocolVersion, correlator)
+    else
+      initialize(transport, clientInfo, protocolVersion, clientCapabilities, correlator).map(result =>
+        ConnectedServer(result.capabilities, result.serverInfo)
+      )
+
+  /** The `_meta` that every modern (2026-07-28) request carries in place of the `initialize` handshake. */
+  private def requestMeta(protocolVersion: ProtocolVersion, clientInfo: Implementation, clientCapabilities: ClientCapabilities): Json =
+    Json.obj(
+      ProtocolMeta.ProtocolVersionKey -> protocolVersion.name.asJson,
+      ProtocolMeta.ClientCapabilities -> clientCapabilities.asJson.deepDropNullValues,
+      ProtocolMeta.ClientInfo -> clientInfo.asJson.deepDropNullValues
+    )
+
+  private def discover[F[_]](
+      transport: ClientTransport[F],
+      meta: Json,
+      protocolVersion: ProtocolVersion,
+      correlator: Correlator
+  ): F[ConnectedServer] =
+    given monad: MonadError[F] = transport.monad
+    val request = JSONRPCMessage.Request(method = "server/discover", params = Some(Json.obj("_meta" -> meta)), id = correlator.nextId())
+    transport
+      .send(request)
+      .flatMap:
+        case Some(JSONRPCMessage.Response(_, _, result)) =>
+          result.as[DiscoverResult] match
+            case Right(discovered) if !discovered.supportedVersions.contains(protocolVersion.name) =>
+              monad.error(
+                McpProtocolException(
+                  s"Server does not support protocol version '${protocolVersion.name}', " +
+                    s"it supports: ${discovered.supportedVersions.mkString(", ")}"
+                )
+              )
+            case Right(discovered) =>
+              discovered._meta.flatMap(_.get(ProtocolMeta.ServerInfo)).map(_.as[Implementation]) match
+                case Some(Right(serverInfo)) => monad.unit(ConnectedServer(discovered.capabilities, serverInfo))
+                case _ => monad.error(McpProtocolException(s"server/discover result has no valid ${ProtocolMeta.ServerInfo} in _meta"))
+            case Left(error) =>
+              monad.error(McpProtocolException(s"Failed to decode DiscoverResult: ${error.getMessage}"))
+        case Some(JSONRPCMessage.Error(_, _, error)) =>
+          monad.error(McpProtocolException(s"server/discover failed: ${error.code} ${error.message}"))
+        case Some(other) =>
+          monad.error(McpProtocolException(s"Unexpected response to server/discover: $other"))
+        case None =>
+          monad.error(McpProtocolException("No response received for server/discover"))
 
   private def initialize[F[_]](
       transport: ClientTransport[F],
@@ -161,13 +221,17 @@ object McpClientImpl:
       protected val protocolVersion: ProtocolVersion,
       protected val clientCapabilities: ClientCapabilities,
       protected val correlator: Correlator,
-      initializeResult: InitializeResult
+      server: ConnectedServer
   ) extends McpClient[F]:
     protected given MonadError[F] = transport.monad
     protected val monad: MonadError[F] = transport.monad
 
-    override val serverCapabilities: ServerCapabilities = initializeResult.capabilities
-    override val serverInfo: Implementation = initializeResult.serverInfo
+    override val serverCapabilities: ServerCapabilities = server.capabilities
+    override val serverInfo: Implementation = server.serverInfo
+
+    // a modern (2026-07-28) request carries the protocol version, client capabilities and client info in its own _meta
+    private val modernMeta: Option[Json] =
+      Option.when(protocolVersion.isModern)(Json.obj("_meta" -> requestMeta(protocolVersion, clientInfo, clientCapabilities)))
 
     override def ping(): F[Unit] = sendRequest[Json]("ping", None).map(_ => ())
 
@@ -225,7 +289,8 @@ object McpClientImpl:
       else monad.error(McpProtocolException(s"Server did not negotiate the capability required for $method"))
 
     protected def sendRequest[R: Decoder](method: String, params: Option[Json]): F[R] =
-      val request = JSONRPCMessage.Request(method = method, params = params, id = correlator.nextId())
+      val stamped = modernMeta.fold(params)(meta => Some(params.getOrElse(Json.obj()).deepMerge(meta)))
+      val request = JSONRPCMessage.Request(method = method, params = stamped, id = correlator.nextId())
       transport
         .send(request)
         .flatMap:
@@ -250,9 +315,9 @@ object McpClientImpl:
       protocolVersion: ProtocolVersion,
       clientCapabilities: ClientCapabilities,
       correlator: Correlator,
-      initializeResult: InitializeResult,
+      server: ConnectedServer,
       serverNotificationListeners: AtomicReference[List[ServerNotificationListener[F]]]
-  ) extends Impl[F](bidiTransport, clientInfo, protocolVersion, clientCapabilities, correlator, initializeResult)
+  ) extends Impl[F](bidiTransport, clientInfo, protocolVersion, clientCapabilities, correlator, server)
       with BidirectionalMcpClient[F]:
 
     override def subscribeResource(uri: String): F[Unit] =

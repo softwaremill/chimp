@@ -3,9 +3,10 @@ package chimp.server.ox
 import chimp.client.transport.{ClientHttpTransport, ClientTransport}
 import chimp.client.transport.ox.OxClientHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
-import chimp.protocol.{Implementation, ProtocolVersion}
+import chimp.protocol.{Implementation, ProtocolMeta, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
+  tool,
   McpServer,
   McpServerStreamingTests,
   McpServerTests,
@@ -14,15 +15,19 @@ import chimp.server.{
   SecuredMcpServerTests,
   SecuredStreamingMcpServer,
   StreamingMcpServer,
-  SyncToFuture
+  SyncToFuture,
+  ToolResult
 }
+import io.circe.syntax.*
+import io.circe.{Codec, Json}
 import org.scalatest.Assertion
 import ox.{supervised, Ox}
 import sttp.capabilities.WebSockets
-import sttp.client4.{DefaultSyncBackend, SyncBackend}
-import sttp.model.Header
+import sttp.client4.{basicRequest, DefaultSyncBackend, SyncBackend}
+import sttp.model.{Header, StatusCode}
 import sttp.model.Uri.UriContext
 import sttp.shared.Identity
+import sttp.tapir.Schema
 import sttp.tapir.server.netty.sync.{NettySyncServer, OxStreams}
 import sttp.tapir.server.ServerEndpoint
 
@@ -46,7 +51,7 @@ class OxMcpServerHttpSpec
       given Ox = ox
       val transport =
         OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.Latest, ClientTransport.defaultTimeout)
-      try test(McpClient.bidirectional(transport, clientInfo))
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
       finally transport.close()
 
   override protected def withSecuredServer(
@@ -76,8 +81,59 @@ class OxMcpServerHttpSpec
         ClientTransport.defaultTimeout,
         headers = List(Header.authorization("Bearer", token))
       )
-      try test(McpClient.bidirectional(transport, clientInfo))
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
       finally transport.close()
+
+  // 2026-07-28 requests over raw HTTP: chimp's client does not write the modern `_meta` or the SEP-2243 headers yet
+  // (T10 https://github.com/softwaremill/chimp/issues/248, T12 https://github.com/softwaremill/chimp/issues/250)
+  private case class EchoInput(message: String) derives Codec, Schema
+
+  private val modernServer: StreamingMcpServer[Identity] =
+    McpServer[Identity]().addTool(tool("echo").input[EchoInput].handle(in => ToolResult.text(in.message))).streaming
+
+  private def modernPost(port: Int, backend: SyncBackend, method: String, params: Json, headers: Map[String, String]) =
+    val meta = Json.obj(ProtocolMeta.ProtocolVersionKey -> "2026-07-28".asJson, ProtocolMeta.ClientCapabilities -> Json.obj())
+    val body = Json.obj(
+      "jsonrpc" -> "2.0".asJson,
+      "id" -> 1.asJson,
+      "method" -> method.asJson,
+      "params" -> params.deepMerge(Json.obj("_meta" -> meta))
+    )
+    basicRequest
+      .post(uri"http://localhost:$port/mcp")
+      .headers(
+        Map("Content-Type" -> "application/json", "Accept" -> "application/json, text/event-stream", "MCP-Protocol-Version" -> "2026-07-28")
+          ++ headers
+      )
+      .body(body.noSpaces)
+      .send(backend)
+
+  // a rejection is a plain JSON error (not an SSE stream), so HTTP clients and the conformance harness can read its code
+  private def shouldBePlainHeaderMismatch(response: sttp.client4.Response[Either[String, String]]): Assertion =
+    response.code shouldBe StatusCode.BadRequest
+    response.header("Content-Type").getOrElse("") should startWith("application/json")
+    val body = response.body.fold(identity, identity)
+    io.circe.parser.parse(body).flatMap(_.hcursor.downField("error").get[Int]("code")) shouldBe Right(-32020)
+
+  "Streaming HTTP transport" should "serve a 2026-07-28 tools/call end to end" in:
+    withHttpServer(OxServerHttpTransport(List("mcp")).serve(modernServer)): (port, backend, _) =>
+      val params = Json.obj("name" -> "echo".asJson, "arguments" -> Json.obj("message" -> "modern hello".asJson))
+      val response = modernPost(port, backend, "tools/call", params, Map("Mcp-Method" -> "tools/call", "Mcp-Name" -> "echo"))
+      response.code shouldBe StatusCode.Ok
+      val body = response.body.fold(identity, identity)
+      body should include("modern hello")
+      body should include("\"resultType\":\"complete\"")
+
+  it should "reject a 2026-07-28 request without Mcp-Method with a plain HTTP 400 and -32020" in:
+    withHttpServer(OxServerHttpTransport(List("mcp")).serve(modernServer)): (port, backend, _) =>
+      val response = modernPost(port, backend, "tools/list", Json.obj(), Map.empty)
+      shouldBePlainHeaderMismatch(response)
+
+  "Secured streaming HTTP transport" should "reject a 2026-07-28 request without Mcp-Method with a plain HTTP 400 and -32020" in:
+    val endpoint = SecuredServerStreamingHttpTransport(List("mcp"), OxServerHttpTransport(List("mcp"))).serve(securedStreamingServer)
+    withHttpServer(endpoint): (port, backend, _) =>
+      val response = modernPost(port, backend, "tools/list", Json.obj(), Map("Authorization" -> s"Bearer $validToken"))
+      shouldBePlainHeaderMismatch(response)
 
   private def withHttpServer(
       endpoint: ServerEndpoint[OxStreams & WebSockets, Identity]

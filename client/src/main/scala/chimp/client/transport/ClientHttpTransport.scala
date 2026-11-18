@@ -36,7 +36,7 @@ final class ClientHttpTransport[F[_]](
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion, sessionId.get(), ClientTransport.encode(msg), headers)
+      .basePostRequest(uri, protocolVersion, sessionId.get(), msg, headers)
       .send(backend)
       .flatMap(interpret)
 
@@ -80,11 +80,23 @@ object ClientHttpTransport:
   private[transport] val AcceptHeader: String =
     s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString}"
 
+  // SEP-2243: the body field that the `Mcp-Name` header mirrors, per method
+  private val nameFields: Map[String, String] = Map("tools/call" -> "name", "prompts/get" -> "name", "resources/read" -> "uri")
+
+  /** SEP-2243 standard request headers (2026-07-28): `Mcp-Method` on every request, and `Mcp-Name` on a request with a name-shaped body
+    * field. Notifications and responses carry none.
+    */
+  private[transport] def standardRequestHeaders(msg: JSONRPCMessage): List[Header] = msg match
+    case JSONRPCMessage.Request(_, method, params, _) =>
+      val name = nameFields.get(method).flatMap(field => params.flatMap(_.hcursor.get[String](field).toOption))
+      Header("Mcp-Method", method) :: name.map(Header("Mcp-Name", _)).toList
+    case _ => Nil
+
   private[transport] def basePostRequest(
       uri: Uri,
       protocolVersion: ProtocolVersion,
       sessionId: Option[String],
-      body: String,
+      msg: JSONRPCMessage,
       headers: Seq[Header]
   ): Request[Either[String, String]] =
     basicRequest
@@ -93,7 +105,8 @@ object ClientHttpTransport:
       .header("Content-Type", MediaType.ApplicationJson.toString)
       .header("Accept", AcceptHeader)
       .header("MCP-Protocol-Version", protocolVersion.name)
-      .body(body)
+      .headers((if protocolVersion.isModern then standardRequestHeaders(msg) else Nil)*)
+      .body(ClientTransport.encode(msg))
       .pipe { request =>
         sessionId match
           case Some(sessionId) => request.header("Mcp-Session-Id", sessionId)
