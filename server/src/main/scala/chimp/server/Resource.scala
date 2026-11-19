@@ -54,6 +54,12 @@ case class PartialResource(
   ): ServerResource[F, ServerContext[F]] =
     ServerResource(definition, (_, headers) => logic(headers))
 
+  /** Attaches effectful logic, with access to the [[ServerContext]], which gives the facts of the request. */
+  def serverLogicWithContext[F[_]](
+      logic: (ServerContext[F], Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
+  ): ServerResource[F, ServerContext[F]] =
+    ServerResource(definition, logic)
+
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](
       logic: (P, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
@@ -119,6 +125,12 @@ case class PartialResourceTemplate(
       logic: (Map[String, String], String, Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
   ): ServerResourceTemplate[F, ServerContext[F]] =
     ServerResourceTemplate(definition, UriTemplate.compile(uriTemplate), (vars, uri, _, headers) => logic(vars, uri, headers))
+
+  /** Attaches effectful logic reading a matched URI, with access to the [[ServerContext]], which gives the facts of the request. */
+  def serverLogicWithContext[F[_]](
+      logic: (Map[String, String], String, ServerContext[F], Seq[Header]) => F[Either[ResourceError, List[ResourceContents]]]
+  ): ServerResourceTemplate[F, ServerContext[F]] =
+    ServerResourceTemplate(definition, UriTemplate.compile(uriTemplate), logic)
 
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](

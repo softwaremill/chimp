@@ -103,6 +103,10 @@ case class Tool[I, O](
   def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, ServerContext[F]] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (input, _, headers) => logic(input, headers))
 
+  /** Attaches effectful logic, with access to the [[ServerContext]], which gives the facts of the request. */
+  def serverLogicWithContext[F[_]](logic: (I, ServerContext[F], Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, ServerContext[F]] =
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
+
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](logic: (I, P, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, SecuredServerContext[F, P]] =
     ServerTool(

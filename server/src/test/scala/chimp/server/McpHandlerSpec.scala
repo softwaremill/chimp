@@ -763,3 +763,37 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   it should "send all log messages for a legacy request" in:
     callLoggingTool(Json.obj())._2 shouldBe LoggingLevel.values.toList
+
+  private def describe(ctx: ServerContext[Identity]): String =
+    s"${ctx.request.protocolVersion.map(_.name).getOrElse("-")} ${ctx.request.clientInfo.map(_.name).getOrElse("-")}"
+
+  private val contextServer = McpServer[Identity]()
+    .addTool(tool("ctx").input[EchoInput].serverLogicWithContext[Identity]((_, ctx, _) => ToolResult.text(describe(ctx))))
+    .addPrompt(
+      prompt("ctx").serverLogicWithContext[Identity]((_, ctx, _) =>
+        GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = describe(ctx)))))
+      )
+    )
+    .addResource(
+      resource("test://ctx").serverLogicWithContext[Identity]((ctx, _) => Right(List(ResourceContents.Text("test://ctx", describe(ctx)))))
+    )
+    .addResourceTemplate(
+      resourceTemplate("test://ctx/{id}")
+        .serverLogicWithContext[Identity]((_, uri, ctx, _) => Right(List(ResourceContents.Text(uri, describe(ctx)))))
+    )
+
+  it should "give the request facts to tool, prompt, resource and resource template logic" in:
+    val meta = Json.obj(
+      "_meta" -> modernToolMeta(ProtocolMeta.ClientInfo -> Json.obj("name" -> Json.fromString("cli"), "version" -> Json.fromString("1")))
+    )
+    val calls = List(
+      "tools/call" -> Json.obj("name" -> Json.fromString("ctx"), "arguments" -> Json.obj("message" -> Json.fromString("hi"))),
+      "prompts/get" -> Json.obj("name" -> Json.fromString("ctx")),
+      "resources/read" -> Json.obj("uri" -> Json.fromString("test://ctx")),
+      "resources/read" -> Json.obj("uri" -> Json.fromString("test://ctx/1"))
+    )
+    for (method, params) <- calls do
+      val req: JSONRPCMessage = Request(method = method, params = Some(params.deepMerge(meta)), id = RequestId("ctx"))
+      val body = extractJsonFromResponse(McpHandler(contextServer).handleJsonRpc(req.asJson, Seq.empty))
+      withClue(s"$method $params"):
+        body.noSpaces should include("2026-07-28 cli")
