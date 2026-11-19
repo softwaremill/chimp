@@ -37,13 +37,19 @@ object Main:
       .getOrElse(ProtocolVersion.Latest)
 
     val backend = DefaultSyncBackend()
-    val transport = ClientHttpTransport[Identity](backend, serverUrl, protocolVersion)
+    val transport = ClientHttpTransport[Identity](backend, serverUrl)
 
     val rc: Int =
       try
         scenario match
-          case "initialize" =>
+          case "initialize" | "request-metadata" =>
             val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            client.close()
+            0
+
+          case "json-schema-ref-no-deref" =>
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            val _ = client.listTools()
             client.close()
             0
 
@@ -66,7 +72,7 @@ object Main:
 
           case "elicitation-sep1034-client-defaults" =>
             supervised:
-              val oxTransport = OxClientHttpTransport(backend, serverUrl, protocolVersion)
+              val oxTransport = OxClientHttpTransport(backend, serverUrl)
               val handler = (req: ElicitRequest) =>
                 val requestedSchema = req.params match
                   case ElicitParams.Form(_, schema, _, _) => schema

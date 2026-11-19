@@ -17,6 +17,7 @@ import sttp.model.sse.ServerSentEvent
 import sttp.model.{Header, StatusCode, Uri}
 import sttp.monad.MonadError
 
+import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.Success
@@ -25,7 +26,6 @@ import scala.util.control.NonFatal
 final class PekkoClientHttpTransport private (
     backend: StreamBackend[Future, PekkoStreams],
     uri: Uri,
-    protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
     headers: Seq[Header],
     reconnectSettings: RestartSettings,
@@ -36,6 +36,10 @@ final class PekkoClientHttpTransport private (
   private val log = LoggerFactory.getLogger(classOf[PekkoClientHttpTransport])
 
   private given ExecutionContext = mat.executionContext
+
+  private val protocolVersion = AtomicReference(ClientHttpTransport.DefaultProtocolVersion)
+
+  override def setProtocolVersion(version: ProtocolVersion): Future[Unit] = Future.successful(protocolVersion.set(version))
 
   private final class State:
     var sessionId: Option[String] = None
@@ -132,7 +136,7 @@ final class PekkoClientHttpTransport private (
 
   private def deleteSession(id: String): Future[Unit] =
     ClientHttpTransport
-      .baseDeleteRequest(uri, protocolVersion, id, headers)
+      .baseDeleteRequest(uri, protocolVersion.get(), id, headers)
       .response(asStreamUnsafe(PekkoStreams))
       .send(backend)
       .flatMap(drainBody)
@@ -149,6 +153,10 @@ final class PekkoClientHttpTransport private (
             Future.failed(err)
           case Right(HttpOutcome.NoBody) =>
             drainBody(response).flatMap(_ => Future.failed(McpProtocolException("Server returned 202 Accepted for a Request")))
+          case Right(HttpOutcome.ErrorBody(status)) =>
+            collectAnyBody(response).flatMap(body =>
+              Future.fromTry(ClientHttpTransport.errorResponse(request, status, body).toTry).map(Some(_))
+            )
           case Right(HttpOutcome.JsonBody) =>
             for
               body <- collectBody(response)
@@ -170,10 +178,14 @@ final class PekkoClientHttpTransport private (
           case Left(err: McpSessionNotFoundException) =>
             state.tell(_.sessionId = None)
             Future.failed(err)
-          case Left(err)                   => Future.failed(err)
-          case Right(HttpOutcome.NoBody)   => drainBody(response).map(_ => None)
-          case Right(HttpOutcome.JsonBody) => drainBody(response).map(_ => None)
-          case Right(HttpOutcome.SseBody)  =>
+          case Left(err)                            => Future.failed(err)
+          case Right(HttpOutcome.NoBody)            => drainBody(response).map(_ => None)
+          case Right(HttpOutcome.JsonBody)          => drainBody(response).map(_ => None)
+          case Right(HttpOutcome.ErrorBody(status)) =>
+            collectAnyBody(response).flatMap(body =>
+              Future.fromTry(ClientHttpTransport.errorResponse(msg, status, body).toTry).map(_ => None)
+            )
+          case Right(HttpOutcome.SseBody) =>
             response.body match
               case Left(_)       => Future.successful(None)
               case Right(stream) =>
@@ -185,7 +197,7 @@ final class PekkoClientHttpTransport private (
       .ask(_.sessionId)
       .flatMap: session =>
         ClientHttpTransport
-          .basePostRequest(uri, protocolVersion, session, msg, headers)
+          .basePostRequest(uri, protocolVersion.get(), session, msg, headers)
           .response(asStreamUnsafe(PekkoStreams))
           .send(backend)
 
@@ -199,6 +211,11 @@ final class PekkoClientHttpTransport private (
   private def collectBody(response: Response[Either[String, Source[ByteString, Any]]]): Future[String] =
     response.body match
       case Left(err)     => Future.failed(McpProtocolException(s"HTTP 200 with non-stream body: $err"))
+      case Right(stream) => stream.runFold(ByteString.empty)(_ ++ _).map(_.utf8String)
+
+  private def collectAnyBody(response: Response[Either[String, Source[ByteString, Any]]]): Future[String] =
+    response.body match
+      case Left(body)    => Future.successful(body)
       case Right(stream) => stream.runFold(ByteString.empty)(_ ++ _).map(_.utf8String)
 
   private def drainBody(response: Response[Either[String, Source[ByteString, Any]]]): Future[Unit] =
@@ -237,7 +254,8 @@ final class PekkoClientHttpTransport private (
     val listener = sessionReady.future
       .flatMap(_ => state.ask(_.closing))
       .flatMap:
-        case true  => Future.unit
+        case true                                    => Future.unit
+        case false if protocolVersion.get().isModern => Future.unit
         case false => state.ask(_.nextStream(None)).flatMap(stream => drainSse(stream, () => state.ask(!_.closing)))
     listener.failed.foreach(t => log.warn(s"GET SSE listener failed: ${t.getMessage}"))
 
@@ -298,7 +316,7 @@ final class PekkoClientHttpTransport private (
       .ask(_.sessionId)
       .flatMap: session =>
         ClientHttpTransport
-          .baseGetRequest(uri, protocolVersion, session, lastEventId, headers)
+          .baseGetRequest(uri, protocolVersion.get(), session, lastEventId, headers)
           .response(asStreamUnsafe(PekkoStreams))
           .send(backend)
           .flatMap: response =>
@@ -342,8 +360,6 @@ object PekkoClientHttpTransport:
     *   The sttp backend used to send HTTP requests; must support Pekko streams.
     * @param uri
     *   The MCP endpoint URI.
-    * @param protocolVersion
-    *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
     * @param timeout
     *   How long to wait for a response to a request sent to the server.
     * @param reconnectSettings
@@ -354,7 +370,6 @@ object PekkoClientHttpTransport:
   def apply(
       backend: StreamBackend[Future, PekkoStreams],
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       reconnectSettings: RestartSettings = defaultReconnectSettings,
       headers: Seq[Header] = Nil
@@ -362,7 +377,6 @@ object PekkoClientHttpTransport:
     val transport = new PekkoClientHttpTransport(
       backend,
       uri,
-      protocolVersion,
       timeout,
       headers,
       reconnectSettings,

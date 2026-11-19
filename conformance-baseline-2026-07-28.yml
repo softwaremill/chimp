@@ -12,25 +12,8 @@ server:
   - tasks-request-state-removal
   - tasks-required-task-error
   - tasks-wire-fields
-  # server-to-client input requests during tools/call — T5, https://github.com/softwaremill/chimp/issues/243
-  - input-required-result-basic-elicitation
-  - input-required-result-basic-list-roots
-  - input-required-result-basic-sampling
-  - input-required-result-capability-check
-  - input-required-result-multiple-input-requests
-  - input-required-result-multi-round
-  - input-required-result-non-tool-request
-  - input-required-result-request-state
-  - input-required-result-result-type
-  - input-required-result-tampered-state
-  # full stateless lifecycle (needs subscription serving)
-  - server-stateless
-  # x-mcp-header custom headers in the tool DSL — T13, https://github.com/softwaremill/chimp/issues/251
-  - http-custom-header-server-validation
   # the harness records a failure in a non-primary run of these scenarios (the primary run passes)
   - sep-2164-resource-not-found
-  - input-required-result-missing-input-response
-  - input-required-result-ignore-extra-params
 client:
   # OAuth client flows — chimp's client has no full OAuth support yet
   - auth/authorization-server-migration
@@ -63,10 +46,7 @@ client:
   - auth/token-endpoint-auth-none
   - auth/token-endpoint-auth-post
   - auth/wif-jwt-bearer
-  # modern (2026-07-28) client era: stateless lifecycle, request _meta, HTTP headers — T10-T12, #248/#249/#250
+  # modern (2026-07-28) client era: HTTP headers from tool arguments — T12, #250; multi round-trip requests — T15
   - http-custom-headers
   - http-invalid-tool-headers
-  - json-schema-2020-12-preservation
-  - json-schema-ref-no-deref
-  - request-metadata
   - sep-2322-client-request-state

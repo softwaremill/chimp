@@ -49,8 +49,8 @@ object InputResponse:
   * opaque `requestState` the client echoes back on its response, and the modern result envelope fields.
   */
 final case class InputRequiredResult(
-    inputRequests: Map[String, InputRequest],
+    inputRequests: Option[Map[String, InputRequest]] = None,
     requestState: Option[String] = None,
-    resultType: ResultType = ResultType.Incomplete,
+    resultType: ResultType = ResultType.InputRequired,
     _meta: Option[Map[String, Json]] = None
 ) derives io.circe.Codec

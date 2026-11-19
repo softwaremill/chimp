@@ -18,13 +18,13 @@ import sttp.shared.Identity
 
 import java.io.{BufferedReader, InputStream, InputStreamReader}
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{ConcurrentHashMap, CountDownLatch}
 import scala.concurrent.duration.{FiniteDuration, *}
 
 final class OxClientHttpTransport private (
     backend: SyncBackend,
     uri: Uri,
-    protocolVersion: ProtocolVersion,
     timeout: FiniteDuration,
     headers: Seq[Header],
     pending: SyncPendingRequests,
@@ -53,8 +53,11 @@ final class OxClientHttpTransport private (
       id
 
   private val state: ActorRef[State] = Actor.create(new State)
+  private val protocolVersion = AtomicReference(ClientHttpTransport.DefaultProtocolVersion)
 
   given monad: MonadError[Identity] = IdentityMonad
+
+  override def setProtocolVersion(version: ProtocolVersion): Identity[Unit] = protocolVersion.set(version)
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
     if state.ask(_.closing) then throw McpTransportException("HTTP transport is closed")
@@ -75,7 +78,7 @@ final class OxClientHttpTransport private (
         case Some(id) =>
           try
             drainBody(
-              ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id, headers).response(asInputStreamUnsafe).send(backend)
+              ClientHttpTransport.baseDeleteRequest(uri, protocolVersion.get(), id, headers).response(asInputStreamUnsafe).send(backend)
             )
           catch case _: Exception => ()
         case None => ()
@@ -90,6 +93,10 @@ final class OxClientHttpTransport private (
       case Right(HttpOutcome.NoBody)              =>
         drainBody(response)
         throw McpProtocolException("Server returned 202 Accepted for a Request")
+      case Right(HttpOutcome.ErrorBody(status)) =>
+        ClientHttpTransport.errorResponse(request, status, collectAnyBody(response)) match
+          case Right(error) => Some(error)
+          case Left(err)    => throw err
       case Right(HttpOutcome.JsonBody) =>
         val message = decode(collectBody(response))
         routeMessage(message)
@@ -107,14 +114,18 @@ final class OxClientHttpTransport private (
       case Left(err)                              => throw err
       case Right(HttpOutcome.NoBody)              => drainBody(response); None
       case Right(HttpOutcome.JsonBody)            => drainBody(response); None
-      case Right(HttpOutcome.SseBody)             =>
+      case Right(HttpOutcome.ErrorBody(status))   =>
+        ClientHttpTransport.errorResponse(msg, status, collectAnyBody(response)) match
+          case Right(_)  => None
+          case Left(err) => throw err
+      case Right(HttpOutcome.SseBody) =>
         response.body match
           case Right(stream) => forkSseDrain(stream, None); None
           case Left(_)       => None
 
   private def post(msg: JSONRPCMessage): Response[Either[String, InputStream]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion, state.ask(_.sessionId), msg, headers)
+      .basePostRequest(uri, protocolVersion.get(), state.ask(_.sessionId), msg, headers)
       .response(asInputStreamUnsafe)
       .send(backend)
 
@@ -128,6 +139,13 @@ final class OxClientHttpTransport private (
         try String(stream.readAllBytes(), StandardCharsets.UTF_8)
         finally closeQuietly(stream)
       case Left(err) => throw McpProtocolException(s"HTTP 200 with non-stream body: $err")
+
+  private def collectAnyBody(response: Response[Either[String, InputStream]]): String =
+    response.body match
+      case Right(stream) =>
+        try String(stream.readAllBytes(), StandardCharsets.UTF_8)
+        finally closeQuietly(stream)
+      case Left(body) => body
 
   private def drainBody(response: Response[Either[String, InputStream]]): Unit =
     response.body match
@@ -162,6 +180,9 @@ final class OxClientHttpTransport private (
 
   private def getListenerLoop(): Unit =
     sessionReady.await()
+    if !protocolVersion.get().isModern then getListenerRetries()
+
+  private def getListenerRetries(): Unit =
     val onFailure: (Int, Either[Throwable, Unit]) => Unit = (_, result) =>
       result match
         case Left(t)  => if !state.ask(_.closing) then log.warn(s"GET SSE listener error: ${t.getMessage}")
@@ -175,7 +196,7 @@ final class OxClientHttpTransport private (
 
   private def openGetSseStream(lastEvent: Option[String]): Option[InputStream] =
     val response = ClientHttpTransport
-      .baseGetRequest(uri, protocolVersion, state.ask(_.sessionId), lastEvent, headers)
+      .baseGetRequest(uri, protocolVersion.get(), state.ask(_.sessionId), lastEvent, headers)
       .response(asInputStreamUnsafe)
       .send(backend)
     response.code match
@@ -237,14 +258,12 @@ object OxClientHttpTransport:
   def apply(
       backend: SyncBackend,
       uri: Uri,
-      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
       timeout: FiniteDuration = ClientTransport.defaultTimeout,
       headers: Seq[Header] = Nil
   )(using Ox): OxClientHttpTransport =
     val transport = new OxClientHttpTransport(
       backend,
       uri,
-      protocolVersion,
       timeout,
       headers,
       SyncPendingRequests(),

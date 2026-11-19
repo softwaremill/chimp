@@ -1,6 +1,6 @@
 package chimp.server
 
-import chimp.protocol.{ResourceContents, ToolContent}
+import chimp.protocol.{ClientCapabilities, ResourceContents, ToolContent}
 import io.circe.syntax.*
 import io.circe.{Decoder, Encoder, Json}
 import sttp.model.Header
@@ -66,7 +66,8 @@ def tool(name: String): PartialTool =
 case class PartialTool(
     name: String,
     description: Option[String] = None,
-    annotations: Option[ToolAnnotations] = None
+    annotations: Option[ToolAnnotations] = None,
+    requiredClientCapabilities: Option[ClientCapabilities] = None
 ):
   def description(desc: String): PartialTool =
     copy(description = Some(desc))
@@ -74,79 +75,118 @@ case class PartialTool(
   def withAnnotations(ann: ToolAnnotations): PartialTool =
     copy(annotations = Some(ann))
 
+  /** Declares the client capabilities a call needs. A modern (2026-07-28+) request whose `_meta` does not declare them fails with `-32021`
+    * (MissingRequiredClientCapability) before the logic runs.
+    */
+  def withRequiredClientCapabilities(capabilities: ClientCapabilities): PartialTool =
+    copy(requiredClientCapabilities = Some(capabilities))
+
   /** Fixes the input type, deriving its JSON Schema and decoder from the given instances. */
   def input[I: Schema: Decoder]: Tool[I, NoStructuredOutput] =
-    Tool[I, NoStructuredOutput](name, description, ToolSchema.Derived(summon[Schema[I]]), summon[Decoder[I]], None, annotations)
+    McpHeaders.validate(name, ToolSchema.Derived(summon[Schema[I]]), Nil)
+    Tool[I, NoStructuredOutput](
+      name,
+      description,
+      ToolSchema.Derived(summon[Schema[I]]),
+      summon[Decoder[I]],
+      None,
+      annotations,
+      requiredClientCapabilities
+    )
 
   /** Fixes the input as raw JSON, validated against the given JSON Schema. */
   def inputJson(schema: Json): Tool[Json, NoStructuredOutput] =
-    Tool[Json, NoStructuredOutput](name, description, ToolSchema.Raw(schema), summon[Decoder[Json]], None, annotations)
+    McpHeaders.validate(name, ToolSchema.Raw(schema), Nil)
+    Tool[Json, NoStructuredOutput](
+      name,
+      description,
+      ToolSchema.Raw(schema),
+      summon[Decoder[Json]],
+      None,
+      annotations,
+      requiredClientCapabilities
+    )
 
-/** A tool with a known input type `I` and structured output type `O`, ready to be given its handling logic. */
+/** A tool with a known input type `I` and structured output type `O`, ready to be given its handling logic. The logic ends with a
+  * [[ToolResult]], or with [[InputRequired]] to ask the client for input first.
+  */
 case class Tool[I, O](
     name: String,
     description: Option[String],
     inputSchema: ToolSchema,
     inputDecoder: Decoder[I],
     outputSchema: Option[ToolSchema],
-    annotations: Option[ToolAnnotations]
+    annotations: Option[ToolAnnotations],
+    requiredClientCapabilities: Option[ClientCapabilities] = None,
+    mcpHeaders: List[McpHeader] = Nil
 ):
+  /** Marks the top-level input property `property` with `x-mcp-header`, so that a client mirrors its value into the `Mcp-Param-{header}`
+    * HTTP header and the server checks that the header matches the argument. Throws [[IllegalArgumentException]] when the annotation breaks
+    * the spec constraints.
+    */
+  def withMcpHeader(property: String, header: String): Tool[I, O] = withMcpHeader(List(property), header)
+
+  /** Marks the input property at `path`, a chain of `properties` keys from the schema root, with `x-mcp-header`, as the single-property
+    * overload does.
+    */
+  def withMcpHeader(path: List[String], header: String): Tool[I, O] =
+    val headers = mcpHeaders :+ McpHeader(path, header)
+    McpHeaders.validate(name, inputSchema, headers)
+    copy(mcpHeaders = headers)
+
   /** Fixes the structured output type, deriving its JSON Schema from the given instance. */
   def output[O2: Schema]: Tool[I, O2] =
-    Tool[I, O2](name, description, inputSchema, inputDecoder, Some(ToolSchema.Derived(summon[Schema[O2]])), annotations)
+    copy(outputSchema = Some(ToolSchema.Derived(summon[Schema[O2]])))
 
   /** Fixes the structured output as raw JSON, described by the given JSON Schema. */
   def outputJson(schema: Json): Tool[I, Json] =
-    Tool[I, Json](name, description, inputSchema, inputDecoder, Some(ToolSchema.Raw(schema)), annotations)
+    copy(outputSchema = Some(ToolSchema.Raw(schema)))
 
   /** Attaches effectful logic, with access to the request headers. */
-  def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, ServerContext[F]] =
-    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (input, _, headers) => logic(input, headers))
+  def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult[O] | InputRequired]): ServerTool[I, O, F, ServerContext[F]] =
+    serverTool((input, _, headers) => logic(input, headers))
+
+  /** Attaches effectful logic, with access to the [[ServerContext]], which gives the facts of the request. */
+  def serverLogicWithContext[F[_]](
+      logic: (I, ServerContext[F], Seq[Header]) => F[ToolResult[O] | InputRequired]
+  ): ServerTool[I, O, F, ServerContext[F]] =
+    serverTool(logic)
 
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
-  def securedServerLogic[F[_], P](logic: (I, P, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, SecuredServerContext[F, P]] =
-    ServerTool(
-      name,
-      description,
-      inputSchema,
-      inputDecoder,
-      outputSchema,
-      annotations,
-      (input, context, headers) => logic(input, context.principal, headers)
-    )
+  def securedServerLogic[F[_], P](
+      logic: (I, P, Seq[Header]) => F[ToolResult[O] | InputRequired]
+  ): ServerTool[I, O, F, SecuredServerContext[F, P]] =
+    serverTool((input, context, headers) => logic(input, context.principal, headers))
 
   /** Attaches effectful logic with access to the [[StreamingServerContext]]; usable only on a streaming server. */
   def streamingServerLogic[F[_]](
-      logic: (I, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O]]
+      logic: (I, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O] | InputRequired]
   ): ServerTool[I, O, F, StreamingServerContext[F]] =
-    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic)
+    serverTool(logic)
 
   /** Attaches effectful logic with access to the principal and the [[StreamingServerContext]]; usable only on a secured streaming server.
     */
   def securedStreamingServerLogic[F[_], P](
-      logic: (I, P, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O]]
+      logic: (I, P, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O] | InputRequired]
   ): ServerTool[I, O, F, SecuredStreamingServerContext[F, P]] =
-    ServerTool(
-      name,
-      description,
-      inputSchema,
-      inputDecoder,
-      outputSchema,
-      annotations,
-      (input, context, headers) => logic(input, context.principal, context, headers)
-    )
+    serverTool((input, context, headers) => logic(input, context.principal, context, headers))
 
   /** Attaches synchronous logic that also receives the request headers. */
-  def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult[O]): ServerTool[I, O, Identity, ServerContext[Identity]] =
-    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, (i, _, headers) => logic(i, headers))
+  def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult[O] | InputRequired): ServerTool[I, O, Identity, ServerContext[Identity]] =
+    serverTool((i, _, headers) => logic(i, headers))
 
   /** Attaches synchronous logic over just the decoded input. */
-  def handle(logic: I => ToolResult[O]): ServerTool[I, O, Identity, ServerContext[Identity]] =
+  def handle(logic: I => ToolResult[O] | InputRequired): ServerTool[I, O, Identity, ServerContext[Identity]] =
     handleWithHeaders((i, _) => logic(i))
 
   /** Attaches synchronous logic over the decoded input and the principal; usable only on a [[SecuredMcpServer]]. */
-  def handleSecured[P](logic: (I, P) => ToolResult[O]): ServerTool[I, O, Identity, SecuredServerContext[Identity, P]] =
+  def handleSecured[P](logic: (I, P) => ToolResult[O] | InputRequired): ServerTool[I, O, Identity, SecuredServerContext[Identity, P]] =
     securedServerLogic[Identity, P]((i, principal, _) => logic(i, principal))
+
+  private def serverTool[F[_], C <: ServerContext[F]](
+      logic: (I, C, Seq[Header]) => F[ToolResult[O] | InputRequired]
+  ): ServerTool[I, O, F, C] =
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic, requiredClientCapabilities, mcpHeaders)
 
 /** A fully-defined tool: its metadata plus the logic handling a call, in effect `F` with context `C`. */
 case class ServerTool[I, O, F[_], -C <: ServerContext[F]](
@@ -156,5 +196,7 @@ case class ServerTool[I, O, F[_], -C <: ServerContext[F]](
     inputDecoder: Decoder[I],
     outputSchema: Option[ToolSchema],
     annotations: Option[ToolAnnotations],
-    logic: (I, C, Seq[Header]) => F[ToolResult[O]]
+    logic: (I, C, Seq[Header]) => F[ToolResult[O] | InputRequired],
+    requiredClientCapabilities: Option[ClientCapabilities] = None,
+    mcpHeaders: List[McpHeader] = Nil
 )
