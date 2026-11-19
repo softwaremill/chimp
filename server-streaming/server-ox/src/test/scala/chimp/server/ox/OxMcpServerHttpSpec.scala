@@ -40,6 +40,7 @@ class OxMcpServerHttpSpec
     with SecuredMcpServerStreamingTests[Identity]
     with SyncToFuture:
   private val clientInfo = Implementation("chimp-server-test", "0.0.1")
+  override protected val clientProtocolVersion: ProtocolVersion = ProtocolVersion.Latest
 
   override protected def withServer(server: McpServer[Identity])(test: McpClient[Identity] => Identity[Assertion]): Future[Assertion] =
     withStreamingServer(server.streaming)(test)
@@ -50,8 +51,8 @@ class OxMcpServerHttpSpec
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, backend, ox) =>
       given Ox = ox
       val transport =
-        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.Latest, ClientTransport.defaultTimeout)
-      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
+        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", clientProtocolVersion, ClientTransport.defaultTimeout)
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion))
       finally transport.close()
 
   override protected def withSecuredServer(
@@ -77,11 +78,11 @@ class OxMcpServerHttpSpec
       val transport = OxClientHttpTransport(
         backend,
         uri"http://localhost:$port/mcp",
-        ProtocolVersion.Latest,
+        clientProtocolVersion,
         ClientTransport.defaultTimeout,
         headers = List(Header.authorization("Bearer", token))
       )
-      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion))
       finally transport.close()
 
   // 2026-07-28 requests over raw HTTP: chimp's client does not write the modern `_meta` or the SEP-2243 headers yet

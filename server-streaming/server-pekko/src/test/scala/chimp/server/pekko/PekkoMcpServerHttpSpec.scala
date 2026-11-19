@@ -2,7 +2,7 @@ package chimp.server.pekko
 
 import chimp.client.transport.pekko.PekkoClientHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
-import chimp.protocol.Implementation
+import chimp.protocol.{Implementation, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
@@ -34,6 +34,7 @@ class PekkoMcpServerHttpSpec
     with SecuredMcpServerStreamingTests[Future]
     with PekkoToFuture:
   private val clientInfo = Implementation("chimp-server-test", "0.0.1")
+  override protected val clientProtocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
 
   override protected def withServer(server: McpServer[Future])(test: McpClient[Future] => Future[Assertion]): Future[Assertion] =
     withStreamingServer(server.streaming)(test)
