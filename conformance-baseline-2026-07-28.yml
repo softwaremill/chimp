@@ -46,10 +46,7 @@ client:
   - auth/token-endpoint-auth-none
   - auth/token-endpoint-auth-post
   - auth/wif-jwt-bearer
-  # modern (2026-07-28) client era: stateless lifecycle, request _meta, HTTP headers — T10-T12, #248/#249/#250
+  # modern (2026-07-28) client era: HTTP headers from tool arguments — T12, #250; multi round-trip requests — T15
   - http-custom-headers
   - http-invalid-tool-headers
-  - json-schema-2020-12-preservation
-  - json-schema-ref-no-deref
-  - request-metadata
   - sep-2322-client-request-state

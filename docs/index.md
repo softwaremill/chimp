@@ -24,6 +24,7 @@ and [sttp](https://github.com/softwaremill/sttp), supporting the variety of the 
 
    client/quickstart
    client/transport
+   client/protocol
    client/capabilities
    client/examples
 ```

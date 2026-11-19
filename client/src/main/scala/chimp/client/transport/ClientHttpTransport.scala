@@ -2,7 +2,7 @@ package chimp.client.transport
 
 import chimp.client.transport.ClientHttpTransport.HttpOutcome
 import chimp.client.{McpAuthorizationException, McpProtocolException, McpSessionNotFoundException, McpTransportException}
-import chimp.protocol.{JSONRPCMessage, ProtocolVersion}
+import chimp.protocol.{JSONRPCErrorObject, JSONRPCMessage, ProtocolMeta, ProtocolVersion}
 import sttp.client4.{basicRequest, Backend, Request, Response}
 import sttp.model.sse.ServerSentEvent
 import sttp.model.{Header, MediaType, StatusCode, Uri}
@@ -18,44 +18,48 @@ import scala.util.chaining.*
   *   The sttp backend used to send HTTP requests.
   * @param uri
   *   The MCP endpoint URI.
-  * @param protocolVersion
-  *   Protocol version advertised via the `MCP-Protocol-Version` header; defaults to the latest version supported by chimp.
   * @param headers
   *   Extra headers sent with each request to the server.
   */
 final class ClientHttpTransport[F[_]](
     backend: Backend[F],
     uri: Uri,
-    protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
     headers: Seq[Header] = Nil
 ) extends ClientTransport[F]:
 
   given monad: MonadError[F] = backend.monad
 
   private val sessionId = AtomicReference[Option[String]](None)
+  private val protocolVersion = AtomicReference(ClientHttpTransport.DefaultProtocolVersion)
+
+  override def setProtocolVersion(version: ProtocolVersion): F[Unit] = monad.eval(protocolVersion.set(version))
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion, sessionId.get(), msg, headers)
+      .basePostRequest(uri, protocolVersion.get(), sessionId.get(), msg, headers)
       .send(backend)
-      .flatMap(interpret)
+      .flatMap(interpret(msg, _))
 
-  private def interpret(response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
+  private def interpret(msg: JSONRPCMessage, response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
     response.header("Mcp-Session-Id").foreach(s => sessionId.set(Some(s)))
     ClientHttpTransport.resolveResponse(response, sessionId.get()) match
       case Left(error: McpSessionNotFoundException) =>
         sessionId.set(None)
         monad.error(error)
-      case Left(error)               => monad.error(error)
-      case Right(HttpOutcome.NoBody) => monad.unit(None)
-      case Right(kind)               =>
+      case Left(error)                          => monad.error(error)
+      case Right(HttpOutcome.NoBody)            => monad.unit(None)
+      case Right(HttpOutcome.ErrorBody(status)) =>
+        ClientHttpTransport.errorResponse(msg, status, response.body.fold(identity, identity)) match
+          case Right(error) => monad.unit(Some(error))
+          case Left(error)  => monad.error(error)
+      case Right(kind) =>
         response.body match
           case Left(err)   => monad.error(McpTransportException(s"HTTP 200 with empty body: $err"))
           case Right(body) =>
             val payload = kind match
               case HttpOutcome.JsonBody => if body.isEmpty then None else Some(body)
               case HttpOutcome.SseBody  => ClientHttpTransport.extractSingleSseData(body)
-              case HttpOutcome.NoBody   => None
+              case _                    => None
             payload match
               case None       => monad.unit(None)
               case Some(json) =>
@@ -69,13 +73,17 @@ final class ClientHttpTransport[F[_]](
       case None     => monad.unit(())
       case Some(id) =>
         sessionId.set(None)
-        ClientHttpTransport.baseDeleteRequest(uri, protocolVersion, id, headers).send(backend).map(_ => ())
+        ClientHttpTransport.baseDeleteRequest(uri, protocolVersion.get(), id, headers).send(backend).map(_ => ())
 
 object ClientHttpTransport:
   enum HttpOutcome:
     case NoBody
     case JsonBody
     case SseBody
+    case ErrorBody(status: StatusCode)
+
+  /** The version an HTTP transport sends until the client sets one. */
+  private[transport] val DefaultProtocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
 
   private[transport] val AcceptHeader: String =
     s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString}"
@@ -92,6 +100,12 @@ object ClientHttpTransport:
       Header("Mcp-Method", method) :: name.map(Header("Mcp-Name", _)).toList
     case _ => Nil
 
+  /** A stateless request names its version in `_meta`; the `MCP-Protocol-Version` header always equals it. */
+  private def metaVersion(msg: JSONRPCMessage): Option[String] = msg match
+    case JSONRPCMessage.Request(_, _, Some(params), _) =>
+      params.hcursor.downField("_meta").get[String](ProtocolMeta.ProtocolVersionKey).toOption
+    case _ => None
+
   private[transport] def basePostRequest(
       uri: Uri,
       protocolVersion: ProtocolVersion,
@@ -99,13 +113,15 @@ object ClientHttpTransport:
       msg: JSONRPCMessage,
       headers: Seq[Header]
   ): Request[Either[String, String]] =
+    val version = metaVersion(msg).getOrElse(protocolVersion.name)
+    val stateless = ProtocolVersion.from(version).exists(_.isModern)
     basicRequest
       .post(uri)
       .headers(headers*)
       .header("Content-Type", MediaType.ApplicationJson.toString)
       .header("Accept", AcceptHeader)
-      .header("MCP-Protocol-Version", protocolVersion.name)
-      .headers((if protocolVersion.isModern then standardRequestHeaders(msg) else Nil)*)
+      .header(ProtocolMeta.ProtocolVersionHeader, version)
+      .headers((if stateless then standardRequestHeaders(msg) else Nil)*)
       .body(ClientTransport.encode(msg))
       .pipe { request =>
         sessionId match
@@ -151,11 +167,30 @@ object ClientHttpTransport:
       case StatusCode.Accepted     => Right(HttpOutcome.NoBody)
       case StatusCode.Unauthorized => Left(McpAuthorizationException("Authorization required", StatusCode.Unauthorized.code))
       case StatusCode.Forbidden    => Left(McpAuthorizationException("Forbidden", StatusCode.Forbidden.code))
-      case StatusCode.NotFound     =>
-        currentSession match
-          case Some(id) => Left(McpSessionNotFoundException(id))
-          case None     => Left(McpTransportException("404 Not Found"))
-      case other => Left(McpTransportException(s"Unexpected HTTP response: ${other.code}"))
+      case StatusCode.NotFound if currentSession.isDefined => Left(McpSessionNotFoundException(currentSession.getOrElse("")))
+      case other                                           => Right(HttpOutcome.ErrorBody(other))
+
+  /** A request that fails with an HTTP error can carry a JSON-RPC error in the body, e.g. `-32022` with HTTP 400. That error is the
+    * response to the request; any other body fails with [[McpTransportException]].
+    */
+  private[transport] def errorResponse(
+      msg: JSONRPCMessage,
+      status: StatusCode,
+      body: String
+  ): Either[McpTransportException, JSONRPCMessage.Error] =
+    val error: Option[JSONRPCMessage.Error] = msg match
+      case request: JSONRPCMessage.Request =>
+        io.circe.parser
+          .parse(body)
+          .flatMap(_.hcursor.downField("error").as[JSONRPCErrorObject])
+          .toOption
+          .map(error => new JSONRPCMessage.Error(id = request.id, error = error))
+      case _ => None
+    error.toRight(unexpectedStatus(status))
+
+  private def unexpectedStatus(status: StatusCode): McpTransportException =
+    if status == StatusCode.NotFound then McpTransportException("404 Not Found")
+    else McpTransportException(s"Unexpected HTTP response: ${status.code}")
 
   private def isSseResponse(response: Response[?]): Boolean =
     response

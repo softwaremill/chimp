@@ -3,7 +3,7 @@ package chimp.server.zio
 import chimp.client.transport.ClientTransport
 import chimp.client.transport.zio.ZioClientHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
-import chimp.protocol.{Implementation, ProtocolVersion}
+import chimp.protocol.{Implementation, LoggingLevel, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
@@ -53,6 +53,12 @@ class ZioMcpServerHttpSpec
     withHttpServer(ZioServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
       McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion).flatMap(test)
 
+  override protected def withLoggingStreamingServer(server: StreamingMcpServer[Task], logLevel: LoggingLevel)(
+      test: BidirectionalMcpClient[Task] => Task[Assertion]
+  ): Future[Assertion] =
+    withHttpServer(ZioServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
+      McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion, logLevel = Some(logLevel)).flatMap(test)
+
   override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Task])(test: URI => Assertion): Future[Assertion] =
     withEndpointUri(ZioServerHttpTransport(List("mcp")).serve(server))(test)
 
@@ -96,7 +102,6 @@ class ZioMcpServerHttpSpec
               .scoped(
                 backend,
                 uri"http://localhost:$port/mcp",
-                clientProtocolVersion,
                 ClientTransport.defaultTimeout,
                 headers = headers
               )

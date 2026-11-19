@@ -2,7 +2,7 @@ package chimp.server.pekko
 
 import chimp.client.transport.pekko.PekkoClientHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
-import chimp.protocol.{Implementation, ProtocolVersion}
+import chimp.protocol.{Implementation, LoggingLevel, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
@@ -51,6 +51,12 @@ class PekkoMcpServerHttpSpec
   )(test: BidirectionalMcpClient[Future] => Future[Assertion]): Future[Assertion] =
     withHttpServer(PekkoServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
       McpClient.bidirectional(transport, clientInfo).flatMap(test)
+
+  override protected def withLoggingStreamingServer(server: StreamingMcpServer[Future], logLevel: LoggingLevel)(
+      test: BidirectionalMcpClient[Future] => Future[Assertion]
+  ): Future[Assertion] =
+    withHttpServer(PekkoServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
+      McpClient.bidirectional(transport, clientInfo, logLevel = Some(logLevel)).flatMap(test)
 
   override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Future])(test: URI => Assertion): Future[Assertion] =
     withEndpointUri(PekkoServerHttpTransport(List("mcp")).serve(server))(test)

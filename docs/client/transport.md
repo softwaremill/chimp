@@ -36,12 +36,13 @@ classDiagram
 
 ## Protocol versions
 
-The HTTP transports and `McpClient` each take a `protocolVersion`, which defaults to `ProtocolVersion.LatestLegacy` (`2025-11-25`). Give both the same version.
+The transports have no protocol version parameter. You set the version on `McpClient`, and the client gives it to the transport (see [Protocol versions](protocol.md)).
 
-- At a legacy version, the client runs the `initialize` handshake.
-- At `ProtocolVersion.Latest` (`2026-07-28`), there is no handshake. The client calls `server/discover` to learn the server's capabilities and info, and fails if the server does not support its version. Every request then carries `_meta` with the protocol version, the client capabilities and the client info. The HTTP transports also send the `Mcp-Method` header, and `Mcp-Name` on `tools/call`, `prompts/get` and `resources/read`.
+At the stateless version `2026-07-28`, the HTTP transports:
 
-`2026-07-28` removed `ping`, `logging/setLevel` and `resources/{,un}subscribe`, so a modern server answers them with "method not found".
+- send `MCP-Protocol-Version` equal to the version in the `_meta` of the request
+- send the `Mcp-Method` header, and `Mcp-Name` on `tools/call`, `prompts/get` and `resources/read`
+- open no GET stream for server messages
 
 ## Streaming integrations
 

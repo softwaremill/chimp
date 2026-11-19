@@ -19,6 +19,11 @@ trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
 
   protected def withStreamingServer(server: StreamingMcpServer[F])(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion]
 
+  /** As [[withStreamingServer]], with a client that has the `logLevel` option. */
+  protected def withLoggingStreamingServer(server: StreamingMcpServer[F], logLevel: LoggingLevel)(
+      test: BidirectionalMcpClient[F] => F[Assertion]
+  ): Future[Assertion]
+
   /** The protocol version of the spec's client. A modern client sets no `_meta` logLevel, so it must get no log notifications. */
   protected def clientProtocolVersion: ProtocolVersion
 
@@ -39,7 +44,20 @@ trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
             yield ToolResult.text("done")
       )
 
-  "a streaming MCP server" should "deliver log notifications emitted during a tool call, but none to a modern request without a log level" in
+  "a streaming MCP server" should "deliver log notifications to a client with the log level option, at a legacy and a modern version" in
+    withLoggingStreamingServer(streamingServer, LoggingLevel.Info): client =>
+      val messages = ConcurrentLinkedQueue[Json]()
+      client
+        .onServerNotification:
+          case ServerNotification.LoggingMessage(params) => messages.add(params.data); monad.unit(())
+          case _                                         => monad.unit(())
+        .flatMap(_ => client.callTool("noisy", Json.obj()))
+        .flatMap: result =>
+          waitUntil(messages.size >= 3).map: _ =>
+            result.content shouldBe List(ToolContent.Text("text", "done"))
+            messages.asScala.toList shouldBe List(Json.fromString("one"), Json.fromString("two"), Json.fromString("three"))
+
+  it should "deliver log notifications emitted during a tool call, but none to a modern request without a log level" in
     withStreamingServer(streamingServer): client =>
       val messages = ConcurrentLinkedQueue[Json]()
       val listener: ServerNotification => F[Unit] = {

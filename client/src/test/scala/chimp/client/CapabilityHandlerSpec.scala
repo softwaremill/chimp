@@ -13,7 +13,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
 
   private def planInitResponse(transport: InMemoryTransport): Unit =
     val initResult = InitializeResult(
-      protocolVersion = ProtocolVersion.Latest.name,
+      protocolVersion = ProtocolVersion.LatestLegacy.name,
       capabilities = ServerCapabilities(),
       serverInfo = Implementation(name = "s", version = "1")
     )
