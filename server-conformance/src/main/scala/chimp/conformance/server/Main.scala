@@ -145,6 +145,22 @@ object Main:
       LoggingLevel.values.foreach(level => ctx.log(level, Json.fromString(s"$level message")))
       ToolResult.text("logging complete")
 
+  private val publisher = NotificationPublisher()
+
+  private val triggerToolChange = tool("test_trigger_tool_change")
+    .description("Publishes a tools list change to the open subscriptions")
+    .input[NoInput]
+    .handle: _ =>
+      publisher.toolsListChanged()
+      ToolResult.text("tools list change published")
+
+  private val triggerPromptChange = tool("test_trigger_prompt_change")
+    .description("Publishes a prompts list change to the open subscriptions")
+    .input[NoInput]
+    .handle: _ =>
+      publisher.promptsListChanged()
+      ToolResult.text("prompts list change published")
+
   private val staticText = resource("test://static-text")
     .name("static-text")
     .mimeType("text/plain")
@@ -206,7 +222,9 @@ object Main:
       mixedTool,
       embeddedResourceTool,
       jsonSchemaTool,
-      missingCapabilityTool
+      missingCapabilityTool,
+      triggerToolChange,
+      triggerPromptChange
     )
     .addResources(staticText, staticBinary)
     .addResourceTemplate(dataTemplate)
@@ -214,6 +232,7 @@ object Main:
     .withCompletion((_, _, _) => Completion(values = List("alpha", "beta")))
     .withLoggingLevel(_ => ())
     .withSubscriptions(ResourceSubscriptions[Identity](_ => (), _ => ()))
+    .withPublisher(publisher)
 
   private val streamingServer = server.streaming.addStreamingTools(progressTool, loggingTool, perRequestLoggingTool)
 
@@ -224,6 +243,8 @@ object Main:
       .getOrElse(0)
 
     val endpoint = OxServerHttpTransport(List("mcp")).serve(streamingServer)
+
+    val _ = sys.addShutdownHook(publisher.close())
 
     supervised:
       val binding = NettySyncServer().port(requestedPort).addEndpoint(endpoint).start()
