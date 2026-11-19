@@ -18,11 +18,7 @@ import sttp.shared.Identity
 @main def everythingClient(): Unit =
   val backend = DefaultSyncBackend()
   val transport = ClientHttpTransport[Identity](backend, uri"http://localhost:3001/mcp")
-  val client = McpClient[Identity](
-    transport,
-    clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0"),
-    protocolVersion = ProtocolVersion.Latest
-  )
+  val client = McpClient[Identity](transport, clientInfo = Implementation(name = "chimp-everything-client", version = "0.1.0"))
 
   try
     println(s"Connected to ${client.serverInfo.name} ${client.serverInfo.version}")

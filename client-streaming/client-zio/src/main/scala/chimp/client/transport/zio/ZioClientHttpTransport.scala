@@ -74,7 +74,7 @@ final class ZioClientHttpTransport private (
 
   private def sendRequest(request: JSONRPCMessage.Request, await: () => Task[JSONRPCMessage]): Task[Option[JSONRPCMessage]] =
     post(request).flatMap: resp =>
-      captureSession(resp) *>
+      captureSession(resp, request) *>
         sessionRef.get.flatMap: session =>
           ClientHttpTransport.resolveResponse(resp, session) match
             case Left(err: McpSessionNotFoundException) =>
@@ -97,7 +97,7 @@ final class ZioClientHttpTransport private (
 
   private def sendNonRequest(msg: JSONRPCMessage): Task[Option[JSONRPCMessage]] =
     post(msg).flatMap: response =>
-      captureSession(response) *>
+      captureSession(response, msg) *>
         sessionRef.get.flatMap: session =>
           ClientHttpTransport.resolveResponse(response, session) match
             case Left(err: McpSessionNotFoundException) =>
@@ -120,11 +120,11 @@ final class ZioClientHttpTransport private (
         .response(asStreamUnsafe(ZioStreams))
         .send(backend)
 
-  private def captureSession(response: Response[?]): Task[Unit] =
+  private def captureSession(response: Response[?], msg: JSONRPCMessage): Task[Unit] =
     val maybeUpdate = response.header("Mcp-Session-Id") match
       case Some(id) => sessionRef.set(Some(id))
       case None     => ZIO.unit
-    maybeUpdate *> sessionReady.succeed(()).unit
+    maybeUpdate *> sessionReady.succeed(()).when(ClientHttpTransport.readiesGetStream(msg)).unit
 
   private def collectBody(response: Response[Either[String, Stream[Throwable, Byte]]]): Task[String] =
     response.body match
@@ -201,7 +201,7 @@ final class ZioClientHttpTransport private (
       case None         => ZIO.unit
       case Some(stream) => streamWithResume(stream, lastEventId, closingRef.get.map(!_))
     val listener = sessionReady.await *> protocolVersion.get.flatMap(version => listen.unless(version.isModern).unit)
-    listener.catchAll(t => warnUnlessClosing(s"GET listener failed: ${t.getMessage}")).forkIn(scope).unit
+    listener.catchAll(t => warnUnlessClosing(s"GET listener failed: ${t.getMessage}")).interruptible.forkIn(scope).unit
 
   private def streamWithResume(
       stream: Stream[Throwable, Byte],

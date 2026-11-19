@@ -87,6 +87,13 @@ object ClientHttpTransport:
     case SseBody
     case ErrorBody(status: StatusCode)
 
+  /** Whether the response to `msg` lets a streaming transport open its GET stream. The response to `server/discover` does not: with era
+    * detection the client sends it before it knows the era, and before a legacy server gives a session.
+    */
+  private[transport] def readiesGetStream(msg: JSONRPCMessage): Boolean = msg match
+    case JSONRPCMessage.Request(_, "server/discover", _, _) => false
+    case _                                                  => true
+
   /** The version an HTTP transport sends until the client sets one. */
   private[transport] val DefaultProtocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
 

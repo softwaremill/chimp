@@ -15,8 +15,8 @@ import io.circe.Json
   * [[BidirectionalMcpClient]] instead.
   */
 trait McpClient[F[_]]:
-  /** The protocol version that the client uses. At a stateless version it can change once, when the server rejects the version with
-    * `-32022` and the client retries with a version from the server's list.
+  /** The protocol version that the client uses: the fixed version, or the detected one. At a stateless version it can change when the
+    * server rejects the version with `-32022` and the client retries with a version from the server's list.
     */
   def protocolVersion: ProtocolVersion
 
@@ -134,8 +134,10 @@ object McpClient:
     * @param clientInfo
     *   Implementation name and version sent to the server.
     * @param protocolVersion
-    *   The protocol version of the client; the client gives it to the transport. A legacy version runs the `initialize` handshake, a
-    *   stateless version (2026-07-28) calls `server/discover`. Defaults to the latest legacy version.
+    *   How the client chooses its protocol version; the client gives the version to the transport. With [[DetectVersion]], the default, the
+    *   client sends `server/discover` first and falls back to `initialize` at the latest legacy version when the server is legacy. A fixed
+    *   [[chimp.protocol.ProtocolVersion]] skips the detection: a legacy version runs the `initialize` handshake, a stateless version
+    *   (2026-07-28) calls `server/discover`.
     * @param logLevel
     *   The minimum level of the log messages the server sends. At a stateless version every request carries it in `_meta`; at a legacy
     *   version the client sends `logging/setLevel` once after `initialize`. Without it the server sends no log messages.
@@ -143,7 +145,7 @@ object McpClient:
   def apply[F[_]](
       transport: ClientTransport[F],
       clientInfo: Implementation,
-      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
+      protocolVersion: VersionPolicy = DetectVersion,
       logLevel: Option[LoggingLevel] = None
   ): F[McpClient[F]] =
     McpClientImpl.create(transport, clientInfo, protocolVersion, logLevel)
@@ -173,7 +175,7 @@ object McpClient:
       rootsHandler: Option[() => F[ListRootsResult]] = None,
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
-      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy,
+      protocolVersion: VersionPolicy = DetectVersion,
       logLevel: Option[LoggingLevel] = None
   ): F[BidirectionalMcpClient[F]] =
     McpClientImpl.createBidirectional(transport, clientInfo, protocolVersion, logLevel, rootsHandler, samplingHandler, elicitationHandler)

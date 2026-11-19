@@ -147,7 +147,7 @@ final class PekkoClientHttpTransport private (
 
   private def sendRequest(request: JSONRPCMessage.Request, await: () => Future[JSONRPCMessage]): Future[Option[JSONRPCMessage]] =
     post(request).flatMap: response =>
-      captureSession(response).flatMap: session =>
+      captureSession(response, request).flatMap: session =>
         ClientHttpTransport.resolveResponse(response, session) match
           case Left(err: McpSessionNotFoundException) =>
             state.tell(_.sessionId = None)
@@ -176,7 +176,7 @@ final class PekkoClientHttpTransport private (
 
   private def sendNonRequest(msg: JSONRPCMessage): Future[Option[JSONRPCMessage]] =
     post(msg).flatMap: response =>
-      captureSession(response).flatMap: session =>
+      captureSession(response, msg).flatMap: session =>
         ClientHttpTransport.resolveResponse(response, session) match
           case Left(err: McpSessionNotFoundException) =>
             state.tell(_.sessionId = None)
@@ -204,11 +204,12 @@ final class PekkoClientHttpTransport private (
           .response(asStreamUnsafe(PekkoStreams))
           .send(backend)
 
-  private def captureSession(response: Response[?]): Future[Option[String]] =
+  private def captureSession(response: Response[?], msg: JSONRPCMessage): Future[Option[String]] =
     state
       .ask(_.captureSessionId(response.header("Mcp-Session-Id")))
       .map: session =>
-        val _ = sessionReady.trySuccess(())
+        if ClientHttpTransport.readiesGetStream(msg) then
+          val _ = sessionReady.trySuccess(())
         session
 
   private def collectBody(response: Response[Either[String, Source[ByteString, Any]]]): Future[String] =

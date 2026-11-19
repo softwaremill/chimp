@@ -36,7 +36,7 @@ classDiagram
 
 ## Protocol versions
 
-The transports have no protocol version parameter. You set the version on `McpClient`, and the client gives it to the transport (see [Protocol versions](protocol.md)).
+The transports have no protocol version parameter. You set the version policy on `McpClient`, and the client gives the version to the transport (see [Protocol versions](protocol.md)). By default the client detects the era of the server.
 
 At the stateless version `2026-07-28`, the HTTP transports:
 

@@ -193,20 +193,20 @@ class McpClientStatelessSpec extends AnyFlatSpec with Matchers:
   "A legacy client" should "reject server/discover" in:
     val transport = InMemoryTransport()
     transport.planResponse(response(legacyInitResult(ServerCapabilities())))
-    val client = McpClient[Identity](transport, clientInfo)
+    val client = McpClient[Identity](transport, clientInfo, ProtocolVersion.LatestLegacy)
     val _ = intercept[McpProtocolException](client.discover())
     client.protocolVersion shouldBe ProtocolVersion.LatestLegacy
 
   it should "use the version that the server negotiates in initialize" in:
     val transport = InMemoryTransport()
     transport.planResponse(response(legacyInitResult(ServerCapabilities(), ProtocolVersion.V2025_06_18)))
-    McpClient[Identity](transport, clientInfo).protocolVersion shouldBe ProtocolVersion.V2025_06_18
+    McpClient[Identity](transport, clientInfo, ProtocolVersion.LatestLegacy).protocolVersion shouldBe ProtocolVersion.V2025_06_18
 
   it should "send the log level option once with logging/setLevel after initialize" in:
     val transport = InMemoryTransport()
     transport.planResponse(response(legacyInitResult(ServerCapabilities(logging = Some(Json.obj())))))
     transport.planResponse(response(Json.obj()))
-    val _ = McpClient[Identity](transport, clientInfo, logLevel = Some(LoggingLevel.Error))
+    val _ = McpClient[Identity](transport, clientInfo, ProtocolVersion.LatestLegacy, Some(LoggingLevel.Error))
     methods(transport) shouldBe List("initialize", "notifications/initialized", "logging/setLevel")
     transport.sent.last match
       case JSONRPCMessage.Request(_, _, Some(params), _) => params.hcursor.get[String]("level") shouldBe Right("error")
@@ -215,7 +215,7 @@ class McpClientStatelessSpec extends AnyFlatSpec with Matchers:
   it should "not send logging/setLevel when the server has no logging capability" in:
     val transport = InMemoryTransport()
     transport.planResponse(response(legacyInitResult(ServerCapabilities())))
-    val _ = McpClient[Identity](transport, clientInfo, logLevel = Some(LoggingLevel.Error))
+    val _ = McpClient[Identity](transport, clientInfo, ProtocolVersion.LatestLegacy, Some(LoggingLevel.Error))
     methods(transport) shouldBe List("initialize", "notifications/initialized")
 
   private def legacyInitResult(capabilities: ServerCapabilities, version: ProtocolVersion = ProtocolVersion.LatestLegacy): Json =

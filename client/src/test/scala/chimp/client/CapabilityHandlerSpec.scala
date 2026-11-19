@@ -25,6 +25,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
     val _ = McpClient.bidirectional[Identity](
       transport,
       clientInfo,
+      protocolVersion = ProtocolVersion.LatestLegacy,
       rootsHandler = Some(() => ListRootsResult(roots = List(Root(uri = "file:///x", name = Some("x")))))
     )
 
@@ -42,7 +43,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
   it should "respond with MethodNotFound for capabilities the client didn't opt into" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
-    val _ = McpClient.bidirectional[Identity](transport, clientInfo)
+    val _ = McpClient.bidirectional[Identity](transport, clientInfo, protocolVersion = ProtocolVersion.LatestLegacy)
 
     val request: JSONRPCMessage = JSONRPCMessage.Request(method = "sampling/createMessage", id = RequestId("server-2"))
     transport.simulateIncoming(request)
@@ -54,7 +55,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
   it should "deliver incoming notifications to registered listeners" in:
     val transport = InMemoryTransport()
     planInitResponse(transport)
-    val client = McpClient.bidirectional[Identity](transport, clientInfo)
+    val client = McpClient.bidirectional[Identity](transport, clientInfo, protocolVersion = ProtocolVersion.LatestLegacy)
     var received: Option[ServerNotification] = None
     val listener: ServerNotificationListener[Identity] = n => { received = Some(n); () }
     val _ = client.onServerNotification(listener)
@@ -71,6 +72,7 @@ class CapabilityHandlerSpec extends AnyFlatSpec with Matchers:
     val _ = McpClient.bidirectional[Identity](
       transport,
       clientInfo,
+      protocolVersion = ProtocolVersion.LatestLegacy,
       rootsHandler = Some(() => ListRootsResult(roots = Nil)),
       elicitationHandler = Some((_: ElicitRequest) => ElicitResult(action = ElicitAction.Cancel))
     )

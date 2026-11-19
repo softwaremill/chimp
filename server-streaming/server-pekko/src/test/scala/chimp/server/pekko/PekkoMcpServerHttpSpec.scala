@@ -50,7 +50,7 @@ class PekkoMcpServerHttpSpec
       server: StreamingMcpServer[Future]
   )(test: BidirectionalMcpClient[Future] => Future[Assertion]): Future[Assertion] =
     withHttpServer(PekkoServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
-      McpClient.bidirectional(transport, clientInfo).flatMap(test)
+      McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion).flatMap(test)
 
   override protected def withLoggingStreamingServer(server: StreamingMcpServer[Future], logLevel: LoggingLevel)(
       test: BidirectionalMcpClient[Future] => Future[Assertion]
@@ -86,7 +86,11 @@ class PekkoMcpServerHttpSpec
   )(test: BidirectionalMcpClient[Future] => Future[Assertion]): Future[Assertion] =
     val endpoint = SecuredServerStreamingHttpTransport(List("mcp"), PekkoServerHttpTransport(List("mcp"))).serve(server)
     withHttpServer(endpoint, List(Header.authorization("Bearer", token))): transport =>
-      McpClient.bidirectional(transport, clientInfo).flatMap(test)
+      McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion).flatMap(test)
+
+  "A client with the default version policy" should "detect a chimp server as a 2026-07-28 server" in:
+    withHttpServer(PekkoServerHttpTransport(List("mcp")).serve(McpServer[Future]().streaming), Nil): transport =>
+      McpClient(transport, clientInfo).map(_.protocolVersion shouldBe ProtocolVersion.Latest)
 
   private def withHttpServer(
       endpoint: ServerEndpoint[PekkoStreams & WebSockets, Future],

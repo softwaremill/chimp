@@ -1,6 +1,9 @@
 # Protocol versions
 
-chimp's client speaks the legacy protocol versions (`2025-06-18`, `2025-11-25`) and the stateless version `2026-07-28`. You set the version once, on the client. The client gives it to the transport, so a transport has no version parameter.
+chimp's client speaks the legacy protocol versions (`2025-06-18`, `2025-11-25`) and the stateless version `2026-07-28`. The `protocolVersion` parameter of `McpClient.apply` and `McpClient.bidirectional` sets the version policy, once, on the client. The client gives the version to the transport, so a transport has no version parameter.
+
+- `DetectVersion`, the default: the client detects the era of the server (see below).
+- A fixed `ProtocolVersion`: the client uses that version and does no detection. Pin a version when you know the server, or to skip the detection request.
 
 ```scala mdoc:compile-only
 import chimp.client.*
@@ -24,6 +27,19 @@ object StatelessClient:
     println(client.discover().supportedVersions)
     client.close()
 ```
+
+## Era detection
+
+With `DetectVersion`, the first request of the client is `server/discover` at `2026-07-28`, over HTTP and over STDIO:
+
+- A `server/discover` result, or a `2026-07-28` error (`-32020`, `-32021` or `-32022`), means that the server is modern. The client uses the stateless wire and negotiates the version on `-32022` (see [Version negotiation](#version-negotiation)).
+- Any other outcome means that the server is legacy: another JSON-RPC error, an HTTP error (for example 400, 404 or 405) whose body is not a `2026-07-28` error, a failed send, or a timeout. The client then sends `initialize` with the latest legacy version, `2025-11-25`.
+
+The decision does not depend on one specific error code. The client makes it once, when it connects, and keeps it for its lifetime. `McpClient.protocolVersion` shows the result.
+
+If a modern server lists no stateless version that chimp supports, but a common legacy version, the client sends `initialize` with that version. If the server shares no version with chimp, the client fails with `McpUnsupportedProtocolVersionException`, which names both version lists. If a legacy server rejects `initialize`, the client fails as with a fixed legacy version.
+
+A legacy STDIO server that does not answer an unknown request makes the client wait for the timeout of the transport before it sends `initialize`. For such a server, pin a legacy version.
 
 ## Legacy versions
 

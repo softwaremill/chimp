@@ -88,7 +88,7 @@ final class OxClientHttpTransport private (
 
   private def sendRequest(request: JSONRPCMessage.Request, await: () => JSONRPCMessage): Option[JSONRPCMessage] =
     val response = post(request)
-    captureSession(response)
+    captureSession(response, request)
     ClientHttpTransport.resolveResponse(response, state.ask(_.sessionId)) match
       case Left(err: McpSessionNotFoundException) => state.tell(_.sessionId = None); throw err
       case Left(err)                              => throw err
@@ -110,7 +110,7 @@ final class OxClientHttpTransport private (
 
   private def sendNonRequest(msg: JSONRPCMessage): Option[JSONRPCMessage] =
     val response = post(msg)
-    captureSession(response)
+    captureSession(response, msg)
     ClientHttpTransport.resolveResponse(response, state.ask(_.sessionId)) match
       case Left(err: McpSessionNotFoundException) => state.tell(_.sessionId = None); throw err
       case Left(err)                              => throw err
@@ -131,9 +131,9 @@ final class OxClientHttpTransport private (
       .response(asInputStreamUnsafe)
       .send(backend)
 
-  private def captureSession(response: Response[?]): Unit =
+  private def captureSession(response: Response[?], msg: JSONRPCMessage): Unit =
     response.header("Mcp-Session-Id").foreach(id => state.tell(_.sessionId = Some(id)))
-    sessionReady.countDown()
+    if ClientHttpTransport.readiesGetStream(msg) then sessionReady.countDown()
 
   private def collectBody(response: Response[Either[String, InputStream]]): String =
     response.body match

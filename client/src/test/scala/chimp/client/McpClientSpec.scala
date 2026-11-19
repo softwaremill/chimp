@@ -214,7 +214,11 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
       serverInfo = Implementation(name = "legacy-server", version = "1.0")
     )
     val connect = (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
-    val client = McpClient[Identity](ClientHttpTransport[Identity](toolHeadersBackend(sent, connect), mcpUri), clientInfo)
+    val client = McpClient[Identity](
+      ClientHttpTransport[Identity](toolHeadersBackend(sent, connect), mcpUri),
+      clientInfo,
+      ProtocolVersion.LatestLegacy
+    )
     client.listTools().tools.map(_.name) shouldBe List("weather", "broken")
     val _ = client.callTool("weather", weatherArguments)
 

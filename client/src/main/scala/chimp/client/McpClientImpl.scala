@@ -10,23 +10,24 @@ import sttp.monad.MonadError
 import sttp.monad.syntax.*
 
 import java.util.concurrent.atomic.AtomicReference
+import scala.util.control.NonFatal
 
 object McpClientImpl:
   def create[F[_]](
       transport: ClientTransport[F],
       clientInfo: Implementation,
-      protocolVersion: ProtocolVersion,
+      policy: VersionPolicy,
       logLevel: Option[LoggingLevel],
       correlator: Correlator = UUIDCorrelator()
   ): F[McpClient[F]] =
     given MonadError[F] = transport.monad
-    val requests = Requests(transport, clientInfo, ClientCapabilities(), logLevel, correlator, protocolVersion)
-    connect(requests).map(server => new Impl[F](transport, requests, server))
+    val requests = Requests(transport, clientInfo, ClientCapabilities(), logLevel, correlator, initialVersion(policy))
+    connect(requests, policy).map(server => new Impl[F](transport, requests, server))
 
   def createBidirectional[F[_]](
       transport: ClientBidirectionalTransport[F],
       clientInfo: Implementation,
-      protocolVersion: ProtocolVersion,
+      policy: VersionPolicy,
       logLevel: Option[LoggingLevel],
       rootsHandler: Option[() => F[ListRootsResult]],
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]],
@@ -39,7 +40,7 @@ object McpClientImpl:
       sampling = samplingHandler.map(_ => Json.obj()),
       elicitation = elicitationHandler.map(_ => Json.obj())
     )
-    val requests = Requests(transport, clientInfo, clientCapabilities, logLevel, correlator, protocolVersion)
+    val requests = Requests(transport, clientInfo, clientCapabilities, logLevel, correlator, initialVersion(policy))
     val serverNotificationListeners = AtomicReference[List[ServerNotificationListener[F]]](Nil)
     val serverInitiatedRequestHandlers = buildServerInitiatedRequestHandlers(rootsHandler, samplingHandler, elicitationHandler)
     val incomingHandler = buildIncomingHandler(transport, serverInitiatedRequestHandlers, serverNotificationListeners)
@@ -47,33 +48,76 @@ object McpClientImpl:
     transport
       .onIncoming(incomingHandler)
       .flatMap: _ =>
-        connect(requests).map: server =>
+        connect(requests, policy).map: server =>
           new BidirectionalImpl[F](transport, requests, server, serverNotificationListeners)
 
   /** What the client learns about the server when it connects. */
   private final case class ConnectedServer(capabilities: ServerCapabilities, serverInfo: Implementation)
 
-  /** Legacy versions run the `initialize` handshake; a stateless (2026-07-28) version has no handshake and asks `server/discover`. */
-  private def connect[F[_]](requests: Requests[F]): F[ConnectedServer] =
-    given MonadError[F] = requests.monad
-    requests.transport
-      .setProtocolVersion(requests.protocolVersion)
-      .flatMap: _ =>
-        if requests.protocolVersion.isModern then discoverServer(requests)
-        else initialize(requests)
+  private def initialVersion(policy: VersionPolicy): ProtocolVersion = policy match
+    case DetectVersion            => ProtocolVersion.Latest
+    case version: ProtocolVersion => version
 
-  /** A discover result that does not list the client's version switches to the newest common stateless version, or fails. */
-  private def discoverServer[F[_]](requests: Requests[F]): F[ConnectedServer] =
+  /** Legacy versions run the `initialize` handshake; a stateless (2026-07-28) version has no handshake and asks `server/discover`. */
+  private def connect[F[_]](requests: Requests[F], policy: VersionPolicy): F[ConnectedServer] =
+    given MonadError[F] = requests.monad
+    requests
+      .useVersion(requests.protocolVersion)
+      .flatMap: _ =>
+        policy match
+          case DetectVersion                                => detect(requests)
+          case version: ProtocolVersion if version.isModern => requests.discover().flatMap(useDiscovered(requests, _))
+          case _: ProtocolVersion                           => initialize(requests)
+
+  /** The first request is `server/discover`. A discover result or a stateless error (`-32020`, `-32021`, `-32022`) means a modern server;
+    * any other outcome, a failed send included, means a legacy server, and the client sends `initialize` at the latest legacy version.
+    */
+  private def detect[F[_]](requests: Requests[F]): F[ConnectedServer] =
     given monad: MonadError[F] = requests.monad
     requests
-      .discover()
-      .flatMap: discovered =>
-        val supported = discovered.result.supportedVersions
-        if supported.contains(requests.protocolVersion.name) then monad.unit(discovered.server)
-        else
+      .probe("server/discover")
+      .flatMap:
+        case Some(Right(result)) =>
+          discoveredOf(result) match
+            case Some(discovered) if retryVersion(discovered.result.supportedVersions).isDefined => useDiscovered(requests, discovered)
+            case Some(discovered) => fallBack(requests, discovered.result.supportedVersions)
+            case None             => legacy(requests)
+        case Some(Left(error)) if error.code == JSONRPCErrorCodes.UnsupportedProtocolVersion.code =>
+          val supported = supportedOf(error)
           retryVersion(supported) match
-            case Some(next) => requests.useVersion(next).flatMap(_ => requests.discover()).map(_.server)
-            case None       => monad.error(McpUnsupportedProtocolVersionException(supported, statelessVersions))
+            case Some(next) =>
+              requests.useVersion(next).flatMap(_ => requests.discover(negotiate = false)).flatMap(useDiscovered(requests, _))
+            case None => fallBack(requests, supported)
+        case Some(Left(error)) if StatelessErrors.contains(error.code) =>
+          monad.error(McpProtocolException(s"server/discover failed: ${error.code} ${error.message}"))
+        case _ => legacy(requests)
+
+  private def legacy[F[_]](requests: Requests[F]): F[ConnectedServer] =
+    given MonadError[F] = requests.monad
+    requests.useVersion(ProtocolVersion.LatestLegacy).flatMap(_ => initialize(requests))
+
+  /** A modern server that lists no common stateless version: `initialize` at the newest common legacy version, or fail. */
+  private def fallBack[F[_]](requests: Requests[F], supported: List[String]): F[ConnectedServer] =
+    given monad: MonadError[F] = requests.monad
+    supported.flatMap(ProtocolVersion.from).filterNot(_.isModern).maxOption match
+      case Some(legacy) => requests.useVersion(legacy).flatMap(_ => initialize(requests))
+      case None         => monad.error(McpUnsupportedProtocolVersionException(supported, ProtocolVersion.supported.map(_.name)))
+
+  private val StatelessErrors: Set[Int] = Set(
+    JSONRPCErrorCodes.HeaderMismatch.code,
+    JSONRPCErrorCodes.MissingRequiredClientCapability.code,
+    JSONRPCErrorCodes.UnsupportedProtocolVersion.code
+  )
+
+  /** A discover result that does not list the client's version switches to the newest common stateless version, or fails. */
+  private def useDiscovered[F[_]](requests: Requests[F], discovered: Discovered): F[ConnectedServer] =
+    given monad: MonadError[F] = requests.monad
+    val supported = discovered.result.supportedVersions
+    if supported.contains(requests.protocolVersion.name) then monad.unit(discovered.server)
+    else
+      retryVersion(supported) match
+        case Some(next) => requests.useVersion(next).flatMap(_ => requests.discover(negotiate = false)).map(_.server)
+        case None       => monad.error(McpUnsupportedProtocolVersionException(supported, statelessVersions))
 
   /** Sends requests and turns their responses into results. On the stateless wire it stamps `_meta` on every request, and on `-32022` it
     * retries once with a version that both sides support.
@@ -100,19 +144,32 @@ object McpClientImpl:
     def send[R: Decoder](method: String, params: Option[Json]): F[R] =
       sendForResult(method, params).flatMap(decode[R](method, _))
 
-    def discover(): F[Discovered] =
-      sendForResult("server/discover", None).flatMap: result =>
-        decode[DiscoverResult]("server/discover", result).map(discovered => Discovered(discovered, serverInfoOf(result, discovered)))
+    def discover(negotiate: Boolean = true): F[Discovered] =
+      sendForResult("server/discover", None, negotiate).flatMap(discovered)
+
+    private def discovered(result: Json): F[Discovered] =
+      decode[DiscoverResult]("server/discover", result).map(discovered => Discovered(discovered, serverInfoOf(result, discovered)))
+
+    /** One request with no version negotiation: the result or the error, or `None` when the send fails or brings no response. */
+    def probe(method: String): F[Option[Either[JSONRPCErrorObject, Json]]] =
+      val request = JSONRPCMessage.Request(method = method, params = stamp(None, protocolVersion), id = nextId())
+      transport
+        .send(request)
+        .flatMap:
+          case Some(JSONRPCMessage.Response(_, _, result)) => checkResultType(method, result).map(result => Some(Right(result)))
+          case Some(JSONRPCMessage.Error(_, _, error))     => monad.unit(Some(Left(error)))
+          case _                                           => monad.unit(None)
+        .handleError { case NonFatal(_) => monad.unit(None) }
 
     def notify(method: String, params: Option[Json]): F[Unit] =
       transport.send(JSONRPCMessage.Notification(method = method, params = params)).map(_ => ())
 
-    private def sendForResult(method: String, params: Option[Json]): F[Json] =
+    private def sendForResult(method: String, params: Option[Json], negotiate: Boolean = true): F[Json] =
       val sentWith = protocolVersion
       attempt(method, params, sentWith).flatMap:
         case Right(result)   => monad.unit(result)
         case Left(supported) =>
-          retryVersion(supported) match
+          retryVersion(supported).filter(_ => negotiate) match
             case None       => monad.error(McpUnsupportedProtocolVersionException(supported, statelessVersions))
             case Some(next) =>
               useVersion(next)
@@ -131,7 +188,7 @@ object McpClientImpl:
             checkResultType(method, result).map(Right(_))
           case Some(JSONRPCMessage.Error(_, _, error))
               if sentWith.isModern && error.code == JSONRPCErrorCodes.UnsupportedProtocolVersion.code =>
-            monad.unit(Left(error.data.flatMap(_.hcursor.get[List[String]]("supported").toOption).getOrElse(Nil)))
+            monad.unit(Left(supportedOf(error)))
           case Some(JSONRPCMessage.Error(_, _, error)) =>
             monad.error(McpProtocolException(s"$method failed: ${error.code} ${error.message}"))
           case Some(other) =>
@@ -168,11 +225,18 @@ object McpClientImpl:
         case Right(response) => monad.unit(response)
         case Left(error)     => monad.error(McpProtocolException(s"Failed to decode $method result: ${error.getMessage}"))
 
+  /** The versions that a `-32022` error names. */
+  private def supportedOf(error: JSONRPCErrorObject): List[String] =
+    error.data.flatMap(_.hcursor.get[List[String]]("supported").toOption).getOrElse(Nil)
+
   private val statelessVersions: List[String] = ProtocolVersion.supported.filter(_.isModern).map(_.name)
 
   /** The newest stateless version that chimp shares with a server's `supported` list. */
   private def retryVersion(supported: List[String]): Option[ProtocolVersion] =
     supported.flatMap(ProtocolVersion.from).filter(_.isModern).maxOption
+
+  private def discoveredOf(result: Json): Option[Discovered] =
+    result.as[DiscoverResult].toOption.map(discovered => Discovered(discovered, serverInfoOf(result, discovered)))
 
   private final case class Discovered(result: DiscoverResult, serverInfo: Implementation):
     def server: ConnectedServer = ConnectedServer(result.capabilities, serverInfo)
