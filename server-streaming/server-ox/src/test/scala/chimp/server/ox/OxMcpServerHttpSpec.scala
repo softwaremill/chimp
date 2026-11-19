@@ -3,12 +3,15 @@ package chimp.server.ox
 import chimp.client.transport.{ClientHttpTransport, ClientTransport}
 import chimp.client.transport.ox.OxClientHttpTransport
 import chimp.client.{BidirectionalMcpClient, McpClient}
-import chimp.protocol.{Implementation, ProtocolMeta, ProtocolVersion}
+import chimp.protocol.{Implementation, LoggingLevel, ProtocolMeta, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   tool,
   McpServer,
+  McpServerHeaderHttpTests,
+  McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
+  McpServerSubscriptionHttpTests,
   McpServerTests,
   SecuredMcpServer,
   SecuredMcpServerStreamingTests,
@@ -31,15 +34,20 @@ import sttp.tapir.Schema
 import sttp.tapir.server.netty.sync.{NettySyncServer, OxStreams}
 import sttp.tapir.server.ServerEndpoint
 
+import java.net.URI
 import scala.concurrent.Future
 
 class OxMcpServerHttpSpec
     extends McpServerTests[Identity]
     with McpServerStreamingTests[Identity]
+    with McpServerSubscriptionHttpTests[Identity]
+    with McpServerInputRequiredHttpTests[Identity]
+    with McpServerHeaderHttpTests[Identity]
     with SecuredMcpServerTests[Identity]
     with SecuredMcpServerStreamingTests[Identity]
     with SyncToFuture:
   private val clientInfo = Implementation("chimp-server-test", "0.0.1")
+  override protected val clientProtocolVersion: ProtocolVersion = ProtocolVersion.Latest
 
   override protected def withServer(server: McpServer[Identity])(test: McpClient[Identity] => Identity[Assertion]): Future[Assertion] =
     withStreamingServer(server.streaming)(test)
@@ -50,9 +58,26 @@ class OxMcpServerHttpSpec
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, backend, ox) =>
       given Ox = ox
       val transport =
-        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ProtocolVersion.Latest, ClientTransport.defaultTimeout)
-      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
+        OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ClientTransport.defaultTimeout)
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion))
       finally transport.close()
+
+  override protected def withLoggingStreamingServer(server: StreamingMcpServer[Identity], logLevel: LoggingLevel)(
+      test: BidirectionalMcpClient[Identity] => Identity[Assertion]
+  ): Future[Assertion] =
+    withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, backend, ox) =>
+      given Ox = ox
+      val transport = OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", ClientTransport.defaultTimeout)
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion, logLevel = Some(logLevel)))
+      finally transport.close()
+
+  override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Identity])(test: URI => Assertion): Future[Assertion] =
+    withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, _, _) =>
+      test(URI.create(s"http://localhost:$port/mcp"))
+
+  override protected def withHttpEndpoint(server: McpServer[Identity])(test: URI => Assertion): Future[Assertion] =
+    withHttpServer(server.endpoint(List("mcp"))): (port, _, _) =>
+      test(URI.create(s"http://localhost:$port/mcp"))
 
   override protected def withSecuredServer(
       server: SecuredMcpServer[Identity, String, String, User],
@@ -77,15 +102,13 @@ class OxMcpServerHttpSpec
       val transport = OxClientHttpTransport(
         backend,
         uri"http://localhost:$port/mcp",
-        ProtocolVersion.Latest,
         ClientTransport.defaultTimeout,
         headers = List(Header.authorization("Bearer", token))
       )
-      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = ProtocolVersion.Latest))
+      try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion))
       finally transport.close()
 
-  // 2026-07-28 requests over raw HTTP: chimp's client does not write the modern `_meta` or the SEP-2243 headers yet
-  // (T10 https://github.com/softwaremill/chimp/issues/248, T12 https://github.com/softwaremill/chimp/issues/250)
+  // 2026-07-28 requests over raw HTTP, so that a test can leave out what chimp's client always sends
   private case class EchoInput(message: String) derives Codec, Schema
 
   private val modernServer: StreamingMcpServer[Identity] =

@@ -36,12 +36,32 @@ classDiagram
 
 ## Protocol versions
 
-The HTTP transports and `McpClient` each take a `protocolVersion`, which defaults to `ProtocolVersion.LatestLegacy` (`2025-11-25`). Give both the same version.
+The transports have no protocol version parameter. You set the version on `McpClient`, and the client gives it to the transport (see [Protocol versions](protocol.md)).
 
-- At a legacy version, the client runs the `initialize` handshake.
-- At `ProtocolVersion.Latest` (`2026-07-28`), there is no handshake. The client calls `server/discover` to learn the server's capabilities and info, and fails if the server does not support its version. Every request then carries `_meta` with the protocol version, the client capabilities and the client info. The HTTP transports also send the `Mcp-Method` header, and `Mcp-Name` on `tools/call`, `prompts/get` and `resources/read`.
+At the stateless version `2026-07-28`, the HTTP transports:
 
-`2026-07-28` removed `ping`, `logging/setLevel` and `resources/{,un}subscribe`, so a modern server answers them with "method not found".
+- send `MCP-Protocol-Version` equal to the version in the `_meta` of the request
+- send the `Mcp-Method` header, and `Mcp-Name` on `tools/call`, `prompts/get` and `resources/read`
+- mirror tool arguments into `Mcp-Param-*` headers (see below)
+- open no GET stream for server messages
+
+Legacy requests do not get these headers, and the STDIO transports send no headers.
+
+### Headers from tool arguments
+
+A tool can mark a property of its input schema with `x-mcp-header`. A `tools/list` result shows the HTTP transport these annotations. When you then call that tool, the transport sends each annotated argument in the header `Mcp-Param-<name>`:
+
+| Argument | Header value |
+|---|---|
+| a string of printable ASCII, without leading or trailing whitespace | the string |
+| any other string | `=?base64?<Base64 of the UTF-8 bytes>?=` |
+| a boolean | `true` or `false` |
+| an integer | its JSON text |
+| `null`, or no argument | no header |
+
+`Mcp-Name` uses the same rule for strings. Call `listTools` before `callTool`: the transport knows the annotations of a tool only from a `tools/list` result.
+
+The transport removes a tool from the `tools/list` result, and logs a warning, when its `x-mcp-header` annotations are invalid: a value that is empty, not a string or not an HTTP token (for example, with spaces, colons, non-ASCII or control characters), the same name on two properties (names are case-insensitive), or an annotation on a property that is not a string, integer or boolean, or that is not reachable through `properties` keys only. The other tools stay in the result.
 
 ## Streaming integrations
 

@@ -24,3 +24,5 @@ val endpoint = McpServer(prompts = List(greeting)).endpoint(List("mcp"))
 ```
 
 Prompt messages reuse the `ToolContent` content types, so they can embed images (`ToolContent.Image`) and resources (`ToolContent.ResourceContent`) just like tool results.
+
+A prompt can also ask the client for input before it returns its messages: see [asking the client for input](mrtr.md).
