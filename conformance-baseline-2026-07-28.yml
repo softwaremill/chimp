@@ -12,8 +12,6 @@ server:
   - tasks-request-state-removal
   - tasks-required-task-error
   - tasks-wire-fields
-  # x-mcp-header custom headers in the tool DSL — T13, https://github.com/softwaremill/chimp/issues/251
-  - http-custom-header-server-validation
   # the harness records a failure in a non-primary run of these scenarios (the primary run passes)
   - sep-2164-resource-not-found
 client:

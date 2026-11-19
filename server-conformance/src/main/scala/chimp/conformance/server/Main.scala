@@ -18,6 +18,7 @@ object Main:
 
   private case class AddNumbersInput(a: Double, b: Double) derives Codec, Schema
   private case class NoInput() derives Codec, Schema
+  private case class RegionInput(region: String) derives Codec, Schema
 
   private def base64Resource(path: String): String =
     val stream = getClass.getResourceAsStream(path)
@@ -105,6 +106,12 @@ object Main:
       |  "additionalProperties": false
       |}""".stripMargin
   ).toOption.get
+
+  private val customHeaderTool = tool("test_custom_header")
+    .description("Mirrors its region argument into the Mcp-Param-Region header")
+    .input[RegionInput]
+    .withMcpHeader("region", "Region")
+    .handle(in => ToolResult.text(s"region: ${in.region}"))
 
   private val jsonSchemaTool = tool("json_schema_2020_12_tool")
     .description("Advertises a JSON Schema 2020-12 input schema")
@@ -356,7 +363,8 @@ object Main:
       requestStateTool,
       tamperedStateTool,
       triggerToolChange,
-      triggerPromptChange
+      triggerPromptChange,
+      customHeaderTool
     )
     .addResources(staticText, staticBinary)
     .addResourceTemplate(dataTemplate)
