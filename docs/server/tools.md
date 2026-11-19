@@ -55,3 +55,36 @@ The output type carries into the logic, which returns a `ToolResult[SumOutput]`;
 result with structured output but no content is also sent as serialized JSON text, as the spec recommends.
 
 A tool can also ask the client for input before it returns its result: see [asking the client for input](mrtr.md).
+
+## Mirroring arguments into HTTP headers
+
+A tool can mark an input property with [`x-mcp-header`](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#x-mcp-header). A `2026-07-28` client on Streamable HTTP then also sends the argument in the `Mcp-Param-{name}` header, so that load balancers, proxies and gateways can route on it without reading the body. Use `withMcpHeader` with the property name, or with the chain of property names to a nested property:
+
+```scala mdoc:compile-only
+import chimp.server.*
+import io.circe.Codec
+import sttp.tapir.*
+
+case class QueryInput(region: String, query: String) derives Codec, Schema
+
+val executeSql = tool("execute_sql")
+  .description("Executes SQL in a region")
+  .input[QueryInput]
+  .withMcpHeader("region", "Region")
+  .handle(in => ToolResult.text(s"Ran in ${in.region}: ${in.query}"))
+```
+
+The `inputSchema` of the tool then has `"x-mcp-header": "Region"` on the `region` property. `withMcpHeader` works the same for a raw JSON Schema given to `.inputJson(schema)`, and an `x-mcp-header` which is already in a raw JSON Schema is kept.
+
+The server checks the `Mcp-Param-*` headers against the arguments, and rejects a mismatch with `-32020` — see [protocol versions](capabilities.md#protocol-versions).
+
+The tool builder (`input`, `inputJson` and `withMcpHeader`) throws an `IllegalArgumentException` when an annotation breaks a constraint of the spec:
+
+- The header name is empty, is not an HTTP token (letters, digits and ``!#$%&'*+-.^_`|~``), or has control characters.
+- Two properties of one tool use the same header name, ignoring case.
+- The property type is not `string`, `integer` or `boolean`. A `number` property is not permitted.
+- The property is not reachable from the schema root through `properties` keys only. For example, it is in `items`, in `anyOf`, or behind a `$ref`. A nested case class gets a `$ref` in a derived schema, so mark only the top-level fields of a derived schema, or use a raw JSON Schema.
+
+```{warning}
+Do not mark sensitive parameters, such as passwords, tokens or personal data, with `x-mcp-header`. HTTP headers are often written to logs and are visible to every intermediary on the way to the server.
+```
