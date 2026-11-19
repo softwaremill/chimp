@@ -90,8 +90,9 @@ class Schema20260728ConformanceSpec extends SchemaConformance:
     )
     validate(
       "InputRequiredResult",
-      InputRequiredResult(inputRequests = Map("name" -> request), requestState = Some("state-1"))
+      InputRequiredResult(inputRequests = Some(Map("name" -> request)), requestState = Some("state-1"))
     )
+    InputRequiredResult(requestState = Some("state-1")).asJson.hcursor.get[String]("resultType") shouldBe Right("input_required")
 
   it should "produce CallToolRequestParams carrying inputResponses and requestState that match the spec schema" in:
     validate(

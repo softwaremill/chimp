@@ -1,8 +1,16 @@
 package chimp.server.ox
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
+import chimp.protocol.JSONRPCMessage
 import chimp.server.transport.ServerStreamingStdioTransport
-import chimp.server.{McpHandler, OutboundSink, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
+import chimp.server.{
+  McpHandler,
+  OutboundSink,
+  RequestInfo,
+  SinkStreamingServerContext,
+  StdioSubscriptions,
+  StreamingMcpServer,
+  StreamingServerContext
+}
 import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.syntax.*
 import io.circe.{parser, Json}
@@ -24,7 +32,7 @@ final class OxServerStdioTransport(
 
   def serve(server: StreamingMcpServer[Identity]): Unit =
     given MonadError[Identity] = IdentityMonad
-    val handler = new McpHandler[Identity, StreamingServerContext[Identity]](server)
+    val handler = new McpHandler[Identity, StreamingServerContext[Identity]](server, canListen = true)
     val reader = StdioLineReader(in, maxLineLength)
     val writer = BufferedWriter(OutputStreamWriter(out, StandardCharsets.UTF_8))
 
@@ -39,15 +47,20 @@ final class OxServerStdioTransport(
 
       val sink = new OutboundSink[Identity]:
         def send(message: JSONRPCMessage): Unit = outbound.send(message.asJson.deepDropNullValues)
-      val makeContext: Option[ProgressToken] => StreamingServerContext[Identity] =
-        token => SinkStreamingServerContext(sink, token)
+      val makeContext: RequestInfo => StreamingServerContext[Identity] =
+        info => SinkStreamingServerContext(sink, info)
 
-      reader.lines
-        .filter(_.nonEmpty)
-        .foreach: line =>
-          parser.parse(line) match
-            case Right(json) => handler.handleJsonRpc(json, Nil, makeContext).body.foreach(outbound.send)
-            case Left(error) => log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line")
+      val subscriptions = StdioSubscriptions(handler, json => { val _ = outbound.sendOrClosed(json) })
+
+      try
+        reader.lines
+          .filter(_.nonEmpty)
+          .foreach: line =>
+            parser.parse(line) match
+              case Right(json) =>
+                if !subscriptions.accept(json) then handler.handleJsonRpc(json, Nil, makeContext).body.foreach(outbound.send)
+              case Left(error) => log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line")
+      finally subscriptions.endAll()
 
       outbound.done()
       writerFork.join()
