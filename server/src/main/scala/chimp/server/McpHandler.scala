@@ -30,8 +30,13 @@ enum McpResponse:
     case JsonError(status, json) => JsonError(status, json.deepDropNullValues)
     case EmptyAcceptResponse     => this
 
-private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C]):
+/** @param canListen
+  *   Whether the transport can hold a `subscriptions/listen` stream open. Without it the server neither serves `subscriptions/listen` nor
+  *   advertises the capabilities which need it.
+  */
+private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerDef[F, C], canListen: Boolean = false):
   private val logger = LoggerFactory.getLogger(classOf[McpHandler[?, ?]])
+  private val listenPublisher = server.publisher.filter(_ => canListen)
   private val toolsByName = server.tools.map(tool => tool.name -> tool).toMap
   private val promptsByName = server.prompts.map(prompt => prompt.definition.name -> prompt).toMap
   private val resourcesByUri = server.resources.map(resource => resource.definition.uri -> resource).toMap
@@ -141,6 +146,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         handleComplete(params, id).map(wrap(None)).map(jsonResponse)
       case "logging/setLevel" if server.loggingLevel.isDefined =>
         handleSetLoggingLevel(params, id).map(jsonResponse)
+      case "subscriptions/listen" if listenPublisher.isDefined =>
+        jsonResponse(protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Invalid or missing params")).unit
       case other =>
         jsonResponse(protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")).unit
 
@@ -167,7 +174,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       "prompts/list",
       "prompts/get",
       "completion/complete"
-    )
+    ) ++ listenPublisher.map(_ => "subscriptions/listen")
 
   private def jsonError(id: RequestId, status: StatusCode, code: Int, message: String, data: Option[Json] = None): McpResponse =
     logger.debug(s"Modern request rejected (id=$id, http=${status.code}, code=$code): $message")
@@ -302,18 +309,47 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   private val serverInfoJson: Json = serverImplementation.asJson
   private val serverInfoMeta: Json = Json.obj(ProtocolMeta.ServerInfo -> serverInfoJson)
 
-  private val serverCapabilities: ServerCapabilities = ServerCapabilities(
-    logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
-    completions = Option.when(server.completion.isDefined)(Json.obj()),
-    prompts = Option.when(hasPrompts)(ServerPromptsCapability(listChanged = Some(false))),
-    resources =
-      Option.when(hasResources)(ServerResourcesCapability(subscribe = Some(server.subscriptions.isDefined), listChanged = Some(false))),
-    tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = Some(false)))
-  )
+  /** A legacy client gets no list changes (there is no stream for them) and subscribes with `resources/subscribe`. A modern client gets
+    * them on a `subscriptions/listen` stream, which also replaces `resources/subscribe`.
+    */
+  private def serverCapabilities(modern: Boolean): ServerCapabilities =
+    val listChanged = Some(modern && listenPublisher.isDefined)
+    ServerCapabilities(
+      logging = Option.when(server.loggingLevel.isDefined)(Json.obj()),
+      completions = Option.when(server.completion.isDefined)(Json.obj()),
+      prompts = Option.when(hasPrompts)(ServerPromptsCapability(listChanged = listChanged)),
+      resources = Option.when(hasResources)(
+        ServerResourcesCapability(
+          subscribe = if modern then listChanged else Some(server.subscriptions.isDefined),
+          listChanged = listChanged
+        )
+      ),
+      tools = Option.when(server.tools.nonEmpty)(ServerToolsCapability(listChanged = listChanged))
+    )
+
+  /** The `subscriptions/listen` request which this server serves on a stream, with the subset of its filter that the server honours; `None`
+    * for any other request, and for a request which [[validateRequest]] rejects.
+    */
+  def listenRequest(request: Json, headers: Seq[Header]): Option[ListenRequest] =
+    for
+      publisher <- listenPublisher
+      case JSONRPCMessage.Request(_, "subscriptions/listen", params, id) <- request.as[JSONRPCMessage].toOption
+      if isModernRequest(params, headers) && requestRejection("subscriptions/listen", params, headers, id).isEmpty
+      listen <- params.flatMap(_.as[SubscriptionsListenParams].toOption)
+    yield ListenRequest(id, honoured(listen.notifications), publisher)
+
+  private def honoured(requested: SubscriptionFilter): SubscriptionFilter =
+    def flag(value: Option[Boolean], supported: Boolean) = Option.when(supported && value.contains(true))(true)
+    SubscriptionFilter(
+      promptsListChanged = flag(requested.promptsListChanged, hasPrompts),
+      resourceSubscriptions = requested.resourceSubscriptions.filter(_ => hasResources),
+      resourcesListChanged = flag(requested.resourcesListChanged, hasResources),
+      toolsListChanged = flag(requested.toolsListChanged, server.tools.nonEmpty)
+    )
 
   private val discoverResult: DiscoverResult = DiscoverResult(
     supportedVersions = ProtocolVersion.supported.map(_.name),
-    capabilities = serverCapabilities,
+    capabilities = serverCapabilities(modern = true),
     ttlMs = CacheHints.Default.ttlMs,
     cacheScope = CacheHints.Default.cacheScope,
     instructions = server.instructions,
@@ -325,7 +361,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val negotiated = requested.map(ProtocolVersion.negotiate).getOrElse(ProtocolVersion.LatestLegacy)
     val result = InitializeResult(
       protocolVersion = negotiated.name,
-      capabilities = serverCapabilities,
+      capabilities = serverCapabilities(modern = false),
       serverInfo = serverImplementation,
       instructions = server.instructions
     )
