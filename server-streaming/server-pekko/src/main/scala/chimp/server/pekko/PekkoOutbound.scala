@@ -1,6 +1,5 @@
 package chimp.server.pekko
 
-import io.circe.Json
 import org.apache.pekko.stream.QueueOfferResult
 import org.apache.pekko.stream.scaladsl.SourceQueueWithComplete
 import org.slf4j.LoggerFactory
@@ -13,8 +12,8 @@ private[pekko] object PekkoOutbound:
   val defaultBufferSize: Int = 64
   val defaultMaxConcurrentSends: Int = 64
 
-  def offer(queue: SourceQueueWithComplete[Json], json: Json)(using ExecutionContext): Future[Unit] =
-    queue.offer(json).flatMap {
+  def offer[A](queue: SourceQueueWithComplete[A], message: A)(using ExecutionContext): Future[Unit] =
+    queue.offer(message).flatMap {
       case QueueOfferResult.Enqueued =>
         Future.unit
       case QueueOfferResult.Dropped =>

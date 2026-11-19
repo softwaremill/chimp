@@ -8,6 +8,7 @@
   - `serverLogic` — effectful read logic, with the request headers.
   - `handleSecured` (synchronous) or `securedServerLogic` (effectful) — logic that also receives the principal made by the server's security logic; usable only on a secured server — see [transport security](transport.md).
 - Register with `.addResource` / `.addResourceTemplate`. Subscriptions are wired with `.withSubscriptions`; they serve legacy clients only, as `2026-07-28` removed `resources/{,un}subscribe` (see [protocol versions in server capabilities](capabilities.md)).
+- On `2026-07-28`, a client subscribes to resources with the `resourceSubscriptions` filter of `subscriptions/listen`, which replaces `resources/subscribe`. Send the updates with `NotificationPublisher.resourceUpdated(uri)`; the server sends each update only to the streams which list its URI (see [publishing list changes and resource updates](capabilities.md#publishing-list-changes-and-resource-updates)).
 
 ```scala mdoc:compile-only
 import chimp.server.*
@@ -26,3 +27,5 @@ val endpoint = McpServer(resources = List(readme), resourceTemplates = List(item
 ```
 
 Returning `Left(ResourceError(...))` (or reading an unknown URI) responds with a JSON-RPC error carrying the offending `uri`.
+
+A resource can also ask the client for input before it returns its contents: see [asking the client for input](mrtr.md).

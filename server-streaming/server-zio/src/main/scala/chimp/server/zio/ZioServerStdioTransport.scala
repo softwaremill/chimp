@@ -1,7 +1,15 @@
 package chimp.server.zio
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
-import chimp.server.{McpHandler, OutboundSink, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
+import chimp.protocol.JSONRPCMessage
+import chimp.server.{
+  McpHandler,
+  OutboundSink,
+  RequestInfo,
+  SinkStreamingServerContext,
+  StdioSubscriptions,
+  StreamingMcpServer,
+  StreamingServerContext
+}
 import chimp.server.transport.ServerStreamingStdioTransport
 import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.syntax.*
@@ -23,21 +31,25 @@ final class ZioServerStdioTransport(
   private given MonadError[Task] = new RIOMonadError[Any]
 
   def serve(server: StreamingMcpServer[Task]): Task[Unit] =
-    val handler = new McpHandler[Task, StreamingServerContext[Task]](server)
+    val handler = new McpHandler[Task, StreamingServerContext[Task]](server, canListen = true)
     val reader = StdioLineReader(in, maxLineLength)
     val writer = BufferedWriter(OutputStreamWriter(out, StandardCharsets.UTF_8))
 
-    def writeLine(json: Json): Task[Unit] =
-      ZIO.attemptBlocking:
+    def write(json: Json): Unit =
+      writer.synchronized:
         writer.write(json.noSpaces)
         writer.newLine()
         writer.flush()
 
+    def writeLine(json: Json): Task[Unit] = ZIO.attemptBlocking(write(json))
+
+    val subscriptions = StdioSubscriptions(handler, write)
+
     val sink = new OutboundSink[Task]:
       def send(message: JSONRPCMessage): Task[Unit] = writeLine(message.asJson.deepDropNullValues)
 
-    val makeContext: Option[ProgressToken] => StreamingServerContext[Task] =
-      token => SinkStreamingServerContext(sink, token)
+    val makeContext: RequestInfo => StreamingServerContext[Task] =
+      info => SinkStreamingServerContext(sink, info)
 
     def loop: Task[Unit] =
       ZIO
@@ -50,9 +62,13 @@ final class ZioServerStdioTransport(
               else
                 parser.parse(line) match
                   case Right(json) =>
-                    handler.handleJsonRpc(json, Nil, makeContext).flatMap(response => ZIO.foreachDiscard(response.body)(writeLine))
+                    ZIO
+                      .attemptBlocking(subscriptions.accept(json))
+                      .flatMap: accepted =>
+                        if accepted then ZIO.unit
+                        else handler.handleJsonRpc(json, Nil, makeContext).flatMap(response => ZIO.foreachDiscard(response.body)(writeLine))
                   case Left(error) =>
                     ZIO.succeed(log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line"))
             handled *> loop
 
-    loop
+    loop.ensuring(ZIO.attemptBlocking(subscriptions.endAll()).ignore)
