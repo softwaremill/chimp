@@ -846,3 +846,9 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     call(Json.obj("elicitation" -> Json.obj())) shouldBe sttp.model.StatusCode.BadRequest
     call(Json.obj("elicitation" -> Json.obj("url" -> Json.obj()))) shouldBe sttp.model.StatusCode.BadRequest
     call(Json.obj("elicitation" -> Json.obj("form" -> Json.obj(), "url" -> Json.obj()))) shouldBe sttp.model.StatusCode.Ok
+
+  it should "serve a request whose numeric id is beyond the Int range and echo the id" in:
+    val json = parseJson("""{"jsonrpc":"2.0","id":1763561090000,"method":"tools/list"}""")
+    extractJsonFromResponse(handler.handleJsonRpc(json, Seq.empty)).hcursor.downField("id").focus shouldBe Some(
+      Json.fromLong(1763561090000L)
+    )
