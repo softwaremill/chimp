@@ -11,6 +11,7 @@ import sttp.tapir.Schema
 import java.io.{
   BufferedReader,
   BufferedWriter,
+  IOException,
   InputStream,
   InputStreamReader,
   OutputStream,
@@ -19,6 +20,7 @@ import java.io.{
   PipedOutputStream
 }
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
 
@@ -67,7 +69,20 @@ trait ServerStdioTransportTests[F[_]] extends AnyFlatSpec with Matchers:
 
     def closeInput(): Unit = writer.close()
 
-    def readResponse(): Json = parser.parse(reader.readLine()).toOption.get
+    private val lines = LinkedBlockingQueue[Option[String]]()
+    private val readerThread = Thread: () =>
+      try Iterator.continually(reader.readLine()).takeWhile(_ != null).foreach(line => lines.put(Some(line)))
+      catch case _: IOException => ()
+      finally lines.put(None)
+    readerThread.setDaemon(true)
+    readerThread.start()
+
+    /** The next line from the server; fails instead of blocking when no line comes within 10 seconds. */
+    def readResponse(): Json =
+      Option(lines.poll(10, TimeUnit.SECONDS)) match
+        case Some(Some(line)) => parser.parse(line).toOption.get
+        case Some(None)       => fail("The server closed its output")
+        case None             => fail("No line from the server within 10 seconds")
 
   private def withStdioServer[A](maxLineLength: Int = StdioFraming.defaultMaxLineLength)(body: StdioSession => A): A =
     val toServer = PipedOutputStream()
