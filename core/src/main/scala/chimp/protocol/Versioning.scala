@@ -30,6 +30,14 @@ object ProtocolMeta:
       data = Some(Json.obj("requested" -> requested.asJson, "supported" -> supported.asJson))
     )
 
+  /** A `MissingRequiredClientCapability` error (`-32021`) naming the capabilities the client must declare to make the request. */
+  def missingClientCapabilityError(required: ClientCapabilities): JSONRPCErrorObject =
+    JSONRPCErrorObject(
+      code = JSONRPCErrorCodes.MissingRequiredClientCapability.code,
+      message = "Missing required client capability",
+      data = Some(Json.obj("requiredCapabilities" -> required.asJson.deepDropNullValues))
+    )
+
 /** The type of a modern (2026-07-28+) result: `complete` for a finished result, `incomplete` for one that needs another round trip (MRTR
   * input-required).
   */

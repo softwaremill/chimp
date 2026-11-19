@@ -251,10 +251,31 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       )
     else if !modernMethods.contains(method) then
       Some(jsonError(id, StatusCode.NotFound, JSONRPCErrorCodes.MethodNotFound.code, s"Method not found: $method"))
-    else if headers.exists(_.name.equalsIgnoreCase("Host")) then
+    else
       // SEP-2243 standard request headers only apply over HTTP (identified by the Host header); stdio carries no such headers
-      headerValidationError(method, params, headers, id)
-    else None
+      val headerError = Option.when(headers.exists(_.name.equalsIgnoreCase("Host")))(headerValidationError(method, params, headers, id))
+      headerError.flatten.orElse(missingCapabilityError(method, params, meta, id))
+
+  /** A `-32021` with HTTP 400 when `tools/call` names a tool whose required client capabilities the request's `_meta` does not declare. */
+  private def missingCapabilityError(method: String, params: Option[Json], meta: Option[Json], id: RequestId): Option[McpResponse] =
+    val declared = meta.flatMap(_.hcursor.downField(ProtocolMeta.ClientCapabilities).focus).getOrElse(Json.obj())
+    val required = Option
+      .when(method == "tools/call")(params.flatMap(_.hcursor.get[String]("name").toOption))
+      .flatten
+      .flatMap(toolsByName.get)
+      .flatMap(_.requiredClientCapabilities)
+    required
+      .filterNot(capabilities => declares(declared, capabilities.asJson.deepDropNullValues))
+      .map: capabilities =>
+        val envelope: JSONRPCMessage = JSONRPCMessage.Error(id = id, error = ProtocolMeta.missingClientCapabilityError(capabilities))
+        logger.debug(s"Modern request rejected (id=$id): missing client capabilities ${capabilities.asJson.noSpaces}")
+        McpResponse.JsonError(StatusCode.BadRequest, envelope.asJson)
+
+  /** Whether `declared` has every key of `required`, recursively for nested objects. */
+  private def declares(declared: Json, required: Json): Boolean =
+    required.asObject.forall(_.toList.forall { (key, value) =>
+      declared.asObject.flatMap(_(key)).exists(declaredValue => value.asObject.forall(_ => declares(declaredValue, value)))
+    })
 
   // SEP-2243: the body field that the `Mcp-Name` header must mirror, per method
   private val nameFields: Map[String, String] = Map("tools/call" -> "name", "prompts/get" -> "name", "resources/read" -> "uri")

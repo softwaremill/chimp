@@ -797,3 +797,52 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
       val body = extractJsonFromResponse(McpHandler(contextServer).handleJsonRpc(req.asJson, Seq.empty))
       withClue(s"$method $params"):
         body.noSpaces should include("2026-07-28 cli")
+
+  private val samplingTool = tool("needs_sampling")
+    .withRequiredClientCapabilities(ClientCapabilities(sampling = Some(Json.obj())))
+    .input[EchoInput]
+    .handle(in => ToolResult.text(in.message))
+
+  private val capabilityHandler = McpHandler(McpServer[Identity]().addTool(samplingTool))
+
+  private def samplingToolCall(meta: Json): Json =
+    val params = Json.obj("name" -> Json.fromString("needs_sampling"), "arguments" -> Json.obj("message" -> Json.fromString("hi")))
+    val req: JSONRPCMessage =
+      Request(method = "tools/call", params = Some(params.deepMerge(Json.obj("_meta" -> meta))), id = RequestId("cap"))
+    req.asJson
+
+  private def callSamplingTool(meta: Json): McpResponse = capabilityHandler.handleJsonRpc(samplingToolCall(meta), Seq.empty)
+
+  it should "reject a modern call of a tool that needs an undeclared client capability with -32021 and HTTP 400" in:
+    val meta = Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> Json.obj())
+    val response = callSamplingTool(meta)
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    capabilityHandler.validateRequest(samplingToolCall(meta), Seq.empty).map(_.statusCode) shouldBe Some(sttp.model.StatusCode.BadRequest)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, id, err) =>
+        id shouldBe RequestId("cap")
+        err.code shouldBe MissingRequiredClientCapability.code
+        err.data.flatMap(_.hcursor.downField("requiredCapabilities").focus) shouldBe Some(Json.obj("sampling" -> Json.obj()))
+      case other => fail(s"Expected Error, got $other")
+
+  it should "serve a modern call of a tool whose required client capabilities are declared" in:
+    callSamplingTool(modernToolMeta()).statusCode shouldBe sttp.model.StatusCode.Ok
+
+  it should "serve a legacy call of a tool that needs a client capability" in:
+    callSamplingTool(Json.obj()).statusCode shouldBe sttp.model.StatusCode.Ok
+
+  it should "check nested required client capabilities key by key" in:
+    val formTool = tool("needs_form")
+      .withRequiredClientCapabilities(ClientCapabilities(elicitation = Some(Json.obj("form" -> Json.obj()))))
+      .input[EchoInput]
+      .handle(in => ToolResult.text(in.message))
+    val formHandler = McpHandler(McpServer[Identity]().addTool(formTool))
+    def call(declared: Json): sttp.model.StatusCode =
+      val meta = Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> declared)
+      val params =
+        Json.obj("name" -> Json.fromString("needs_form"), "arguments" -> Json.obj("message" -> Json.fromString("hi")), "_meta" -> meta)
+      val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("form"))
+      formHandler.handleJsonRpc(req.asJson, Seq.empty).statusCode
+    call(Json.obj("elicitation" -> Json.obj())) shouldBe sttp.model.StatusCode.BadRequest
+    call(Json.obj("elicitation" -> Json.obj("url" -> Json.obj()))) shouldBe sttp.model.StatusCode.BadRequest
+    call(Json.obj("elicitation" -> Json.obj("form" -> Json.obj(), "url" -> Json.obj()))) shouldBe sttp.model.StatusCode.Ok
