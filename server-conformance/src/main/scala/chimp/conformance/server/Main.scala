@@ -132,11 +132,96 @@ object Main:
       ctx.log(LoggingLevel.Info, Json.fromString("Tool execution completed"))
       ToolResult.text("logging complete")
 
+  private def stringSchema(property: String): Json =
+    Json.obj(
+      "type" -> Json.fromString("object"),
+      "properties" -> Json.obj(property -> Json.obj("type" -> Json.fromString("string"))),
+      "required" -> Json.arr(Json.fromString(property))
+    )
+
+  private def answer(ctx: ServerContext[Identity], key: String, property: String): Option[String] =
+    ctx.request.elicitResult(key).flatMap(_.content).flatMap(_.get(property)).flatMap(_.asString)
+
+  private def samplingText(ctx: ServerContext[Identity], key: String): Option[String] =
+    ctx.request.samplingResult(key).map(_.content).collect { case ToolContent.Text(_, text, _, _) => text }
+
+  private def sampling(text: String, maxTokens: Int): InputRequest =
+    InputRequired.sample(CreateMessageParams(List(SamplingMessage(Role.User, ToolContent.Text(text = text))), maxTokens))
+
+  private val askName = InputRequired.elicitForm("What is your name?", stringSchema("name"))
+
   private val missingCapabilityTool = tool("test_missing_capability")
-    .description("Needs the sampling client capability")
-    .withRequiredClientCapabilities(ClientCapabilities(sampling = Some(Json.obj())))
+    .description("Asks the client for sampling, so a client without that capability gets -32021")
     .input[NoInput]
-    .handle(_ => ToolResult.text("sampling capability declared"))
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      samplingText(ctx, "sample").fold(InputRequired("sample" -> sampling("Say hello", 10)))(text => ToolResult.text(text))
+
+  private val elicitationTool = tool("test_input_required_result_elicitation")
+    .description("Asks for the user's name with a form elicitation, then greets them")
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      answer(ctx, "user_name", "name").fold(InputRequired("user_name" -> askName))(name => ToolResult.text(s"Hello, $name!"))
+
+  private val samplingTool = tool("test_input_required_result_sampling")
+    .description("Asks the client's LLM a question, then returns its answer")
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      samplingText(ctx, "capital_question")
+        .fold(InputRequired("capital_question" -> sampling("What is the capital of France?", 100)))(text => ToolResult.text(text))
+
+  private val listRootsTool = tool("test_input_required_result_list_roots")
+    .description("Asks the client for its roots, then lists them")
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      ctx.request
+        .rootsResult("client_roots")
+        .fold(InputRequired("client_roots" -> InputRequired.listRoots))(result =>
+          ToolResult.text(s"Roots: ${result.roots.map(_.uri).mkString(", ")}")
+        )
+
+  private val multipleInputsTool = tool("test_input_required_result_multiple_inputs")
+    .description("Asks for a form, a sampling and the roots at once")
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      (answer(ctx, "user_name", "name"), samplingText(ctx, "greeting"), ctx.request.rootsResult("client_roots")) match
+        case (Some(name), Some(greeting), Some(roots)) =>
+          ToolResult.text(s"$greeting, $name! Roots: ${roots.roots.map(_.uri).mkString(", ")}")
+        case _ =>
+          InputRequired(
+            "user_name" -> askName,
+            "greeting" -> sampling("Generate a greeting", 50),
+            "client_roots" -> InputRequired.listRoots
+          ).withRequestState("multiple-inputs")
+
+  private val multiRoundTool = tool("test_input_required_result_multi_round")
+    .description("Asks for the user's name, then for their favourite colour, in two rounds")
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      val step1 = InputRequired("step1" -> InputRequired.elicitForm("Step 1: What is your name?", stringSchema("name")))
+      val step2 = InputRequired("step2" -> InputRequired.elicitForm("Step 2: What is your favorite color?", stringSchema("color")))
+      ctx.request.requestState match
+        case Some(s"round-2:$name") =>
+          answer(ctx, "step2", "color").fold(step2.withRequestState(s"round-2:$name"))(color => ToolResult.text(s"$name likes $color"))
+        case Some("round-1") =>
+          answer(ctx, "step1", "name").fold(step1.withRequestState("round-1"))(name => step2.withRequestState(s"round-2:$name"))
+        case _ => step1.withRequestState("round-1")
+
+  private val capabilitiesTool = tool("test_input_required_result_capabilities")
+    .description("Asks only for what the client declared: sampling, else a form, else its roots")
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      val capabilities = ctx.request.clientCapabilities.getOrElse(ClientCapabilities())
+      if capabilities.sampling.isDefined then InputRequired("question" -> sampling("Say hello", 10))
+      else if capabilities.elicitation.isDefined then InputRequired("user_name" -> askName)
+      else if capabilities.roots.isDefined then InputRequired("client_roots" -> InputRequired.listRoots)
+      else ToolResult.text("The client declared no capability to ask with")
+
+  private val streamingElicitationTool = tool("test_streaming_elicitation")
+    .description("Reports progress on the response stream, then asks for the user's name")
+    .input[NoInput]
+    .streamingServerLogic[Identity]: (_, ctx, _) =>
+      ctx.reportProgress(50.0, Some(100.0))
+      answer(ctx, "user_name", "name").fold(InputRequired("user_name" -> askName))(name => ToolResult.text(s"Hello, $name!"))
 
   private val perRequestLoggingTool = tool("test_logging_tool")
     .description("Emits a log notification at each level; a modern request gets only those at or above its _meta logLevel")
@@ -208,6 +293,13 @@ object Main:
         )
       )
 
+  private val inputRequiredPrompt = prompt("test_input_required_result_prompt")
+    .description("Asks for the context to use before it builds the prompt")
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      answer(ctx, "user_context", "context").fold(
+        InputRequired("user_context" -> InputRequired.elicitForm("What context should the prompt use?", stringSchema("context")))
+      )(context => GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = s"Use this context: $context")))))
+
   private val imagePrompt = prompt("test_prompt_with_image")
     .description("A prompt with an image")
     .handle(_ => GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Image(data = pngData, mimeType = "image/png")))))
@@ -223,18 +315,25 @@ object Main:
       embeddedResourceTool,
       jsonSchemaTool,
       missingCapabilityTool,
+      elicitationTool,
+      samplingTool,
+      listRootsTool,
+      multipleInputsTool,
+      multiRoundTool,
+      capabilitiesTool,
       triggerToolChange,
       triggerPromptChange
     )
     .addResources(staticText, staticBinary)
     .addResourceTemplate(dataTemplate)
-    .addPrompts(simplePrompt, argsPrompt, embeddedResourcePrompt, imagePrompt)
+    .addPrompts(simplePrompt, argsPrompt, embeddedResourcePrompt, imagePrompt, inputRequiredPrompt)
     .withCompletion((_, _, _) => Completion(values = List("alpha", "beta")))
     .withLoggingLevel(_ => ())
     .withSubscriptions(ResourceSubscriptions[Identity](_ => (), _ => ()))
     .withPublisher(publisher)
 
-  private val streamingServer = server.streaming.addStreamingTools(progressTool, loggingTool, perRequestLoggingTool)
+  private val streamingServer =
+    server.streaming.addStreamingTools(progressTool, loggingTool, perRequestLoggingTool, streamingElicitationTool)
 
   def main(args: Array[String]): Unit =
     val requestedPort = args
