@@ -99,7 +99,10 @@ private[server] final class Subscription(
       )
       acknowledged.set(true)
 
-  def deliver(event: ServerEvent): Unit =
+  /** Holds the lock of [[acknowledge]], so an event published while the acknowledgement is on its way waits for it, instead of being
+    * dropped.
+    */
+  def deliver(event: ServerEvent): Unit = synchronized:
     if acknowledged.get && active.get && event.accepted(filter) then send(event.notification(metaParams))
 
   /** Ends the subscription because the client ended it; sends nothing. */

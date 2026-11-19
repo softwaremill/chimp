@@ -10,7 +10,10 @@ import sttp.monad.{IdentityMonad, MonadError}
 import sttp.shared.Identity
 import sttp.tapir.Schema
 
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicReference
 import scala.collection.mutable.ListBuffer
+import scala.jdk.CollectionConverters.*
 
 class NotificationPublisherSpec extends AnyFlatSpec with Matchers:
   private given MonadError[Identity] = IdentityMonad
@@ -105,6 +108,24 @@ class NotificationPublisherSpec extends AnyFlatSpec with Matchers:
     output.messages.toList.map(subscriptionId) shouldBe List.fill(2)(Some(3.asJson))
     output.messages.head.hcursor.downField("params").get[SubscriptionFilter]("notifications") shouldBe
       Right(SubscriptionFilter(toolsListChanged = Some(true)))
+
+  it should "deliver an event which the client publishes as soon as it sees the acknowledgement" in:
+    val publisher = NotificationPublisher()
+    val received = ConcurrentLinkedQueue[Json]()
+    val client = AtomicReference(Option.empty[Thread])
+    val output = new SubscriptionOutput:
+      def send(message: Json): Unit =
+        val _ = received.add(message)
+        if client.get.isEmpty then
+          val reacting = Thread(() => publisher.toolsListChanged())
+          client.set(Some(reacting))
+          reacting.start()
+          while reacting.isAlive && reacting.getState != Thread.State.BLOCKED do Thread.onSpinWait()
+      def close(): Unit = ()
+    val _ = publisher.open(RequestId(1), SubscriptionFilter(toolsListChanged = Some(true)), output)
+    client.get.foreach(_.join(5000))
+    received.asScala.toList.map(_.hcursor.get[String]("method").toOption) shouldBe
+      List(Some("notifications/subscriptions/acknowledged"), Some("notifications/tools/list_changed"))
 
   it should "send only the notification types and resource URIs the filter names" in:
     val publisher = NotificationPublisher()
