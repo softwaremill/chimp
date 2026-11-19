@@ -28,7 +28,7 @@ val work = tool("work")
 val server = StreamingMcpServer[Identity]().addStreamingTool(work)
 ```
 
-Server-wide capabilities are enabled by registering a handler — only what you wire up is advertised: `.withCompletion`, `.withLoggingLevel`, `.withSubscriptions`. `.withLoggingLevel` and `.withSubscriptions` serve only legacy clients: `2026-07-28` removed `logging/setLevel` and `resources/{,un}subscribe`, so a modern client gets a `404` for them (see below).
+Server-wide capabilities are enabled by registering a handler — only what you wire up is advertised: `.withCompletion`, `.withLoggingLevel`, `.withSubscriptions`, `.withPublisher`. `.withLoggingLevel` and `.withSubscriptions` serve only legacy clients: `2026-07-28` removed `logging/setLevel` and `resources/{,un}subscribe`, so a modern client gets a `404` for them (see below). `.withPublisher` serves only modern clients (see [publishing list changes and resource updates](#publishing-list-changes-and-resource-updates)).
 
 ## Protocol versions
 
@@ -45,6 +45,7 @@ A request is **modern** when its `_meta` or its `MCP-Protocol-Version` header de
 | the `MCP-Protocol-Version` header is missing (HTTP only), or it and `_meta` declare different versions | `-32020` HeaderMismatch | `400` |
 | `Mcp-Method` / `Mcp-Name` header missing or different from the body (HTTP only) | `-32020` HeaderMismatch | `400` |
 | removed method (`initialize`, `ping`, `logging/setLevel`, `resources/subscribe`, `resources/unsubscribe`) or unknown method | `-32601` MethodNotFound | `404` |
+| `subscriptions/listen` on a server without a publisher, or on the sync HTTP transport | `-32601` MethodNotFound | `404` |
 | `tools/call` of a tool whose required client capabilities `_meta` does not declare | `-32021` MissingRequiredClientCapability | `400` |
 
 Over HTTP, a modern request must carry the SEP-2243 standard headers: `Mcp-Method` with the body's `method`, and `Mcp-Name` with `params.name` on `tools/call` and `prompts/get`, or `params.uri` on `resources/read`. Header names are case-insensitive, values are case-sensitive, and surrounding whitespace is ignored. chimp's own client sends these headers and the `_meta` when you give it a modern protocol version — see [client transport](../client/transport.md).
@@ -81,4 +82,50 @@ val ask = tool("ask")
     ToolResult.text(s"$client asked: ${in.question}")
 
 val server = McpServer[Identity]().addTool(ask)
+```
+
+## Publishing list changes and resource updates
+
+A server tells its clients that its tools, prompts or resources changed, or that a resource was updated, through a `NotificationPublisher`. Create one, give it to the server with `.withPublisher`, and call it from any part of your application, not only from a tool:
+
+- `toolsListChanged()`, `promptsListChanged()`, `resourcesListChanged()` — send the list-changed notification of that list.
+- `resourceUpdated(uri)` — send `notifications/resources/updated` for one resource URI.
+- `close()` — end all open subscriptions, for example when the server shuts down.
+
+The methods are thread-safe and return `Unit`, not an effect. In an effect system, wrap the call, for example `ZIO.succeed(publisher.toolsListChanged())`.
+
+```scala mdoc:compile-only
+import chimp.server.*
+import chimp.server.ox.OxServerHttpTransport
+import io.circe.Codec
+import sttp.shared.Identity
+import sttp.tapir.*
+
+case class NoteInput(text: String) derives Codec, Schema
+
+val publisher = NotificationPublisher()
+
+val addNote = tool("add_note")
+  .input[NoteInput]
+  .handle: _ =>
+    publisher.resourcesListChanged()
+    ToolResult.text("note added")
+
+val server = McpServer[Identity]().addTool(addNote).withPublisher(publisher).streaming
+val endpoint = OxServerHttpTransport(List("mcp")).serve(server)
+```
+
+A `2026-07-28` client receives these notifications on a [`subscriptions/listen`](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions) stream:
+
+- With a publisher, `server/discover` advertises `listChanged` for tools, prompts and resources, and `subscribe` for resources. The capability of a list is there only when the server has that feature, for example `prompts` only when the server has prompts. The `initialize` result for legacy clients does not change: it advertises no list changes, and `subscribe` only for `.withSubscriptions`.
+- The first message on the stream is `notifications/subscriptions/acknowledged`. Its filter is the part of the requested filter that the server honours. The server sends no other notification types.
+- Each message on the stream carries the id of the listen request in `_meta`, under `io.modelcontextprotocol/subscriptionId`.
+- `notifications/resources/updated` goes only to the streams which list the URI in `resourceSubscriptions`.
+- Progress and log notifications do not go on a listen stream. They stay on the stream of their request.
+- Over HTTP, a subscription ends when the client closes the stream. The server notices a closed stream at the latest when it next sends on it.
+- Over stdio, all subscriptions share the one channel. The client ends one with `notifications/cancelled` that names the listen request. When the input ends, the server ends each open subscription.
+- When the server ends a subscription (on `close()`, or at the end of the stdio input), it sends a successful `subscriptions/listen` result with the subscription id. Over stdio, it then sends `notifications/cancelled` for the listen request.
+
+```{note}
+A listen stream needs a streaming transport. On the sync HTTP transport (`McpServer.endpoint`), the server answers `subscriptions/listen` with `-32601` and advertises no list changes.
 ```
