@@ -15,6 +15,7 @@ and [sttp](https://github.com/softwaremill/sttp), supporting the variety of the 
    server/prompts
    server/resources
    server/capabilities
+   server/mrtr
    server/examples
 
 .. toctree::

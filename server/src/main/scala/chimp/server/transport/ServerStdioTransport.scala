@@ -1,6 +1,6 @@
 package chimp.server.transport
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
+import chimp.protocol.JSONRPCMessage
 import chimp.server.*
 import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.parser
@@ -36,7 +36,7 @@ final class ServerStdioTransport(
 
   def serve(server: StreamingMcpServer[Identity]): Unit =
     given MonadError[Identity] = IdentityMonad
-    val handler = new McpHandler[Identity, StreamingServerContext[Identity]](server)
+    val handler = new McpHandler[Identity, StreamingServerContext[Identity]](server, canListen = true)
     val reader = StdioLineReader(in, maxLineLength)
     val writer = BufferedWriter(OutputStreamWriter(out, StandardCharsets.UTF_8))
 
@@ -49,12 +49,17 @@ final class ServerStdioTransport(
     val sink = new OutboundSink[Identity]:
       def send(message: JSONRPCMessage): Identity[Unit] = writeLine(message.asJson.deepDropNullValues)
 
-    val makeContext: Option[ProgressToken] => StreamingServerContext[Identity] =
-      token => SinkStreamingServerContext(sink, token)
+    val makeContext: RequestInfo => StreamingServerContext[Identity] =
+      info => SinkStreamingServerContext(sink, info)
 
-    reader.lines
-      .filter(_.nonEmpty)
-      .foreach: line =>
-        parser.parse(line) match
-          case Right(json) => handler.handleJsonRpc(json, Nil, makeContext).body.foreach(writeLine)
-          case Left(error) => log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line")
+    val subscriptions = StdioSubscriptions(handler, writeLine)
+
+    try
+      reader.lines
+        .filter(_.nonEmpty)
+        .foreach: line =>
+          parser.parse(line) match
+            case Right(json) =>
+              if !subscriptions.accept(json) then handler.handleJsonRpc(json, Nil, makeContext).body.foreach(writeLine)
+            case Left(error) => log.warn(s"Failed to parse JSON-RPC line: ${error.getMessage}; raw: $line")
+    finally subscriptions.endAll()

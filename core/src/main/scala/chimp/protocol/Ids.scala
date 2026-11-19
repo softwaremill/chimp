@@ -2,15 +2,16 @@ package chimp.protocol
 
 import io.circe.{Codec, Decoder, Encoder, Json}
 
-opaque type RequestId = String | Int
+opaque type RequestId = String | Int | Long
 object RequestId:
-  def apply(value: String | Int): RequestId = value
-  def unapply(id: RequestId): Option[String | Int] = Some(id)
+  def apply(value: String | Int | Long): RequestId = value
+  def unapply(id: RequestId): Option[String | Int | Long] = Some(id)
   given encoder: Encoder[RequestId] = Encoder.instance:
     case s: String => Json.fromString(s)
     case i: Int    => Json.fromInt(i)
+    case l: Long   => Json.fromLong(l)
   given decoder: Decoder[RequestId] = Decoder.instance: c =>
-    c.as[String].map(RequestId(_)).orElse(c.as[Int].map(RequestId(_)))
+    c.as[String].map(RequestId(_)).orElse(c.as[Int].map(RequestId(_))).orElse(c.as[Long].map(RequestId(_)))
   given codec: Codec[RequestId] = Codec.from(decoder, encoder)
 
 opaque type ProgressToken = String | Int

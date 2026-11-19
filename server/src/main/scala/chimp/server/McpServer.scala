@@ -31,6 +31,11 @@ sealed trait McpServerDef[F[_], C <: ServerContext[F]]:
   def completion: Option[CompletionHandler[F]]
   def loggingLevel: Option[SetLoggingLevelHandler[F]]
   def subscriptions: Option[ResourceSubscriptions[F]]
+  def publisher: Option[NotificationPublisher]
+  def requestStateSigner: Option[RequestStateSigner]
+
+  /** Who a request state belongs to, besides its request: the principal on a secured server. */
+  private[server] def requestStateOwner(context: C): Option[String] = None
 
 case class McpServer[F[_]](
     name: String = "Chimp MCP server",
@@ -44,7 +49,9 @@ case class McpServer[F[_]](
     resourceTemplates: List[ServerResourceTemplate[F, ServerContext[F]]] = Nil,
     completion: Option[CompletionHandler[F]] = None,
     loggingLevel: Option[SetLoggingLevelHandler[F]] = None,
-    subscriptions: Option[ResourceSubscriptions[F]] = None
+    subscriptions: Option[ResourceSubscriptions[F]] = None,
+    publisher: Option[NotificationPublisher] = None,
+    requestStateSigner: Option[RequestStateSigner] = None
 ) extends McpServerDef[F, ServerContext[F]]:
   def name(value: String): McpServer[F] =
     copy(name = value)
@@ -94,6 +101,18 @@ case class McpServer[F[_]](
   def withSubscriptions(handler: ResourceSubscriptions[F]): McpServer[F] =
     copy(subscriptions = Some(handler))
 
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): McpServer[F] =
+    copy(publisher = Some(publisher))
+
+  /** Signs the request state of each [[InputRequired]] outcome, and verifies it on the retry before the handler runs; see
+    * [[RequestStateSigner]].
+    */
+  def withRequestStateSigner(signer: RequestStateSigner): McpServer[F] =
+    copy(requestStateSigner = Some(signer))
+
   def endpoint(path: List[String]): ServerEndpoint[Any, F] = ServerHttpTransport(path).serve(this)
 
   /** Adds the security input, the error output which describes a rejection, and the logic which validates the security input and makes the
@@ -123,7 +142,9 @@ case class McpServer[F[_]](
       resourceTemplates,
       completion,
       loggingLevel,
-      subscriptions
+      subscriptions,
+      publisher,
+      requestStateSigner
     )
 
 case class StreamingMcpServer[F[_]](
@@ -138,7 +159,9 @@ case class StreamingMcpServer[F[_]](
     resourceTemplates: List[ServerResourceTemplate[F, StreamingServerContext[F]]] = Nil,
     completion: Option[CompletionHandler[F]] = None,
     loggingLevel: Option[SetLoggingLevelHandler[F]] = None,
-    subscriptions: Option[ResourceSubscriptions[F]] = None
+    subscriptions: Option[ResourceSubscriptions[F]] = None,
+    publisher: Option[NotificationPublisher] = None,
+    requestStateSigner: Option[RequestStateSigner] = None
 ) extends McpServerDef[F, StreamingServerContext[F]]:
   def name(value: String): StreamingMcpServer[F] =
     copy(name = value)
@@ -194,6 +217,18 @@ case class StreamingMcpServer[F[_]](
   def withSubscriptions(handler: ResourceSubscriptions[F]): StreamingMcpServer[F] =
     copy(subscriptions = Some(handler))
 
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): StreamingMcpServer[F] =
+    copy(publisher = Some(publisher))
+
+  /** Signs the request state of each [[InputRequired]] outcome, and verifies it on the retry before the handler runs; see
+    * [[RequestStateSigner]].
+    */
+  def withRequestStateSigner(signer: RequestStateSigner): StreamingMcpServer[F] =
+    copy(requestStateSigner = Some(signer))
+
 /** An [[McpServer]] with security logic, which runs before the server handles an MCP message. The result of the security logic, the
   * principal, is given to the logic of the tools, prompts, and resources which are added to this server. Tools, prompts, and resources of
   * the initial server, which do not need the principal, are kept.
@@ -213,7 +248,8 @@ case class SecuredMcpServer[F[_], S, E, P](
     securedTools: List[ServerTool[?, ?, F, SecuredServerContext[F, P]]] = Nil,
     securedPrompts: List[ServerPrompt[F, SecuredServerContext[F, P]]] = Nil,
     securedResources: List[ServerResource[F, SecuredServerContext[F, P]]] = Nil,
-    securedResourceTemplates: List[ServerResourceTemplate[F, SecuredServerContext[F, P]]] = Nil
+    securedResourceTemplates: List[ServerResourceTemplate[F, SecuredServerContext[F, P]]] = Nil,
+    requestStatePrincipal: Option[P => String] = None
 ) extends McpServerDef[F, SecuredServerContext[F, P]]:
   def name: String = server.name
   def version: String = server.version
@@ -223,6 +259,11 @@ case class SecuredMcpServer[F[_], S, E, P](
   def completion: Option[CompletionHandler[F]] = server.completion
   def loggingLevel: Option[SetLoggingLevelHandler[F]] = server.loggingLevel
   def subscriptions: Option[ResourceSubscriptions[F]] = server.subscriptions
+  def publisher: Option[NotificationPublisher] = server.publisher
+  def requestStateSigner: Option[RequestStateSigner] = server.requestStateSigner
+
+  private[server] override def requestStateOwner(context: SecuredServerContext[F, P]): Option[String] =
+    requestStatePrincipal.map(_(context.principal))
 
   def tools: List[ServerTool[?, ?, F, SecuredServerContext[F, P]]] =
     mergeBy(server.tools, securedTools)(_.name)
@@ -288,6 +329,18 @@ case class SecuredMcpServer[F[_], S, E, P](
   def withSubscriptions(handler: ResourceSubscriptions[F]): SecuredMcpServer[F, S, E, P] =
     copy(server = server.withSubscriptions(handler))
 
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): SecuredMcpServer[F, S, E, P] =
+    copy(server = server.withPublisher(publisher))
+
+  /** Signs the request state of each [[InputRequired]] outcome, and verifies it on the retry before the handler runs; see
+    * [[RequestStateSigner]]. A state also belongs to the principal which `principalId` identifies, and fails for any other principal.
+    */
+  def withRequestStateSigner(signer: RequestStateSigner, principalId: P => String): SecuredMcpServer[F, S, E, P] =
+    copy(server = server.withRequestStateSigner(signer), requestStatePrincipal = Some(principalId))
+
   def endpoint(path: List[String]): ServerEndpoint[Any, F] = SecuredServerHttpTransport[F, S, E, P](path).serve(this)
 
   def streaming: SecuredStreamingMcpServer[F, S, E, P] = SecuredStreamingMcpServer(this)
@@ -310,6 +363,11 @@ case class SecuredStreamingMcpServer[F[_], S, E, P](
   def completion: Option[CompletionHandler[F]] = server.completion
   def loggingLevel: Option[SetLoggingLevelHandler[F]] = server.loggingLevel
   def subscriptions: Option[ResourceSubscriptions[F]] = server.subscriptions
+  def publisher: Option[NotificationPublisher] = server.publisher
+  def requestStateSigner: Option[RequestStateSigner] = server.requestStateSigner
+
+  private[server] override def requestStateOwner(context: SecuredStreamingServerContext[F, P]): Option[String] =
+    server.requestStateOwner(context)
 
   def securityInput: EndpointInput[S] = server.securityInput
   def errorOutput: EndpointOutput[E] = server.errorOutput
@@ -375,3 +433,15 @@ case class SecuredStreamingMcpServer[F[_], S, E, P](
 
   def withSubscriptions(handler: ResourceSubscriptions[F]): SecuredStreamingMcpServer[F, S, E, P] =
     copy(server = server.withSubscriptions(handler))
+
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withPublisher(publisher))
+
+  /** Signs the request state of each [[InputRequired]] outcome, and verifies it on the retry before the handler runs; see
+    * [[RequestStateSigner]]. A state also belongs to the principal which `principalId` identifies, and fails for any other principal.
+    */
+  def withRequestStateSigner(signer: RequestStateSigner, principalId: P => String): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withRequestStateSigner(signer, principalId))

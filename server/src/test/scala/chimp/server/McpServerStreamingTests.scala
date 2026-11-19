@@ -19,6 +19,9 @@ trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
 
   protected def withStreamingServer(server: StreamingMcpServer[F])(test: BidirectionalMcpClient[F] => F[Assertion]): Future[Assertion]
 
+  /** The protocol version of the spec's client. A modern client sets no `_meta` logLevel, so it must get no log notifications. */
+  protected def clientProtocolVersion: ProtocolVersion
+
   private case class NoInput() derives Codec, Schema
 
   protected def streamingServer: StreamingMcpServer[F] =
@@ -36,7 +39,7 @@ trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
             yield ToolResult.text("done")
       )
 
-  "a streaming MCP server" should "deliver log notifications emitted during a tool call" in
+  "a streaming MCP server" should "deliver log notifications emitted during a tool call, but none to a modern request without a log level" in
     withStreamingServer(streamingServer): client =>
       val messages = ConcurrentLinkedQueue[Json]()
       val listener: ServerNotification => F[Unit] = {
@@ -47,6 +50,10 @@ trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
         .onServerNotification(notification => listener(notification))
         .flatMap(_ => client.callTool("noisy", Json.obj()))
         .flatMap: result =>
-          waitUntil(messages.size >= 3).map: _ =>
-            result.content shouldBe List(ToolContent.Text("text", "done"))
-            messages.asScala.toList shouldBe List(Json.fromString("one"), Json.fromString("two"), Json.fromString("three"))
+          val expected =
+            if clientProtocolVersion.isModern then Nil else List(Json.fromString("one"), Json.fromString("two"), Json.fromString("three"))
+          waitUntil(messages.size >= expected.size)
+            .flatMap(_ => sleep(50))
+            .map: _ =>
+              result.content shouldBe List(ToolContent.Text("text", "done"))
+              messages.asScala.toList shouldBe expected

@@ -53,3 +53,5 @@ val adder = tool("adder")
 
 The output type carries into the logic, which returns a `ToolResult[SumOutput]`; `ToolResult.error` is accepted whatever the output type. A
 result with structured output but no content is also sent as serialized JSON text, as the spec recommends.
+
+A tool can also ask the client for input before it returns its result: see [asking the client for input](mrtr.md).

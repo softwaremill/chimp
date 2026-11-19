@@ -18,6 +18,7 @@ object ProtocolMeta:
   val ProtocolVersionKey: String = "io.modelcontextprotocol/protocolVersion"
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"
+  val LogLevel: String = "io.modelcontextprotocol/logLevel"
   val ServerInfo: String = "io.modelcontextprotocol/serverInfo"
   val SubscriptionId: String = "io.modelcontextprotocol/subscriptionId"
 
@@ -29,19 +30,27 @@ object ProtocolMeta:
       data = Some(Json.obj("requested" -> requested.asJson, "supported" -> supported.asJson))
     )
 
-/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `incomplete` for one that needs another round trip (MRTR
-  * input-required).
+  /** A `MissingRequiredClientCapability` error (`-32021`) naming the capabilities the client must declare to make the request. */
+  def missingClientCapabilityError(required: ClientCapabilities): JSONRPCErrorObject =
+    JSONRPCErrorObject(
+      code = JSONRPCErrorCodes.MissingRequiredClientCapability.code,
+      message = "Missing required client capability",
+      data = Some(Json.obj("requiredCapabilities" -> required.asJson.deepDropNullValues))
+    )
+
+/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `input_required` for one that needs another round trip
+  * (MRTR).
   */
 enum ResultType(val name: String):
   case Complete extends ResultType("complete")
-  case Incomplete extends ResultType("incomplete")
+  case InputRequired extends ResultType("input_required")
 
 object ResultType:
   given Encoder[ResultType] = Encoder.instance(resultType => Json.fromString(resultType.name))
   given Decoder[ResultType] = Decoder.decodeString.emap:
-    case "complete"   => Right(Complete)
-    case "incomplete" => Right(Incomplete)
-    case other        => Left(s"Unknown result type: $other")
+    case "complete"       => Right(Complete)
+    case "input_required" => Right(InputRequired)
+    case other            => Left(s"Unknown result type: $other")
 
 /** Whether a cached response may be shared across authorization contexts (`Public`) or not (`Private`). */
 enum CacheScope:

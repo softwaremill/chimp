@@ -1,6 +1,5 @@
 package chimp.server.transport
 
-import chimp.protocol.ProgressToken
 import chimp.server.*
 import io.circe.Json
 import sttp.model.Header
@@ -28,7 +27,7 @@ final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](
     backend: ServerStreamingHttpTransport[F, Caps]
 ):
   def serve(server: SecuredStreamingMcpServer[F, S, E, P]): ServerEndpoint[Caps, F] =
-    val handler = new McpHandler[F, SecuredStreamingServerContext[F, P]](server)
+    val handler = new McpHandler[F, SecuredStreamingServerContext[F, P]](server, canListen = true)
     val mcpEndpoint = endpoint.post
       .securityIn(server.securityInput)
       .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
@@ -45,10 +44,16 @@ final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](
       me => { (principal: P) => (input: (Seq[Header], Json)) =>
         val (headers, json) = input
         given MonadError[F] = me
-        respondWithEventStream(server.originCheck, headers, backend, handler.validateRequest(json, headers)) { sink =>
-          val makeContext: Option[ProgressToken] => SecuredStreamingServerContext[F, P] =
-            token => SinkSecuredStreamingServerContext(sink, token, principal)
-          handler.handleJsonRpc(json, headers, makeContext).map(_.body)
+        respondWithEventStream(
+          server.originCheck,
+          headers,
+          backend,
+          handler.validateRequest(json, headers),
+          handler.listenRequest(json, headers)
+        ) { sink =>
+          val makeContext: RequestInfo => SecuredStreamingServerContext[F, P] =
+            info => SinkSecuredStreamingServerContext(sink, info, principal)
+          handler.handleJsonRpc(json, headers, makeContext)
         }.map(_.left.map(Right(_)))
       }
     )
