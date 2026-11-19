@@ -18,6 +18,7 @@ object ProtocolMeta:
   val ProtocolVersionKey: String = "io.modelcontextprotocol/protocolVersion"
   val ClientInfo: String = "io.modelcontextprotocol/clientInfo"
   val ClientCapabilities: String = "io.modelcontextprotocol/clientCapabilities"
+  val LogLevel: String = "io.modelcontextprotocol/logLevel"
   val ServerInfo: String = "io.modelcontextprotocol/serverInfo"
   val SubscriptionId: String = "io.modelcontextprotocol/subscriptionId"
 

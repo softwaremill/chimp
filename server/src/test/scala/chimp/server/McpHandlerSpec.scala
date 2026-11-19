@@ -697,3 +697,69 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     featureResult("resources/subscribe", Some(params), "n1") match
       case Error(_, _, error) => error.code shouldBe MethodNotFound.code
       case _                  => fail("Expected Error")
+
+  private val seenRequest = new java.util.concurrent.atomic.AtomicReference(Option.empty[RequestInfo])
+
+  private val loggingTool = tool("logs")
+    .input[EchoInput]
+    .streamingServerLogic[Identity]: (_, ctx, _) =>
+      seenRequest.set(Some(ctx.request))
+      LoggingLevel.values.foreach(level => ctx.log(level, Json.fromString(level.toString)))
+      ToolResult.text("logged")
+
+  private val streamingHandler =
+    McpHandler[Identity, StreamingServerContext[Identity]](McpServer[Identity]().streaming.addStreamingTool(loggingTool))
+
+  private def callLoggingTool(meta: Json, headers: Seq[Header] = Seq.empty): (McpResponse, List[LoggingLevel]) =
+    val sent = scala.collection.mutable.ListBuffer.empty[JSONRPCMessage]
+    val sink = new OutboundSink[Identity]:
+      def send(message: JSONRPCMessage): Unit = sent += message
+    val params = Json.obj("name" -> Json.fromString("logs"), "arguments" -> Json.obj("message" -> Json.fromString("hi")), "_meta" -> meta)
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("log"))
+    val response = streamingHandler.handleJsonRpc(req.asJson, headers, info => SinkStreamingServerContext(sink, info))
+    val levels = sent.toList.collect { case Notification(_, "notifications/message", Some(p)) =>
+      p.as[LoggingMessageParams].toOption.get.level
+    }
+    (response, levels)
+
+  private def modernToolMeta(extra: (String, Json)*): Json =
+    Json.obj(
+      (ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28")) +:
+        (ProtocolMeta.ClientCapabilities -> Json.obj("sampling" -> Json.obj())) +:
+        extra*
+    )
+
+  it should "give a handler the facts of a modern request" in:
+    val clientInfo = Json.obj("name" -> Json.fromString("cli"), "version" -> Json.fromString("1.2"))
+    val meta = modernToolMeta(
+      ProtocolMeta.ClientInfo -> clientInfo,
+      ProtocolMeta.LogLevel -> Json.fromString("warning"),
+      "progressToken" -> Json.fromString("p1")
+    )
+    callLoggingTool(meta)._1.statusCode shouldBe sttp.model.StatusCode.Ok
+    seenRequest.get() shouldBe Some(
+      RequestInfo(
+        protocolVersion = Some(ProtocolVersion.V2026_07_28),
+        clientCapabilities = Some(ClientCapabilities(sampling = Some(Json.obj()))),
+        clientInfo = Some(Implementation("cli", "1.2")),
+        logLevel = Some(LoggingLevel.Warning),
+        progressToken = Some(ProgressToken("p1"))
+      )
+    )
+
+  it should "give a handler only the protocol version and progress token of a legacy request" in:
+    val meta = Json.obj("progressToken" -> Json.fromString("p2"), ProtocolMeta.LogLevel -> Json.fromString("debug"))
+    callLoggingTool(meta, Seq(Header(ProtocolMeta.ProtocolVersionHeader, "2025-11-25")))._1.statusCode shouldBe sttp.model.StatusCode.Ok
+    seenRequest.get() shouldBe Some(
+      RequestInfo(protocolVersion = Some(ProtocolVersion.V2025_11_25), progressToken = Some(ProgressToken("p2")))
+    )
+
+  it should "send no log messages for a modern request without a logLevel" in:
+    callLoggingTool(modernToolMeta())._2 shouldBe Nil
+
+  it should "send only log messages at or above the logLevel of a modern request" in:
+    callLoggingTool(modernToolMeta(ProtocolMeta.LogLevel -> Json.fromString("error")))._2 shouldBe
+      List(LoggingLevel.Error, LoggingLevel.Critical, LoggingLevel.Alert, LoggingLevel.Emergency)
+
+  it should "send all log messages for a legacy request" in:
+    callLoggingTool(Json.obj())._2 shouldBe LoggingLevel.values.toList

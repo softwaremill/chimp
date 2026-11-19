@@ -63,15 +63,15 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         )
     )
 
-  def handleJsonRpc(request: Json, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using MonadError[F]): F[McpResponse] =
+  def handleJsonRpc(request: Json, headers: Seq[Header], makeContext: RequestInfo => C)(using MonadError[F]): F[McpResponse] =
     doHandleJsonRpc(request, headers, makeContext).map: response =>
       logger.debug(s"Request: $request, response: ${response.statusCode}, body: ${response.body.getOrElse(Json.Null)}")
       response.withNullsDroppedDeep
 
   def handleJsonRpc(request: Json, headers: Seq[Header])(using m: MonadError[F], ev: ServerContext[F] <:< C): F[McpResponse] =
-    handleJsonRpc(request, headers, _ => ev(ServerContext.noop[F]))
+    handleJsonRpc(request, headers, info => ev(ServerContext[F](info)))
 
-  private def doHandleJsonRpc(request: Json, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
+  private def doHandleJsonRpc(request: Json, headers: Seq[Header], makeContext: RequestInfo => C)(using
       MonadError[F]
   ): F[McpResponse] =
     request.as[JSONRPCMessage] match
@@ -80,7 +80,10 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case Right(JSONRPCMessage.Request(_, method, params: Option[Json], id)) =>
         requestRejection(method, params, headers, id) match
           case Some(rejection) => rejection.unit
-          case None            => dispatch(method, params, id, headers, makeContext, isModernRequest(method, params, headers))
+          case None            =>
+            val isModern = isModernRequest(method, params, headers)
+            val info = requestInfo(params, headers, isModern)
+            dispatch(method, params, id, headers, () => makeContext(info), isModern)
       case Right(notification: JSONRPCMessage.Notification) =>
         logger.debug(s"Received notification: ${notification.method}")
         McpResponse.EmptyAcceptResponse.unit
@@ -93,7 +96,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       params: Option[Json],
       id: RequestId,
       headers: Seq[Header],
-      makeContext: Option[ProgressToken] => C,
+      makeContext: () => C,
       isModern: Boolean
   )(using MonadError[F]): F[McpResponse] =
     def wrap(cacheHints: Option[CacheHints])(message: JSONRPCMessage): JSONRPCMessage = message match
@@ -179,6 +182,23 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
     val metaIsModern = metaVersion.exists(version => ProtocolVersion.from(version).forall(_.isModern))
     method != "server/discover" && (metaIsModern || headerVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
+
+  /** The facts a handler can read about the request; see [[RequestInfo]]. */
+  private def requestInfo(params: Option[Json], headers: Seq[Header], isModern: Boolean): RequestInfo =
+    val meta = params.flatMap(_.hcursor.downField("_meta").focus).map(_.hcursor)
+    def fromMeta[A: Decoder](key: String): Option[A] = meta.flatMap(_.get[A](key).toOption)
+    val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
+    val progressToken = fromMeta[ProgressToken]("progressToken")
+    val protocolVersion = fromMeta[String](ProtocolMeta.ProtocolVersionKey).orElse(headerVersion).flatMap(ProtocolVersion.from)
+    if isModern then
+      RequestInfo(
+        protocolVersion = protocolVersion,
+        clientCapabilities = fromMeta[ClientCapabilities](ProtocolMeta.ClientCapabilities),
+        clientInfo = fromMeta[Implementation](ProtocolMeta.ClientInfo),
+        logLevel = fromMeta[LoggingLevel](ProtocolMeta.LogLevel),
+        progressToken = progressToken
+      )
+    else RequestInfo(protocolVersion = protocolVersion, progressToken = progressToken)
 
   /** The rejection to send for an invalid request, or `None` if it may be dispatched. Runs no tool logic, so a transport can call it before
     * deciding how to respond (a modern validation error is a plain-JSON HTTP error, not an SSE stream).
@@ -289,19 +309,18 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   private def handleDiscover(id: RequestId): JSONRPCMessage.Response =
     JSONRPCMessage.Response(id = id, result = discoverResult.asJson)
 
-  private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: Option[ProgressToken] => C)(using
+  private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: () => C)(using
       MonadError[F]
   ): F[JSONRPCMessage] =
     val name = params.flatMap(_.hcursor.downField("name").as[String].toOption)
     val arguments = params.flatMap(_.hcursor.downField("arguments").focus).getOrElse(Json.obj())
-    val progressToken = params.flatMap(_.hcursor.downField("_meta").downField("progressToken").as[ProgressToken].toOption)
     name match
       case Some(name) =>
         toolsByName.get(name) match
           case Some(tool) =>
             tool.inputDecoder.decodeJson(arguments) match
               case Right(input) =>
-                val context = makeContext(progressToken)
+                val context = makeContext()
                 tool
                   .logic(input, context, headers)
                   .map: result =>
@@ -335,10 +354,10 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       params: Option[Json],
       id: RequestId,
       headers: Seq[Header],
-      makeContext: Option[ProgressToken] => C
+      makeContext: () => C
   )(using MonadError[F]): F[JSONRPCMessage] =
     decodeParams[ReadResourceParams](params, id): params =>
-      val context = makeContext(None)
+      val context = makeContext()
       resourcesByUri.get(params.uri) match
         case Some(resource) => resource.read(context, headers).map(resourceReadResponse(id, params.uri))
         case None           =>
@@ -383,13 +402,13 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       params: Option[Json],
       id: RequestId,
       headers: Seq[Header],
-      makeContext: Option[ProgressToken] => C
+      makeContext: () => C
   )(using MonadError[F]): F[JSONRPCMessage] =
     decodeParams[GetPromptParams](params, id): params =>
       promptsByName.get(params.name) match
         case Some(prompt) =>
           prompt
-            .logic(params.arguments.getOrElse(Map.empty), makeContext(None), headers)
+            .logic(params.arguments.getOrElse(Map.empty), makeContext(), headers)
             .map(promptResult => JSONRPCMessage.Response(id = id, result = promptResult.asJson))
         case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown prompt: ${params.name}").unit
 

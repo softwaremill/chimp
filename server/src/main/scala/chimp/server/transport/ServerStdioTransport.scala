@@ -1,6 +1,6 @@
 package chimp.server.transport
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
+import chimp.protocol.JSONRPCMessage
 import chimp.server.*
 import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.parser
@@ -49,8 +49,8 @@ final class ServerStdioTransport(
     val sink = new OutboundSink[Identity]:
       def send(message: JSONRPCMessage): Identity[Unit] = writeLine(message.asJson.deepDropNullValues)
 
-    val makeContext: Option[ProgressToken] => StreamingServerContext[Identity] =
-      token => SinkStreamingServerContext(sink, token)
+    val makeContext: RequestInfo => StreamingServerContext[Identity] =
+      info => SinkStreamingServerContext(sink, info)
 
     reader.lines
       .filter(_.nonEmpty)

@@ -1,7 +1,7 @@
 package chimp.server.zio
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
-import chimp.server.{McpHandler, OutboundSink, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
+import chimp.protocol.JSONRPCMessage
+import chimp.server.{McpHandler, OutboundSink, RequestInfo, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
 import chimp.server.transport.ServerStreamingStdioTransport
 import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.syntax.*
@@ -36,8 +36,8 @@ final class ZioServerStdioTransport(
     val sink = new OutboundSink[Task]:
       def send(message: JSONRPCMessage): Task[Unit] = writeLine(message.asJson.deepDropNullValues)
 
-    val makeContext: Option[ProgressToken] => StreamingServerContext[Task] =
-      token => SinkStreamingServerContext(sink, token)
+    val makeContext: RequestInfo => StreamingServerContext[Task] =
+      info => SinkStreamingServerContext(sink, info)
 
     def loop: Task[Unit] =
       ZIO
