@@ -167,7 +167,7 @@ class NotificationPublisherSpec extends AnyFlatSpec with Matchers:
   "stdio subscriptions" should "end on the client's notifications/cancelled, and send the result and notifications/cancelled at shutdown" in:
     val publisher = NotificationPublisher()
     val written = ListBuffer.empty[Json]
-    val stdio = StdioSubscriptions(written += _)
+    val stdio = StdioSubscriptions(McpHandler(McpServer[Identity]()), written += _)
     val filter = SubscriptionFilter(toolsListChanged = Some(true))
     stdio.listen(ListenRequest(RequestId(1), filter, publisher))
     stdio.listen(ListenRequest(RequestId(2), filter, publisher))

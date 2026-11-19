@@ -120,8 +120,20 @@ private[server] final case class ListenRequest(id: RequestId, filter: Subscripti
   def open(output: SubscriptionOutput): Subscription = publisher.open(id, filter, output)
 
 /** The subscriptions of one stdio connection. They share its single output and are told apart by the subscription id. */
-private[server] final class StdioSubscriptions(write: Json => Unit):
+private[server] final class StdioSubscriptions(handler: McpHandler[?, ?], write: Json => Unit):
   private val open = ConcurrentHashMap[RequestId, Subscription]()
+
+  /** Opens a subscription if `message` is a `subscriptions/listen` request which the server accepts, and then gives `true`. Otherwise ends
+    * the subscription which a `notifications/cancelled` names, and gives `false`: the server handles the message as usual.
+    */
+  def accept(message: Json): Boolean =
+    handler.listenRequest(message, Nil) match
+      case Some(request) =>
+        listen(request)
+        true
+      case None =>
+        cancel(message)
+        false
 
   def listen(request: ListenRequest): Unit =
     val output = new SubscriptionOutput:
