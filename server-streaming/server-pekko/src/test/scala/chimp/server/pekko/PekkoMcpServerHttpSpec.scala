@@ -6,6 +6,7 @@ import chimp.protocol.{Implementation, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
+  McpServerHeaderHttpTests,
   McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
   McpServerSubscriptionHttpTests,
@@ -35,6 +36,7 @@ class PekkoMcpServerHttpSpec
     with McpServerStreamingTests[Future]
     with McpServerSubscriptionHttpTests[Future]
     with McpServerInputRequiredHttpTests[Future]
+    with McpServerHeaderHttpTests[Future]
     with SecuredMcpServerTests[Future]
     with SecuredMcpServerStreamingTests[Future]
     with PekkoToFuture:
@@ -51,10 +53,16 @@ class PekkoMcpServerHttpSpec
       McpClient.bidirectional(transport, clientInfo).flatMap(test)
 
   override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Future])(test: URI => Assertion): Future[Assertion] =
+    withEndpointUri(PekkoServerHttpTransport(List("mcp")).serve(server))(test)
+
+  override protected def withHttpEndpoint(server: McpServer[Future])(test: URI => Assertion): Future[Assertion] =
+    withEndpointUri(server.endpoint(List("mcp")))(test)
+
+  private def withEndpointUri(endpoint: ServerEndpoint[PekkoStreams & WebSockets, Future])(test: URI => Assertion): Future[Assertion] =
     given ExecutionContext = actorSystem.dispatcher
     Http()
       .newServerAt("localhost", 0)
-      .bind(PekkoHttpServerInterpreter().toRoute(PekkoServerHttpTransport(List("mcp")).serve(server)))
+      .bind(PekkoHttpServerInterpreter().toRoute(endpoint))
       .flatMap: binding =>
         Future(blocking(test(URI.create(s"http://localhost:${binding.localAddress.getPort}/mcp"))))
           .transformWith(result => binding.terminate(5.seconds).transform(_ => result))

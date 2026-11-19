@@ -8,6 +8,7 @@ import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   tool,
   McpServer,
+  McpServerHeaderHttpTests,
   McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
   McpServerSubscriptionHttpTests,
@@ -41,6 +42,7 @@ class OxMcpServerHttpSpec
     with McpServerStreamingTests[Identity]
     with McpServerSubscriptionHttpTests[Identity]
     with McpServerInputRequiredHttpTests[Identity]
+    with McpServerHeaderHttpTests[Identity]
     with SecuredMcpServerTests[Identity]
     with SecuredMcpServerStreamingTests[Identity]
     with SyncToFuture:
@@ -62,6 +64,10 @@ class OxMcpServerHttpSpec
 
   override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Identity])(test: URI => Assertion): Future[Assertion] =
     withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, _, _) =>
+      test(URI.create(s"http://localhost:$port/mcp"))
+
+  override protected def withHttpEndpoint(server: McpServer[Identity])(test: URI => Assertion): Future[Assertion] =
+    withHttpServer(server.endpoint(List("mcp"))): (port, _, _) =>
       test(URI.create(s"http://localhost:$port/mcp"))
 
   override protected def withSecuredServer(

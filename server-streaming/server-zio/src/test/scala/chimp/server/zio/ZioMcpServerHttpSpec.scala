@@ -7,6 +7,7 @@ import chimp.protocol.{Implementation, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
+  McpServerHeaderHttpTests,
   McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
   McpServerSubscriptionHttpTests,
@@ -36,6 +37,7 @@ class ZioMcpServerHttpSpec
     with McpServerStreamingTests[Task]
     with McpServerSubscriptionHttpTests[Task]
     with McpServerInputRequiredHttpTests[Task]
+    with McpServerHeaderHttpTests[Task]
     with SecuredMcpServerTests[Task]
     with SecuredMcpServerStreamingTests[Task]
     with ZioToFuture:
@@ -52,8 +54,14 @@ class ZioMcpServerHttpSpec
       McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion).flatMap(test)
 
   override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Task])(test: URI => Assertion): Future[Assertion] =
+    withEndpointUri(ZioServerHttpTransport(List("mcp")).serve(server))(test)
+
+  override protected def withHttpEndpoint(server: McpServer[Task])(test: URI => Assertion): Future[Assertion] =
+    withEndpointUri(server.endpoint(List("mcp")))(test)
+
+  private def withEndpointUri(endpoint: ServerEndpoint[ZioStreams & WebSockets, Task])(test: URI => Assertion): Future[Assertion] =
     toFuture:
-      val routes = ZioHttpInterpreter().toHttp(ZioServerHttpTransport(List("mcp")).serve(server))
+      val routes = ZioHttpInterpreter().toHttp(endpoint)
       (for
         port <- Server.install(routes)
         result <- ZIO.attemptBlocking(test(URI.create(s"http://localhost:$port/mcp")))
