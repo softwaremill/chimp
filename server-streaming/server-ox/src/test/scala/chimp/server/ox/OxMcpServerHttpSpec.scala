@@ -9,6 +9,7 @@ import chimp.server.{
   tool,
   McpServer,
   McpServerStreamingTests,
+  McpServerSubscriptionHttpTests,
   McpServerTests,
   SecuredMcpServer,
   SecuredMcpServerStreamingTests,
@@ -31,11 +32,13 @@ import sttp.tapir.Schema
 import sttp.tapir.server.netty.sync.{NettySyncServer, OxStreams}
 import sttp.tapir.server.ServerEndpoint
 
+import java.net.URI
 import scala.concurrent.Future
 
 class OxMcpServerHttpSpec
     extends McpServerTests[Identity]
     with McpServerStreamingTests[Identity]
+    with McpServerSubscriptionHttpTests[Identity]
     with SecuredMcpServerTests[Identity]
     with SecuredMcpServerStreamingTests[Identity]
     with SyncToFuture:
@@ -54,6 +57,10 @@ class OxMcpServerHttpSpec
         OxClientHttpTransport(backend, uri"http://localhost:$port/mcp", clientProtocolVersion, ClientTransport.defaultTimeout)
       try test(McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion))
       finally transport.close()
+
+  override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Identity])(test: URI => Assertion): Future[Assertion] =
+    withHttpServer(OxServerHttpTransport(List("mcp")).serve(server)): (port, _, _) =>
+      test(URI.create(s"http://localhost:$port/mcp"))
 
   override protected def withSecuredServer(
       server: SecuredMcpServer[Identity, String, String, User],

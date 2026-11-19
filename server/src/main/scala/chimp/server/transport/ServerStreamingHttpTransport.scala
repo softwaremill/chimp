@@ -28,8 +28,13 @@ abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) exte
   def emptyStream: EventStream
   def eventStream(handle: OutboundSink[F] => F[Option[Json]]): F[EventStream]
 
+  /** The stream of an accepted `subscriptions/listen` request. It opens the subscription when the stream starts, and cancels it when the
+    * client closes the stream. The server ends it by closing the subscription's output.
+    */
+  private[server] def subscriptionStream(listen: ListenRequest): EventStream
+
   final def serve(server: StreamingMcpServer[F]): ServerEndpoint[Caps, F] =
-    val handler = new McpHandler[F, StreamingServerContext[F]](server)
+    val handler = new McpHandler[F, StreamingServerContext[F]](server, canListen = true)
     val endpoint = sttp.tapir.endpoint.post
       .in(path.foldLeft(emptyInput)((inputSoFar, pathComponent) => inputSoFar / pathComponent))
       .in(extractFromRequest(_.headers))
@@ -43,7 +48,13 @@ abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) exte
       me => { (input: (Seq[Header], Json)) =>
         val (headers, json) = input
         given MonadError[F] = me
-        respondWithEventStream(server.originCheck, headers, this, handler.validateRequest(json, headers)) { sink =>
+        respondWithEventStream(
+          server.originCheck,
+          headers,
+          this,
+          handler.validateRequest(json, headers),
+          handler.listenRequest(json, headers)
+        ) { sink =>
           val makeContext: RequestInfo => StreamingServerContext[F] =
             info => SinkStreamingServerContext(sink, info)
           handler.handleJsonRpc(json, headers, makeContext).map(_.body)

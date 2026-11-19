@@ -46,8 +46,8 @@ final class NotificationPublisher:
   private[server] def open(id: RequestId, filter: SubscriptionFilter, output: SubscriptionOutput): Subscription =
     val key = nextKey.getAndIncrement()
     val subscription = Subscription(id, filter, output, () => { val _ = subscriptions.remove(key) })
+    val _ = subscriptions.put(key, subscription)
     subscription.acknowledge()
-    subscriptions.put(key, subscription)
     if closed.get then subscription.end()
     subscription
 
@@ -83,28 +83,31 @@ private[server] final class Subscription(
     unregister: () => Unit
 ):
   private val active = AtomicBoolean(true)
+  private val acknowledged = AtomicBoolean(false)
   private val meta: Map[String, Json] = Map(ProtocolMeta.SubscriptionId -> id.asJson)
   private val metaParams: Json = Json.obj("_meta" -> meta.asJson)
 
   def isActive: Boolean = active.get
 
-  def acknowledge(): Unit =
-    send(
-      JSONRPCMessage.Notification(
-        method = "notifications/subscriptions/acknowledged",
-        params = Some(SubscriptionsAcknowledgedParams(filter, Some(meta)).asJson)
+  def acknowledge(): Unit = synchronized:
+    if active.get then
+      send(
+        JSONRPCMessage.Notification(
+          method = "notifications/subscriptions/acknowledged",
+          params = Some(SubscriptionsAcknowledgedParams(filter, Some(meta)).asJson)
+        )
       )
-    )
+      acknowledged.set(true)
 
   def deliver(event: ServerEvent): Unit =
-    if active.get && event.accepted(filter) then send(event.notification(metaParams))
+    if acknowledged.get && active.get && event.accepted(filter) then send(event.notification(metaParams))
 
   /** Ends the subscription because the client ended it; sends nothing. */
   def cancel(): Unit =
     if active.compareAndSet(true, false) then unregister()
 
   /** Ends the subscription on the server's initiative, with a successful `subscriptions/listen` result. */
-  def end(): Unit =
+  def end(): Unit = synchronized:
     if active.compareAndSet(true, false) then
       unregister()
       send(JSONRPCMessage.Response(id = id, result = SubscriptionsListenResult(_meta = Some(meta)).asJson))

@@ -1,7 +1,7 @@
 package chimp.server.pekko
 
 import chimp.protocol.JSONRPCMessage
-import chimp.server.OutboundSink
+import chimp.server.{ListenRequest, OutboundSink, SubscriptionOutput}
 import chimp.server.transport.ServerStreamingHttpTransport
 import io.circe.Json
 import io.circe.syntax.*
@@ -57,3 +57,16 @@ final class PekkoServerHttpTransport(
                 queue.complete()
           NotUsed
         .map(json => ServerSentEvent(data = Some(json.noSpaces)))
+
+  private[server] def subscriptionStream(listen: ListenRequest): EventStream =
+    Source
+      .queue[Json](outboundBufferSize, OverflowStrategy.backpressure, maxConcurrentSends)
+      .mapMaterializedValue: queue =>
+        listen.open(new SubscriptionOutput:
+          def send(message: Json): Unit =
+            val _ = PekkoOutbound.offer(queue, message)
+          def close(): Unit = queue.complete())
+      .watchTermination(): (subscription, done) =>
+        done.onComplete(_ => subscription.cancel())
+        NotUsed
+      .map(json => ServerSentEvent(data = Some(json.noSpaces)))

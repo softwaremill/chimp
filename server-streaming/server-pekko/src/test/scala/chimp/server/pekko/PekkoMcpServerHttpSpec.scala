@@ -7,6 +7,7 @@ import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
   McpServerStreamingTests,
+  McpServerSubscriptionHttpTests,
   McpServerTests,
   SecuredMcpServer,
   SecuredMcpServerStreamingTests,
@@ -24,12 +25,14 @@ import sttp.model.Uri.UriContext
 import sttp.tapir.server.pekkohttp.PekkoHttpServerInterpreter
 import sttp.tapir.server.ServerEndpoint
 
+import java.net.URI
 import scala.concurrent.duration.DurationInt
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{blocking, ExecutionContext, Future}
 
 class PekkoMcpServerHttpSpec
     extends McpServerTests[Future]
     with McpServerStreamingTests[Future]
+    with McpServerSubscriptionHttpTests[Future]
     with SecuredMcpServerTests[Future]
     with SecuredMcpServerStreamingTests[Future]
     with PekkoToFuture:
@@ -44,6 +47,15 @@ class PekkoMcpServerHttpSpec
   )(test: BidirectionalMcpClient[Future] => Future[Assertion]): Future[Assertion] =
     withHttpServer(PekkoServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
       McpClient.bidirectional(transport, clientInfo).flatMap(test)
+
+  override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Future])(test: URI => Assertion): Future[Assertion] =
+    given ExecutionContext = actorSystem.dispatcher
+    Http()
+      .newServerAt("localhost", 0)
+      .bind(PekkoHttpServerInterpreter().toRoute(PekkoServerHttpTransport(List("mcp")).serve(server)))
+      .flatMap: binding =>
+        Future(blocking(test(URI.create(s"http://localhost:${binding.localAddress.getPort}/mcp"))))
+          .transformWith(result => binding.terminate(5.seconds).transform(_ => result))
 
   override protected def withSecuredServer(
       server: SecuredMcpServer[Future, String, String, User],

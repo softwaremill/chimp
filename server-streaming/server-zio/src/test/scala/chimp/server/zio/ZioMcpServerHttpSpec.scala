@@ -8,6 +8,7 @@ import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
   McpServerStreamingTests,
+  McpServerSubscriptionHttpTests,
   McpServerTests,
   SecuredMcpServer,
   SecuredMcpServerStreamingTests,
@@ -26,11 +27,13 @@ import sttp.tapir.server.ServerEndpoint
 import zio.http.Server
 import zio.{Scope, Task, ZIO}
 
+import java.net.URI
 import scala.concurrent.Future
 
 class ZioMcpServerHttpSpec
     extends McpServerTests[Task]
     with McpServerStreamingTests[Task]
+    with McpServerSubscriptionHttpTests[Task]
     with SecuredMcpServerTests[Task]
     with SecuredMcpServerStreamingTests[Task]
     with ZioToFuture:
@@ -45,6 +48,14 @@ class ZioMcpServerHttpSpec
   )(test: BidirectionalMcpClient[Task] => Task[Assertion]): Future[Assertion] =
     withHttpServer(ZioServerHttpTransport(List("mcp")).serve(server), Nil): transport =>
       McpClient.bidirectional(transport, clientInfo, protocolVersion = clientProtocolVersion).flatMap(test)
+
+  override protected def withStreamingHttpEndpoint(server: StreamingMcpServer[Task])(test: URI => Assertion): Future[Assertion] =
+    toFuture:
+      val routes = ZioHttpInterpreter().toHttp(ZioServerHttpTransport(List("mcp")).serve(server))
+      (for
+        port <- Server.install(routes)
+        result <- ZIO.attemptBlocking(test(URI.create(s"http://localhost:$port/mcp")))
+      yield result).provide(Server.defaultWithPort(0))
 
   override protected def withSecuredServer(
       server: SecuredMcpServer[Task, String, String, User],
