@@ -178,7 +178,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   private def modernHttpCall(method: String, params: Json, extraHeaders: (String, String)*): McpResponse =
     val req: JSONRPCMessage = Request(method = method, params = Some(params.deepMerge(Json.obj(modernMeta))), id = RequestId("h"))
-    val headers = Header("Host", "localhost") +: extraHeaders.map(Header(_, _))
+    val headers = Header("Host", "localhost") +: Header(ProtocolMeta.ProtocolVersionHeader, "2026-07-28") +: extraHeaders.map(Header(_, _))
     headersHandler.handleJsonRpc(req.asJson, headers)
 
   private def shouldBeHeaderMismatch(response: McpResponse): org.scalatest.Assertion =
@@ -852,3 +852,61 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     extractJsonFromResponse(handler.handleJsonRpc(json, Seq.empty)).hcursor.downField("id").focus shouldBe Some(
       Json.fromLong(1763561090000L)
     )
+
+  private def discoverOverHttp(meta: Option[Json], versionHeader: Option[String], extraHeaders: (String, String)*): McpResponse =
+    val req: JSONRPCMessage = Request(method = "server/discover", params = meta.map(m => Json.obj("_meta" -> m)), id = RequestId("dv"))
+    val headers = (("Host" -> "localhost") +: ("Mcp-Method" -> "server/discover") +: extraHeaders) ++
+      versionHeader.map(ProtocolMeta.ProtocolVersionHeader -> _)
+    handler.handleJsonRpc(req.asJson, headers.map(Header(_, _)))
+
+  private def errorOf(response: McpResponse): JSONRPCErrorObject =
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) => err
+      case other            => fail(s"Expected Error, got $other")
+
+  private def discoverMeta(version: String = "2026-07-28"): Json =
+    Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString(version), ProtocolMeta.ClientCapabilities -> Json.obj())
+
+  it should "answer a modern server/discover whose _meta and header are valid" in:
+    val response = discoverOverHttp(Some(discoverMeta()), Some("2026-07-28"))
+    response.statusCode shouldBe sttp.model.StatusCode.Ok
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Response(_, _, result) => result.as[DiscoverResult].isRight shouldBe true
+      case other                  => fail(s"Expected Response, got $other")
+
+  it should "answer a server/discover that declares no protocol version, or a legacy one" in:
+    discoverOverHttp(None, None).statusCode shouldBe sttp.model.StatusCode.Ok
+    discoverOverHttp(None, Some("2025-11-25")).statusCode shouldBe sttp.model.StatusCode.Ok
+
+  it should "reject a modern server/discover with missing _meta keys with -32602 and HTTP 400" in:
+    val missingCapabilities = Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"))
+    val missingVersion = Json.obj(ProtocolMeta.ClientCapabilities -> Json.obj())
+    for meta <- List(None, Some(missingCapabilities), Some(missingVersion)) do
+      val response = discoverOverHttp(meta, Some("2026-07-28"))
+      withClue(meta):
+        response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+        errorOf(response).code shouldBe InvalidParams.code
+
+  it should "reject a server/discover with an unsupported protocol version with -32022, the supported and the requested versions" in:
+    val response = discoverOverHttp(Some(discoverMeta("v999.0.0")), Some("v999.0.0"))
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    val err = errorOf(response)
+    err.code shouldBe UnsupportedProtocolVersion.code
+    err.data.flatMap(_.hcursor.get[List[String]]("supported").toOption) shouldBe Some(ProtocolVersion.supported.map(_.name))
+    err.data.flatMap(_.hcursor.get[String]("requested").toOption) shouldBe Some("v999.0.0")
+
+  it should "reject a modern request whose MCP-Protocol-Version header differs from _meta with -32020, even for an unsupported _meta version" in:
+    val response = discoverOverHttp(Some(discoverMeta("v999.0.0")), Some("2026-07-28"))
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    errorOf(response).code shouldBe HeaderMismatch.code
+
+  it should "reject a modern HTTP request without the MCP-Protocol-Version header with -32020 and HTTP 400" in:
+    val response = discoverOverHttp(Some(discoverMeta()), None)
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    errorOf(response).code shouldBe HeaderMismatch.code
+
+  it should "reject a modern server/discover over HTTP with a mismatched Mcp-Method header with -32020" in:
+    val req: JSONRPCMessage = Request(method = "server/discover", params = Some(Json.obj("_meta" -> discoverMeta())), id = RequestId("dm"))
+    val headers =
+      Seq(Header("Host", "localhost"), Header(ProtocolMeta.ProtocolVersionHeader, "2026-07-28"), Header("Mcp-Method", "tools/list"))
+    errorOf(handler.handleJsonRpc(req.asJson, headers)).code shouldBe HeaderMismatch.code

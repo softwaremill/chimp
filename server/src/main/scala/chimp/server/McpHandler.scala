@@ -81,7 +81,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         requestRejection(method, params, headers, id) match
           case Some(rejection) => rejection.unit
           case None            =>
-            val isModern = isModernRequest(method, params, headers)
+            val isModern = isModernRequest(params, headers)
             val info = requestInfo(params, headers, isModern)
             dispatch(method, params, id, headers, () => makeContext(info), isModern)
       case Right(notification: JSONRPCMessage.Notification) =>
@@ -155,9 +155,10 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
 
-  // request methods a 2026-07-28 client may call (server/discover is handled separately as the era-agnostic bootstrap)
+  // request methods a 2026-07-28 client may call
   private val modernMethods: Set[String] =
     Set(
+      "server/discover",
       "tools/list",
       "tools/call",
       "resources/list",
@@ -175,13 +176,13 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
 
   /** Whether the request follows the modern (2026-07-28) rules: it declares a modern version in `_meta` or via the `MCP-Protocol-Version`
     * header. A known legacy version in `_meta` keeps the legacy rules; an unknown one is treated as modern, so it gets the modern `-32022`
-    * with HTTP 400. `server/discover` is the era-agnostic bootstrap and is never treated as modern here.
+    * with HTTP 400. A `server/discover` that declares no version stays legacy, so a probing client can still discover the server.
     */
-  private def isModernRequest(method: String, params: Option[Json], headers: Seq[Header]): Boolean =
+  private def isModernRequest(params: Option[Json], headers: Seq[Header]): Boolean =
     val metaVersion = params.flatMap(_.hcursor.downField("_meta").downField(ProtocolMeta.ProtocolVersionKey).as[String].toOption)
     val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
     val metaIsModern = metaVersion.exists(version => ProtocolVersion.from(version).forall(_.isModern))
-    method != "server/discover" && (metaIsModern || headerVersion.flatMap(ProtocolVersion.from).exists(_.isModern))
+    metaIsModern || headerVersion.flatMap(ProtocolVersion.from).exists(_.isModern)
 
   /** The facts a handler can read about the request; see [[RequestInfo]]. */
   private def requestInfo(params: Option[Json], headers: Seq[Header], isModern: Boolean): RequestInfo =
@@ -207,7 +208,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     val meta = params.flatMap(_.hcursor.downField("_meta").focus)
     val metaVersion = meta.flatMap(_.hcursor.get[String](ProtocolMeta.ProtocolVersionKey).toOption)
     val headerVersion = headers.collectFirst { case h if h.name.equalsIgnoreCase(ProtocolMeta.ProtocolVersionHeader) => h.value.trim }
-    if isModernRequest(method, params, headers) then modernRejection(method, params, meta, metaVersion, headerVersion, headers, id)
+    if isModernRequest(params, headers) then modernRejection(method, params, meta, metaVersion, headerVersion, headers, id)
     else
       metaVersion match
         case Some(version) if ProtocolVersion.from(version).isEmpty =>
@@ -235,12 +236,15 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       id: RequestId
   ): Option[McpResponse] =
     val declared = metaVersion.orElse(headerVersion)
-    if declared.exists(version => ProtocolVersion.from(version).isEmpty) then
+    val overHttp = headers.exists(_.name.equalsIgnoreCase("Host"))
+    if overHttp && headerVersion.isEmpty then
+      Some(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.HeaderMismatch.code, "Missing MCP-Protocol-Version header"))
+    else if headerVersion.isDefined && metaVersion.isDefined && headerVersion != metaVersion then
+      Some(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.HeaderMismatch.code, "MCP-Protocol-Version header does not match _meta"))
+    else if declared.exists(version => ProtocolVersion.from(version).isEmpty) then
       val envelope: JSONRPCMessage =
         JSONRPCMessage.Error(id = id, error = ProtocolMeta.unsupportedVersionError(declared.get, ProtocolVersion.supported.map(_.name)))
       Some(McpResponse.JsonError(StatusCode.BadRequest, envelope.asJson))
-    else if headerVersion.isDefined && metaVersion.isDefined && headerVersion != metaVersion then
-      Some(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.HeaderMismatch.code, "MCP-Protocol-Version header does not match _meta"))
     else if metaVersion.isEmpty then
       Some(
         jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.InvalidParams.code, s"Missing ${ProtocolMeta.ProtocolVersionKey} in _meta")
@@ -253,7 +257,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       Some(jsonError(id, StatusCode.NotFound, JSONRPCErrorCodes.MethodNotFound.code, s"Method not found: $method"))
     else
       // SEP-2243 standard request headers only apply over HTTP (identified by the Host header); stdio carries no such headers
-      val headerError = Option.when(headers.exists(_.name.equalsIgnoreCase("Host")))(headerValidationError(method, params, headers, id))
+      val headerError = Option.when(overHttp)(headerValidationError(method, params, headers, id))
       headerError.flatten.orElse(missingCapabilityError(method, params, meta, id))
 
   /** A `-32021` with HTTP 400 when `tools/call` names a tool whose required client capabilities the request's `_meta` does not declare. */

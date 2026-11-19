@@ -36,13 +36,13 @@ chimp is **dual-era**: it speaks the legacy handshake revisions (`2025-11-25` an
 
 The server answers `server/discover` automatically with its supported versions, capabilities and identity (`serverInfo` in `_meta`), so a client can learn them in one request without connecting. A request that declares a protocol version the server does not support is rejected with an `UnsupportedProtocolVersion` error (`-32022`) listing the supported versions, per the [versioning compatibility matrix](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning#compatibility-matrix). No configuration is required for any of this.
 
-A request is **modern** when its `_meta` or its `MCP-Protocol-Version` header declares `2026-07-28`. A legacy client that writes a legacy version into `_meta` stays on the legacy rules. chimp checks every modern request before any tool logic runs, and answers a failed check with a plain JSON error and its own HTTP status:
+A request is **modern** when its `_meta` or its `MCP-Protocol-Version` header declares `2026-07-28`. A legacy client that writes a legacy version into `_meta` stays on the legacy rules. chimp checks every modern request, `server/discover` included, before any tool logic runs, and answers a failed check with a plain JSON error and its own HTTP status. A `server/discover` that declares no version (or a legacy version) gets no checks, so any client can discover the server:
 
 | Problem | JSON-RPC error | HTTP status |
 |---|---|---|
 | unsupported protocol version | `-32022` UnsupportedProtocolVersion | `400` |
 | `_meta` has no `protocolVersion` or no `clientCapabilities` | `-32602` InvalidParams | `400` |
-| the `MCP-Protocol-Version` header and `_meta` declare different versions | `-32020` HeaderMismatch | `400` |
+| the `MCP-Protocol-Version` header is missing (HTTP only), or it and `_meta` declare different versions | `-32020` HeaderMismatch | `400` |
 | `Mcp-Method` / `Mcp-Name` header missing or different from the body (HTTP only) | `-32020` HeaderMismatch | `400` |
 | removed method (`initialize`, `ping`, `logging/setLevel`, `resources/subscribe`, `resources/unsubscribe`) or unknown method | `-32601` MethodNotFound | `404` |
 | `tools/call` of a tool whose required client capabilities `_meta` does not declare | `-32021` MissingRequiredClientCapability | `400` |
