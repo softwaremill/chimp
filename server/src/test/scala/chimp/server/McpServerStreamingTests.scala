@@ -44,7 +44,33 @@ trait McpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers:
             yield ToolResult.text("done")
       )
 
-  "a streaming MCP server" should "deliver log notifications to a client with the log level option, at a legacy and a modern version" in
+  private case class RegionInput(region: String, limit: Option[Int]) derives Codec, Schema
+
+  private val headerServer: StreamingMcpServer[F] =
+    McpServer[F]()
+      .addTool(
+        tool("region")
+          .input[RegionInput]
+          .withMcpHeader("region", "Region")
+          .withMcpHeader("limit", "Limit")
+          .serverLogic[F]((in, _) => monad.unit(ToolResult.text(s"region ${in.region} ${in.limit}")))
+      )
+      .streaming
+
+  "a streaming MCP server" should "serve a client that mirrors x-mcp-header arguments into Mcp-Param headers, with Base64 values" in
+    withStreamingServer(headerServer): client =>
+      client
+        .listTools()
+        .flatMap(_ => client.callTool("region", Json.obj("region" -> Json.fromString(" Zürich"), "limit" -> Json.fromInt(5))))
+        .flatMap: first =>
+          client
+            .callTool("region", Json.obj("region" -> Json.fromString("eu"), "limit" -> Json.Null))
+            .map: second =>
+              List(first, second).map(_.isError) shouldBe List(false, false)
+              first.content shouldBe List(ToolContent.Text("text", "region  Zürich Some(5)"))
+              second.content shouldBe List(ToolContent.Text("text", "region eu None"))
+
+  it should "deliver log notifications to a client with the log level option, at a legacy and a modern version" in
     withLoggingStreamingServer(streamingServer, LoggingLevel.Info): client =>
       val messages = ConcurrentLinkedQueue[Json]()
       client

@@ -154,3 +154,69 @@ class McpClientSpec extends AnyFlatSpec with Matchers:
         case _ => None
       request.header("MCP-Protocol-Version") shouldBe metaVersion
       metaVersion shouldBe Some("2026-07-28")
+
+  // x-mcp-header: an HTTP client drops tools with invalid annotations and mirrors annotated arguments into Mcp-Param-* headers
+  private val annotatedTools: io.circe.Json = io.circe.parser
+    .parse(
+      """{"tools":[
+        |{"name":"weather","inputSchema":{"type":"object","properties":{
+        |  "region":{"type":"string","x-mcp-header":"Region"},"days":{"type":"integer","x-mcp-header":"Days"},
+        |  "verbose":{"type":"boolean","x-mcp-header":"Verbose"},"query":{"type":"string"}}}},
+        |{"name":"broken","inputSchema":{"type":"object","properties":{"v":{"type":"string","x-mcp-header":"My Region"}}}}
+        |]}""".stripMargin
+    )
+    .fold(throw _, identity)
+
+  private def toolHeadersBackend(sent: java.util.concurrent.ConcurrentLinkedQueue[GenericRequest[?, ?]], connect: String) =
+    val call = CallToolResult(content = List(ToolContent.Text(text = "ok"))).asJson
+    SyncBackendStub
+      .whenRequestMatches(request => sent.add(request) && (envelopeFor("server/discover", request) || envelopeFor("initialize", request)))
+      .thenRespondAdjust(connect)
+      .whenRequestMatches(envelopeFor("tools/list", _))
+      .thenRespondAdjust((JSONRPCMessage.Response(id = RequestId(2), result = annotatedTools): JSONRPCMessage).asJson.noSpaces)
+      .whenRequestMatches(envelopeFor("tools/call", _))
+      .thenRespondAdjust((JSONRPCMessage.Response(id = RequestId(3), result = call): JSONRPCMessage).asJson.noSpaces)
+      .whenAnyRequest
+      .thenRespondAdjust("", StatusCode.Accepted)
+
+  private val weatherArguments = io.circe.Json.obj(
+    "region" -> " Zürich".asJson,
+    "days" -> 3.asJson,
+    "verbose" -> io.circe.Json.Null,
+    "query" -> "rain".asJson
+  )
+
+  it should "drop tools with invalid x-mcp-header annotations and mirror annotated arguments into Mcp-Param headers" in:
+    val sent = java.util.concurrent.ConcurrentLinkedQueue[GenericRequest[?, ?]]()
+    val client = McpClient[Identity](
+      ClientHttpTransport[Identity](toolHeadersBackend(sent, discoverEnvelope(List("2026-07-28"))), mcpUri),
+      clientInfo,
+      ProtocolVersion.Latest
+    )
+    client.listTools().tools.map(_.name) shouldBe List("weather")
+    val _ = client.callTool("weather", weatherArguments)
+    val _ = client.callTool("zürich", io.circe.Json.obj())
+
+    val calls = sent.toArray(Array.empty[GenericRequest[?, ?]]).toList.filter(envelopeFor("tools/call", _))
+    val weather = calls.head
+    weather.header("Mcp-Name") shouldBe Some("weather")
+    weather.header("Mcp-Param-Region") shouldBe Some("=?base64?IFrDvHJpY2g=?=")
+    weather.header("Mcp-Param-Days") shouldBe Some("3")
+    weather.header("Mcp-Param-Verbose") shouldBe None
+    weather.headers.map(_.name.toLowerCase).filter(_.startsWith("mcp-param-")).sorted shouldBe List("mcp-param-days", "mcp-param-region")
+    calls(1).header("Mcp-Name") shouldBe Some("=?base64?esO8cmljaA==?=")
+
+  it should "leave legacy requests unchanged: no tool filtering and no Mcp headers" in:
+    val sent = java.util.concurrent.ConcurrentLinkedQueue[GenericRequest[?, ?]]()
+    val initResult = InitializeResult(
+      protocolVersion = ProtocolVersion.LatestLegacy.name,
+      capabilities = ServerCapabilities(tools = Some(ServerToolsCapability(listChanged = Some(false)))),
+      serverInfo = Implementation(name = "legacy-server", version = "1.0")
+    )
+    val connect = (JSONRPCMessage.Response(id = RequestId(1), result = initResult.asJson): JSONRPCMessage).asJson.noSpaces
+    val client = McpClient[Identity](ClientHttpTransport[Identity](toolHeadersBackend(sent, connect), mcpUri), clientInfo)
+    client.listTools().tools.map(_.name) shouldBe List("weather", "broken")
+    val _ = client.callTool("weather", weatherArguments)
+
+    val call = sent.toArray(Array.empty[GenericRequest[?, ?]]).toList.filter(envelopeFor("tools/call", _)).head
+    call.headers.map(_.name.toLowerCase).filter(name => name.startsWith("mcp-") && name != "mcp-protocol-version") shouldBe Nil

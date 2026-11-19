@@ -20,6 +20,9 @@ import scala.util.chaining.*
   *   The MCP endpoint URI.
   * @param headers
   *   Extra headers sent with each request to the server.
+  *
+  * At a stateless protocol version, a `tools/list` result leaves out the tools whose `x-mcp-header` annotations are invalid, and a
+  * `tools/call` mirrors the annotated arguments of a listed tool into `Mcp-Param-*` headers.
   */
 final class ClientHttpTransport[F[_]](
     backend: Backend[F],
@@ -31,14 +34,16 @@ final class ClientHttpTransport[F[_]](
 
   private val sessionId = AtomicReference[Option[String]](None)
   private val protocolVersion = AtomicReference(ClientHttpTransport.DefaultProtocolVersion)
+  private val toolHeaders = ToolHeaders()
 
   override def setProtocolVersion(version: ProtocolVersion): F[Unit] = monad.eval(protocolVersion.set(version))
 
   override def send(msg: JSONRPCMessage): F[Option[JSONRPCMessage]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion.get(), sessionId.get(), msg, headers)
+      .basePostRequest(uri, protocolVersion.get(), sessionId.get(), msg, headers, toolHeaders)
       .send(backend)
       .flatMap(interpret(msg, _))
+      .map(toolHeaders.filterToolsList(msg, _))
 
   private def interpret(msg: JSONRPCMessage, response: Response[Either[String, String]]): F[Option[JSONRPCMessage]] =
     response.header("Mcp-Session-Id").foreach(s => sessionId.set(Some(s)))
@@ -88,32 +93,15 @@ object ClientHttpTransport:
   private[transport] val AcceptHeader: String =
     s"${MediaType.ApplicationJson.toString}, ${MediaType.TextEventStream.toString}"
 
-  // SEP-2243: the body field that the `Mcp-Name` header mirrors, per method
-  private val nameFields: Map[String, String] = Map("tools/call" -> "name", "prompts/get" -> "name", "resources/read" -> "uri")
-
-  /** SEP-2243 standard request headers (2026-07-28): `Mcp-Method` on every request, and `Mcp-Name` on a request with a name-shaped body
-    * field. Notifications and responses carry none.
-    */
-  private[transport] def standardRequestHeaders(msg: JSONRPCMessage): List[Header] = msg match
-    case JSONRPCMessage.Request(_, method, params, _) =>
-      val name = nameFields.get(method).flatMap(field => params.flatMap(_.hcursor.get[String](field).toOption))
-      Header("Mcp-Method", method) :: name.map(Header("Mcp-Name", _)).toList
-    case _ => Nil
-
-  /** A stateless request names its version in `_meta`; the `MCP-Protocol-Version` header always equals it. */
-  private def metaVersion(msg: JSONRPCMessage): Option[String] = msg match
-    case JSONRPCMessage.Request(_, _, Some(params), _) =>
-      params.hcursor.downField("_meta").get[String](ProtocolMeta.ProtocolVersionKey).toOption
-    case _ => None
-
   private[transport] def basePostRequest(
       uri: Uri,
       protocolVersion: ProtocolVersion,
       sessionId: Option[String],
       msg: JSONRPCMessage,
-      headers: Seq[Header]
+      headers: Seq[Header],
+      toolHeaders: ToolHeaders
   ): Request[Either[String, String]] =
-    val version = metaVersion(msg).getOrElse(protocolVersion.name)
+    val version = McpRequestHeaders.metaVersion(msg).getOrElse(protocolVersion.name)
     val stateless = ProtocolVersion.from(version).exists(_.isModern)
     basicRequest
       .post(uri)
@@ -121,7 +109,7 @@ object ClientHttpTransport:
       .header("Content-Type", MediaType.ApplicationJson.toString)
       .header("Accept", AcceptHeader)
       .header(ProtocolMeta.ProtocolVersionHeader, version)
-      .headers((if stateless then standardRequestHeaders(msg) else Nil)*)
+      .headers((if stateless then McpRequestHeaders.standard(msg) ++ toolHeaders.paramHeaders(msg) else Nil)*)
       .body(ClientTransport.encode(msg))
       .pipe { request =>
         sessionId match

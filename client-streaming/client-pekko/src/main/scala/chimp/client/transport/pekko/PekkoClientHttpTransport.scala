@@ -2,7 +2,7 @@ package chimp.client.transport.pekko
 
 import chimp.client.transport.ClientHttpTransport.HttpOutcome
 import chimp.client.transport.pekko.internal.{PekkoPendingRequests, StateActor}
-import chimp.client.transport.{ClientHttpTransport, ClientStreamingHttpTransport, ClientTransport}
+import chimp.client.transport.{ClientHttpTransport, ClientStreamingHttpTransport, ClientTransport, ToolHeaders}
 import chimp.client.{McpProtocolException, McpSessionNotFoundException, McpTransportException}
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.apache.pekko.NotUsed
@@ -38,6 +38,7 @@ final class PekkoClientHttpTransport private (
   private given ExecutionContext = mat.executionContext
 
   private val protocolVersion = AtomicReference(ClientHttpTransport.DefaultProtocolVersion)
+  private val toolHeaders = ToolHeaders()
 
   override def setProtocolVersion(version: ProtocolVersion): Future[Unit] = Future.successful(protocolVersion.set(version))
 
@@ -104,14 +105,16 @@ final class PekkoClientHttpTransport private (
       .ask(_.closing)
       .flatMap:
         case true  => Future.failed(McpTransportException("HTTP transport is closed"))
-        case false =>
-          msg match
-            case request: JSONRPCMessage.Request =>
-              pending
-                .register(request.id, timeout)
-                .flatMap(await => sendRequest(request, await))
-                .andThen { case _ => pending.complete(request.id, cancelled(request.id)) }
-            case other => sendNonRequest(other)
+        case false => sendMessage(msg).map(toolHeaders.filterToolsList(msg, _))
+
+  private def sendMessage(msg: JSONRPCMessage): Future[Option[JSONRPCMessage]] =
+    msg match
+      case request: JSONRPCMessage.Request =>
+        pending
+          .register(request.id, timeout)
+          .flatMap(await => sendRequest(request, await))
+          .andThen { case _ => pending.complete(request.id, cancelled(request.id)) }
+      case other => sendNonRequest(other)
 
   override def onIncoming(handler: JSONRPCMessage => Future[Unit]): Future[Unit] =
     state.tell(_.incoming = handler)
@@ -197,7 +200,7 @@ final class PekkoClientHttpTransport private (
       .ask(_.sessionId)
       .flatMap: session =>
         ClientHttpTransport
-          .basePostRequest(uri, protocolVersion.get(), session, msg, headers)
+          .basePostRequest(uri, protocolVersion.get(), session, msg, headers, toolHeaders)
           .response(asStreamUnsafe(PekkoStreams))
           .send(backend)
 

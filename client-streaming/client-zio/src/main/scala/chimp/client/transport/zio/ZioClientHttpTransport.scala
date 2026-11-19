@@ -1,7 +1,7 @@
 package chimp.client.transport.zio
 
 import chimp.client.transport.ClientHttpTransport.HttpOutcome
-import chimp.client.transport.{ClientHttpTransport, ClientStreamingHttpTransport, ClientTransport}
+import chimp.client.transport.{ClientHttpTransport, ClientStreamingHttpTransport, ClientTransport, ToolHeaders}
 import chimp.client.{McpProtocolException, McpSessionNotFoundException}
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.slf4j.LoggerFactory
@@ -37,7 +37,12 @@ final class ZioClientHttpTransport private (
 
   override def setProtocolVersion(version: ProtocolVersion): Task[Unit] = protocolVersion.set(version)
 
+  private val toolHeaders = ToolHeaders()
+
   override def send(msg: JSONRPCMessage): Task[Option[JSONRPCMessage]] =
+    sendMessage(msg).map(toolHeaders.filterToolsList(msg, _))
+
+  private def sendMessage(msg: JSONRPCMessage): Task[Option[JSONRPCMessage]] =
     msg match
       case request: JSONRPCMessage.Request =>
         pending
@@ -111,7 +116,7 @@ final class ZioClientHttpTransport private (
   private def post(msg: JSONRPCMessage): Task[Response[Either[String, Stream[Throwable, Byte]]]] =
     (sessionRef.get <*> protocolVersion.get).flatMap: (session, version) =>
       ClientHttpTransport
-        .basePostRequest(uri, version, session, msg, headers)
+        .basePostRequest(uri, version, session, msg, headers, toolHeaders)
         .response(asStreamUnsafe(ZioStreams))
         .send(backend)
 

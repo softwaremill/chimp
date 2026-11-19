@@ -2,7 +2,7 @@ package chimp.client.transport.ox
 
 import chimp.client.internal.SyncPendingRequests
 import chimp.client.transport.ClientHttpTransport.HttpOutcome
-import chimp.client.transport.{ClientBidirectionalTransport, ClientHttpTransport, ClientTransport}
+import chimp.client.transport.{ClientBidirectionalTransport, ClientHttpTransport, ClientTransport, ToolHeaders}
 import chimp.client.{McpProtocolException, McpSessionNotFoundException, McpTransportException}
 import chimp.protocol.{JSONRPCErrorCodes, JSONRPCErrorObject, JSONRPCMessage, ProtocolVersion, RequestId}
 import org.slf4j.LoggerFactory
@@ -54,6 +54,7 @@ final class OxClientHttpTransport private (
 
   private val state: ActorRef[State] = Actor.create(new State)
   private val protocolVersion = AtomicReference(ClientHttpTransport.DefaultProtocolVersion)
+  private val toolHeaders = ToolHeaders()
 
   given monad: MonadError[Identity] = IdentityMonad
 
@@ -61,12 +62,13 @@ final class OxClientHttpTransport private (
 
   override def send(msg: JSONRPCMessage): Identity[Option[JSONRPCMessage]] =
     if state.ask(_.closing) then throw McpTransportException("HTTP transport is closed")
-    msg match
+    val response = msg match
       case request: JSONRPCMessage.Request =>
         val await = pending.register(request.id, timeout)
         try sendRequest(request, await)
         finally { val _ = pending.complete(request.id, cancelled(request.id)) }
       case other => sendNonRequest(other)
+    toolHeaders.filterToolsList(msg, response)
 
   override def onIncoming(handler: JSONRPCMessage => Identity[Unit]): Identity[Unit] = state.tell(_.incoming = handler)
 
@@ -125,7 +127,7 @@ final class OxClientHttpTransport private (
 
   private def post(msg: JSONRPCMessage): Response[Either[String, InputStream]] =
     ClientHttpTransport
-      .basePostRequest(uri, protocolVersion.get(), state.ask(_.sessionId), msg, headers)
+      .basePostRequest(uri, protocolVersion.get(), state.ask(_.sessionId), msg, headers, toolHeaders)
       .response(asInputStreamUnsafe)
       .send(backend)
 
