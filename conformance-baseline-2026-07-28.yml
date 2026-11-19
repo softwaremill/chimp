@@ -12,9 +12,6 @@ server:
   - tasks-request-state-removal
   - tasks-required-task-error
   - tasks-wire-fields
-  # an integrity-protected requestState — T14 request-state helper, https://github.com/softwaremill/chimp/issues/252
-  - input-required-result-request-state
-  - input-required-result-tampered-state
   # x-mcp-header custom headers in the tool DSL — T13, https://github.com/softwaremill/chimp/issues/251
   - http-custom-header-server-validation
   # the harness records a failure in a non-primary run of these scenarios (the primary run passes)

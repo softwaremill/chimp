@@ -10,6 +10,7 @@ import sttp.shared.Identity
 import sttp.tapir.Schema
 import sttp.tapir.server.netty.sync.NettySyncServer
 
+import java.security.SecureRandom
 import java.util.Base64
 import scala.concurrent.duration.*
 
@@ -216,6 +217,32 @@ object Main:
       else if capabilities.roots.isDefined then InputRequired("client_roots" -> InputRequired.listRoots)
       else ToolResult.text("The client declared no capability to ask with")
 
+  private val askConfirmation =
+    InputRequired.elicitForm(
+      "Please confirm",
+      Json.obj(
+        "type" -> Json.fromString("object"),
+        "properties" -> Json.obj("ok" -> Json.obj("type" -> Json.fromString("boolean"))),
+        "required" -> Json.arr(Json.fromString("ok"))
+      )
+    )
+
+  private def confirmed(ctx: ServerContext[Identity]): Boolean =
+    ctx.request.elicitResult("confirm").flatMap(_.content).flatMap(_.get("ok")).flatMap(_.asBoolean).contains(true)
+
+  private def confirmationTool(name: String, description: String) = tool(name)
+    .description(description)
+    .input[NoInput]
+    .serverLogicWithContext[Identity]: (_, ctx, _) =>
+      if ctx.request.requestState.contains("awaiting-confirmation") && confirmed(ctx) then ToolResult.text("state-ok: confirmed")
+      else InputRequired("confirm" -> askConfirmation).withRequestState("awaiting-confirmation")
+
+  private val requestStateTool =
+    confirmationTool("test_input_required_result_request_state", "Asks for a confirmation and checks the signed request state on the retry")
+
+  private val tamperedStateTool =
+    confirmationTool("test_input_required_result_tampered_state", "Asks for a confirmation; a retry with a changed request state fails")
+
   private val streamingElicitationTool = tool("test_streaming_elicitation")
     .description("Reports progress on the response stream, then asks for the user's name")
     .input[NoInput]
@@ -231,6 +258,11 @@ object Main:
       ToolResult.text("logging complete")
 
   private val publisher = NotificationPublisher()
+
+  private val requestStateSecret: Array[Byte] =
+    val secret = new Array[Byte](32)
+    SecureRandom().nextBytes(secret)
+    secret
 
   private val triggerToolChange = tool("test_trigger_tool_change")
     .description("Publishes a tools list change to the open subscriptions")
@@ -321,6 +353,8 @@ object Main:
       multipleInputsTool,
       multiRoundTool,
       capabilitiesTool,
+      requestStateTool,
+      tamperedStateTool,
       triggerToolChange,
       triggerPromptChange
     )
@@ -331,6 +365,7 @@ object Main:
     .withLoggingLevel(_ => ())
     .withSubscriptions(ResourceSubscriptions[Identity](_ => (), _ => ()))
     .withPublisher(publisher)
+    .withRequestStateSigner(RequestStateSigner(requestStateSecret))
 
   private val streamingServer =
     server.streaming.addStreamingTools(progressTool, loggingTool, perRequestLoggingTool, streamingElicitationTool)
