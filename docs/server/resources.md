@@ -27,3 +27,5 @@ val endpoint = McpServer(resources = List(readme), resourceTemplates = List(item
 ```
 
 Returning `Left(ResourceError(...))` (or reading an unknown URI) responds with a JSON-RPC error carrying the offending `uri`.
+
+A resource can also ask the client for input before it returns its contents: see [asking the client for input](mrtr.md).

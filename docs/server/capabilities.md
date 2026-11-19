@@ -58,6 +58,7 @@ Each handler can read the facts of its request from `ctx.request`, a `RequestInf
 - `clientCapabilities` and `clientInfo` — what the client declares in `_meta`.
 - `logLevel` — the per-request log level from `_meta`.
 - `progressToken` — the progress token from `_meta`.
+- `inputResponses` and `requestState` — on the retry of an input-required outcome, the answers of the client and the echoed state (see [asking the client for input](mrtr.md)).
 
 A modern request carries all of these in `_meta`. The server keeps no state between requests, so a legacy request gives only the protocol version (from the `MCP-Protocol-Version` header or `_meta`) and the progress token. The other facts are `None`.
 
