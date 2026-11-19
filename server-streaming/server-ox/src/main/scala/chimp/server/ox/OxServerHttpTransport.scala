@@ -1,7 +1,7 @@
 package chimp.server.ox
 
 import chimp.protocol.JSONRPCMessage
-import chimp.server.OutboundSink
+import chimp.server.{ListenRequest, OutboundSink, SubscriptionOutput}
 import chimp.server.transport.ServerStreamingHttpTransport
 import io.circe.Json
 import io.circe.syntax.*
@@ -32,3 +32,14 @@ final class OxServerHttpTransport(path: List[String]) extends ServerStreamingHtt
           try handle(sink).foreach(outbound.send)
           finally outbound.done()
         outbound.foreach(json => emit(ServerSentEvent(data = Some(json.noSpaces))))
+
+  private[server] def subscriptionStream(listen: ListenRequest): Flow[ServerSentEvent] =
+    Flow.usingEmit: emit =>
+      val outbound = Channel.unlimited[Json]
+      val subscription = listen.open(new SubscriptionOutput:
+        def send(message: Json): Unit =
+          val _ = outbound.sendOrClosed(message)
+        def close(): Unit =
+          val _ = outbound.doneOrClosed())
+      try outbound.foreach(json => emit(ServerSentEvent(data = Some(json.noSpaces))))
+      finally subscription.cancel()

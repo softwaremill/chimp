@@ -31,6 +31,7 @@ sealed trait McpServerDef[F[_], C <: ServerContext[F]]:
   def completion: Option[CompletionHandler[F]]
   def loggingLevel: Option[SetLoggingLevelHandler[F]]
   def subscriptions: Option[ResourceSubscriptions[F]]
+  def publisher: Option[NotificationPublisher]
 
 case class McpServer[F[_]](
     name: String = "Chimp MCP server",
@@ -44,7 +45,8 @@ case class McpServer[F[_]](
     resourceTemplates: List[ServerResourceTemplate[F, ServerContext[F]]] = Nil,
     completion: Option[CompletionHandler[F]] = None,
     loggingLevel: Option[SetLoggingLevelHandler[F]] = None,
-    subscriptions: Option[ResourceSubscriptions[F]] = None
+    subscriptions: Option[ResourceSubscriptions[F]] = None,
+    publisher: Option[NotificationPublisher] = None
 ) extends McpServerDef[F, ServerContext[F]]:
   def name(value: String): McpServer[F] =
     copy(name = value)
@@ -94,6 +96,12 @@ case class McpServer[F[_]](
   def withSubscriptions(handler: ResourceSubscriptions[F]): McpServer[F] =
     copy(subscriptions = Some(handler))
 
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): McpServer[F] =
+    copy(publisher = Some(publisher))
+
   def endpoint(path: List[String]): ServerEndpoint[Any, F] = ServerHttpTransport(path).serve(this)
 
   /** Adds the security input, the error output which describes a rejection, and the logic which validates the security input and makes the
@@ -123,7 +131,8 @@ case class McpServer[F[_]](
       resourceTemplates,
       completion,
       loggingLevel,
-      subscriptions
+      subscriptions,
+      publisher
     )
 
 case class StreamingMcpServer[F[_]](
@@ -138,7 +147,8 @@ case class StreamingMcpServer[F[_]](
     resourceTemplates: List[ServerResourceTemplate[F, StreamingServerContext[F]]] = Nil,
     completion: Option[CompletionHandler[F]] = None,
     loggingLevel: Option[SetLoggingLevelHandler[F]] = None,
-    subscriptions: Option[ResourceSubscriptions[F]] = None
+    subscriptions: Option[ResourceSubscriptions[F]] = None,
+    publisher: Option[NotificationPublisher] = None
 ) extends McpServerDef[F, StreamingServerContext[F]]:
   def name(value: String): StreamingMcpServer[F] =
     copy(name = value)
@@ -194,6 +204,12 @@ case class StreamingMcpServer[F[_]](
   def withSubscriptions(handler: ResourceSubscriptions[F]): StreamingMcpServer[F] =
     copy(subscriptions = Some(handler))
 
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): StreamingMcpServer[F] =
+    copy(publisher = Some(publisher))
+
 /** An [[McpServer]] with security logic, which runs before the server handles an MCP message. The result of the security logic, the
   * principal, is given to the logic of the tools, prompts, and resources which are added to this server. Tools, prompts, and resources of
   * the initial server, which do not need the principal, are kept.
@@ -223,6 +239,7 @@ case class SecuredMcpServer[F[_], S, E, P](
   def completion: Option[CompletionHandler[F]] = server.completion
   def loggingLevel: Option[SetLoggingLevelHandler[F]] = server.loggingLevel
   def subscriptions: Option[ResourceSubscriptions[F]] = server.subscriptions
+  def publisher: Option[NotificationPublisher] = server.publisher
 
   def tools: List[ServerTool[?, ?, F, SecuredServerContext[F, P]]] =
     mergeBy(server.tools, securedTools)(_.name)
@@ -288,6 +305,12 @@ case class SecuredMcpServer[F[_], S, E, P](
   def withSubscriptions(handler: ResourceSubscriptions[F]): SecuredMcpServer[F, S, E, P] =
     copy(server = server.withSubscriptions(handler))
 
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): SecuredMcpServer[F, S, E, P] =
+    copy(server = server.withPublisher(publisher))
+
   def endpoint(path: List[String]): ServerEndpoint[Any, F] = SecuredServerHttpTransport[F, S, E, P](path).serve(this)
 
   def streaming: SecuredStreamingMcpServer[F, S, E, P] = SecuredStreamingMcpServer(this)
@@ -310,6 +333,7 @@ case class SecuredStreamingMcpServer[F[_], S, E, P](
   def completion: Option[CompletionHandler[F]] = server.completion
   def loggingLevel: Option[SetLoggingLevelHandler[F]] = server.loggingLevel
   def subscriptions: Option[ResourceSubscriptions[F]] = server.subscriptions
+  def publisher: Option[NotificationPublisher] = server.publisher
 
   def securityInput: EndpointInput[S] = server.securityInput
   def errorOutput: EndpointOutput[E] = server.errorOutput
@@ -375,3 +399,9 @@ case class SecuredStreamingMcpServer[F[_], S, E, P](
 
   def withSubscriptions(handler: ResourceSubscriptions[F]): SecuredStreamingMcpServer[F, S, E, P] =
     copy(server = server.withSubscriptions(handler))
+
+  /** Sends the list changes and resource updates that `publisher` publishes to the clients on a `subscriptions/listen` stream. Needs a
+    * streaming transport; a server on the sync HTTP transport answers `subscriptions/listen` with `-32601`.
+    */
+  def withPublisher(publisher: NotificationPublisher): SecuredStreamingMcpServer[F, S, E, P] =
+    copy(server = server.withPublisher(publisher))

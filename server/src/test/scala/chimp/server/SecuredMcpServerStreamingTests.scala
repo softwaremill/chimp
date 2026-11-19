@@ -23,6 +23,9 @@ trait SecuredMcpServerTestFixtures[F[_]]:
 trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers with RecoverMethods with SecuredMcpServerTestFixtures[F]:
   this: ToFuture[F] =>
 
+  /** The protocol version of the spec's client. A modern client sets no `_meta` logLevel, so it must get no log notifications. */
+  protected def clientProtocolVersion: ProtocolVersion
+
   /** @param token
     *   The bearer token the client authenticates with; defaults to [[validToken]] so most tests need not pass it.
     */
@@ -83,11 +86,14 @@ trait SecuredMcpServerStreamingTests[F[_]] extends AsyncFlatSpec with Matchers w
       .onServerNotification(notification => listener(notification))
       .flatMap(_ => client.callTool("whoAmI", Json.obj()))
       .flatMap: result =>
-        waitUntil(messages.size >= 1).map: _ =>
-          result.content shouldBe List(ToolContent.Text("text", "employee@example.com"))
-          messages.asScala.toList shouldBe List(Json.fromString("employee@example.com"))
+        val expected = if clientProtocolVersion.isModern then Nil else List(Json.fromString("employee@example.com"))
+        waitUntil(messages.size >= expected.size)
+          .flatMap(_ => sleep(50))
+          .map: _ =>
+            result.content shouldBe List(ToolContent.Text("text", "employee@example.com"))
+            messages.asScala.toList shouldBe expected
 
-  "a secured streaming MCP server" should "give the principal to a streaming tool, and deliver its log notifications" in
+  "a secured streaming MCP server" should "give the principal to a streaming tool, and deliver its log notifications (none to a modern request without a log level)" in
     withSecuredStreamingServer(securedStreamingServer)(assertWhoAmIDeliversPrincipal)
 
   it should "give the principal to a streaming tool when the security logic is effectful" in

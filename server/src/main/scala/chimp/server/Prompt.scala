@@ -38,6 +38,12 @@ case class PartialPrompt(
   ): ServerPrompt[F, ServerContext[F]] =
     ServerPrompt(definition, (args, _, headers) => logic(args, headers))
 
+  /** Attaches effectful logic, with access to the [[ServerContext]], which gives the facts of the request. */
+  def serverLogicWithContext[F[_]](
+      logic: (Map[String, String], ServerContext[F], Seq[Header]) => F[GetPromptResult]
+  ): ServerPrompt[F, ServerContext[F]] =
+    ServerPrompt(definition, logic)
+
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](
       logic: (Map[String, String], P, Seq[Header]) => F[GetPromptResult]

@@ -1,7 +1,7 @@
 package chimp.server.zio
 
 import chimp.protocol.JSONRPCMessage
-import chimp.server.OutboundSink
+import chimp.server.{ListenRequest, OutboundSink, SubscriptionOutput}
 import chimp.server.transport.ServerStreamingHttpTransport
 import io.circe.Json
 import io.circe.syntax.*
@@ -10,7 +10,7 @@ import sttp.model.sse.ServerSentEvent
 import sttp.tapir.*
 import sttp.tapir.ztapir.ZioServerSentEvents
 import zio.stream.{Stream, ZStream}
-import zio.{Queue, Task, ZIO}
+import zio.{Queue, Task, Unsafe, ZIO}
 
 import java.nio.charset.StandardCharsets
 
@@ -40,6 +40,22 @@ final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHt
             .forkScoped
         yield ZStream.fromQueue(queue).collectWhile { case Outbound.Message(json) => ServerSentEvent(data = Some(json.noSpaces)) }
       }
+    }
+
+  private[server] def subscriptionStream(listen: ListenRequest): EventStream =
+    ZStream.unwrapScoped {
+      for
+        queue <- ZIO.acquireRelease(Queue.unbounded[Outbound])(_.shutdown)
+        runtime <- ZIO.runtime[Any]
+        output = new SubscriptionOutput:
+          def send(message: Json): Unit = offer(Outbound.Message(message))
+          def close(): Unit = offer(Outbound.Close)
+          private def offer(outbound: Outbound): Unit =
+            Unsafe.unsafe { implicit unsafe =>
+              val _ = runtime.unsafe.run(queue.offer(outbound))
+            }
+        _ <- ZIO.acquireRelease(ZIO.succeed(listen.open(output)))(subscription => ZIO.succeed(subscription.cancel()))
+      yield ZStream.fromQueue(queue).collectWhile { case Outbound.Message(json) => ServerSentEvent(data = Some(json.noSpaces)) }
     }
 
   private enum Outbound:
