@@ -38,19 +38,19 @@ object ProtocolMeta:
       data = Some(Json.obj("requiredCapabilities" -> required.asJson.deepDropNullValues))
     )
 
-/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `incomplete` for one that needs another round trip (MRTR
-  * input-required).
+/** The type of a modern (2026-07-28+) result: `complete` for a finished result, `input_required` for one that needs another round trip
+  * (MRTR).
   */
 enum ResultType(val name: String):
   case Complete extends ResultType("complete")
-  case Incomplete extends ResultType("incomplete")
+  case InputRequired extends ResultType("input_required")
 
 object ResultType:
   given Encoder[ResultType] = Encoder.instance(resultType => Json.fromString(resultType.name))
   given Decoder[ResultType] = Decoder.decodeString.emap:
-    case "complete"   => Right(Complete)
-    case "incomplete" => Right(Incomplete)
-    case other        => Left(s"Unknown result type: $other")
+    case "complete"       => Right(Complete)
+    case "input_required" => Right(InputRequired)
+    case other            => Left(s"Unknown result type: $other")
 
 /** Whether a cached response may be shared across authorization contexts (`Public`) or not (`Private`). */
 enum CacheScope:
