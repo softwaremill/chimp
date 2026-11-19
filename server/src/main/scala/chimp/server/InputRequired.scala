@@ -15,6 +15,8 @@ final case class InputRequired private (requests: Map[String, InputRequest], req
   /** Sets the opaque state which the client echoes on its retry. */
   def withRequestState(state: String): InputRequired = copy(requestState = Some(state))
 
+  private[server] def mapRequestState(f: String => String): InputRequired = copy(requestState = requestState.map(f))
+
 object InputRequired:
   def apply(first: (String, InputRequest), rest: (String, InputRequest)*): InputRequired =
     new InputRequired((first +: rest).toMap, None)
