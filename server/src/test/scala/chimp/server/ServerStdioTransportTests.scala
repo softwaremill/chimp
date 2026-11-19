@@ -35,6 +35,13 @@ trait ServerStdioTransportTests[F[_]] extends AnyFlatSpec with Matchers:
       .withLoggingLevel(_ => monad.unit(()))
       .withPublisher(publisher)
       .addTool(tool("echo").input[EchoInput].serverLogic[F]((in, _) => monad.unit(ToolResult.text(in.message))))
+      .addTool(
+        tool("ask")
+          .input[NoInput]
+          .serverLogicWithContext[F]((_, ctx, _) =>
+            monad.unit(ctx.request.rootsResult("roots").fold(InputRequired("roots" -> InputRequired.listRoots))(_ => ToolResult.text("ok")))
+          )
+      )
       .addStreamingTool(
         tool("noisy")
           .input[NoInput]
@@ -183,4 +190,20 @@ trait ServerStdioTransportTests[F[_]] extends AnyFlatSpec with Matchers:
 
     Await.result(session.served, 10.seconds)
     session.publisher.openSubscriptions shouldBe 0
+  }
+
+  private def ask(id: Int, capabilities: String, extra: String = ""): String =
+    val meta = s"""{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":$capabilities}"""
+    s"""{"jsonrpc":"2.0","id":$id,"method":"tools/call","params":{"name":"ask","arguments":{}$extra,"_meta":$meta}}"""
+
+  it should "answer an input-required tool call, its retry, and an input request the client has no capability for" in withStdioServer() {
+    session =>
+      session.send(ask(41, """{"roots":{}}"""))
+      session.readResponse().hcursor.downField("result").get[String]("resultType") shouldBe Right("input_required")
+      session.send(ask(42, """{"roots":{}}""", ""","inputResponses":{"roots":{"roots":[]}}"""))
+      session.readResponse().hcursor.downField("result").downField("content").downN(0).get[String]("text") shouldBe Right("ok")
+      session.send(ask(43, "{}"))
+      val error = session.readResponse()
+      error.hcursor.get[Int]("id") shouldBe Right(43)
+      error.hcursor.downField("error").get[Int]("code") shouldBe Right(JSONRPCErrorCodes.MissingRequiredClientCapability.code)
   }
