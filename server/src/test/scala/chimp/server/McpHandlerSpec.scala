@@ -178,7 +178,7 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
 
   private def modernHttpCall(method: String, params: Json, extraHeaders: (String, String)*): McpResponse =
     val req: JSONRPCMessage = Request(method = method, params = Some(params.deepMerge(Json.obj(modernMeta))), id = RequestId("h"))
-    val headers = Header("Host", "localhost") +: extraHeaders.map(Header(_, _))
+    val headers = Header("Host", "localhost") +: Header(ProtocolMeta.ProtocolVersionHeader, "2026-07-28") +: extraHeaders.map(Header(_, _))
     headersHandler.handleJsonRpc(req.asJson, headers)
 
   private def shouldBeHeaderMismatch(response: McpResponse): org.scalatest.Assertion =
@@ -697,3 +697,216 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
     featureResult("resources/subscribe", Some(params), "n1") match
       case Error(_, _, error) => error.code shouldBe MethodNotFound.code
       case _                  => fail("Expected Error")
+
+  private val seenRequest = new java.util.concurrent.atomic.AtomicReference(Option.empty[RequestInfo])
+
+  private val loggingTool = tool("logs")
+    .input[EchoInput]
+    .streamingServerLogic[Identity]: (_, ctx, _) =>
+      seenRequest.set(Some(ctx.request))
+      LoggingLevel.values.foreach(level => ctx.log(level, Json.fromString(level.toString)))
+      ToolResult.text("logged")
+
+  private val streamingHandler =
+    McpHandler[Identity, StreamingServerContext[Identity]](McpServer[Identity]().streaming.addStreamingTool(loggingTool))
+
+  private def callLoggingTool(meta: Json, headers: Seq[Header] = Seq.empty): (McpResponse, List[LoggingLevel]) =
+    val sent = scala.collection.mutable.ListBuffer.empty[JSONRPCMessage]
+    val sink = new OutboundSink[Identity]:
+      def send(message: JSONRPCMessage): Unit = sent += message
+    val params = Json.obj("name" -> Json.fromString("logs"), "arguments" -> Json.obj("message" -> Json.fromString("hi")), "_meta" -> meta)
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("log"))
+    val response = streamingHandler.handleJsonRpc(req.asJson, headers, info => SinkStreamingServerContext(sink, info))
+    val levels = sent.toList.collect { case Notification(_, "notifications/message", Some(p)) =>
+      p.as[LoggingMessageParams].toOption.get.level
+    }
+    (response, levels)
+
+  private def modernToolMeta(extra: (String, Json)*): Json =
+    Json.obj(
+      (ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28")) +:
+        (ProtocolMeta.ClientCapabilities -> Json.obj("sampling" -> Json.obj())) +:
+        extra*
+    )
+
+  it should "give a handler the facts of a modern request" in:
+    val clientInfo = Json.obj("name" -> Json.fromString("cli"), "version" -> Json.fromString("1.2"))
+    val meta = modernToolMeta(
+      ProtocolMeta.ClientInfo -> clientInfo,
+      ProtocolMeta.LogLevel -> Json.fromString("warning"),
+      "progressToken" -> Json.fromString("p1")
+    )
+    callLoggingTool(meta)._1.statusCode shouldBe sttp.model.StatusCode.Ok
+    seenRequest.get() shouldBe Some(
+      RequestInfo(
+        protocolVersion = Some(ProtocolVersion.V2026_07_28),
+        clientCapabilities = Some(ClientCapabilities(sampling = Some(Json.obj()))),
+        clientInfo = Some(Implementation("cli", "1.2")),
+        logLevel = Some(LoggingLevel.Warning),
+        progressToken = Some(ProgressToken("p1"))
+      )
+    )
+
+  it should "give a handler only the protocol version and progress token of a legacy request" in:
+    val meta = Json.obj("progressToken" -> Json.fromString("p2"), ProtocolMeta.LogLevel -> Json.fromString("debug"))
+    callLoggingTool(meta, Seq(Header(ProtocolMeta.ProtocolVersionHeader, "2025-11-25")))._1.statusCode shouldBe sttp.model.StatusCode.Ok
+    seenRequest.get() shouldBe Some(
+      RequestInfo(protocolVersion = Some(ProtocolVersion.V2025_11_25), progressToken = Some(ProgressToken("p2")))
+    )
+
+  it should "send no log messages for a modern request without a logLevel" in:
+    callLoggingTool(modernToolMeta())._2 shouldBe Nil
+
+  it should "send only log messages at or above the logLevel of a modern request" in:
+    callLoggingTool(modernToolMeta(ProtocolMeta.LogLevel -> Json.fromString("error")))._2 shouldBe
+      List(LoggingLevel.Error, LoggingLevel.Critical, LoggingLevel.Alert, LoggingLevel.Emergency)
+
+  it should "send all log messages for a legacy request" in:
+    callLoggingTool(Json.obj())._2 shouldBe LoggingLevel.values.toList
+
+  private def describe(ctx: ServerContext[Identity]): String =
+    s"${ctx.request.protocolVersion.map(_.name).getOrElse("-")} ${ctx.request.clientInfo.map(_.name).getOrElse("-")}"
+
+  private val contextServer = McpServer[Identity]()
+    .addTool(tool("ctx").input[EchoInput].serverLogicWithContext[Identity]((_, ctx, _) => ToolResult.text(describe(ctx))))
+    .addPrompt(
+      prompt("ctx").serverLogicWithContext[Identity]((_, ctx, _) =>
+        GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Text(text = describe(ctx)))))
+      )
+    )
+    .addResource(
+      resource("test://ctx").serverLogicWithContext[Identity]((ctx, _) => Right(List(ResourceContents.Text("test://ctx", describe(ctx)))))
+    )
+    .addResourceTemplate(
+      resourceTemplate("test://ctx/{id}")
+        .serverLogicWithContext[Identity]((_, uri, ctx, _) => Right(List(ResourceContents.Text(uri, describe(ctx)))))
+    )
+
+  it should "give the request facts to tool, prompt, resource and resource template logic" in:
+    val meta = Json.obj(
+      "_meta" -> modernToolMeta(ProtocolMeta.ClientInfo -> Json.obj("name" -> Json.fromString("cli"), "version" -> Json.fromString("1")))
+    )
+    val calls = List(
+      "tools/call" -> Json.obj("name" -> Json.fromString("ctx"), "arguments" -> Json.obj("message" -> Json.fromString("hi"))),
+      "prompts/get" -> Json.obj("name" -> Json.fromString("ctx")),
+      "resources/read" -> Json.obj("uri" -> Json.fromString("test://ctx")),
+      "resources/read" -> Json.obj("uri" -> Json.fromString("test://ctx/1"))
+    )
+    for (method, params) <- calls do
+      val req: JSONRPCMessage = Request(method = method, params = Some(params.deepMerge(meta)), id = RequestId("ctx"))
+      val body = extractJsonFromResponse(McpHandler(contextServer).handleJsonRpc(req.asJson, Seq.empty))
+      withClue(s"$method $params"):
+        body.noSpaces should include("2026-07-28 cli")
+
+  private val samplingTool = tool("needs_sampling")
+    .withRequiredClientCapabilities(ClientCapabilities(sampling = Some(Json.obj())))
+    .input[EchoInput]
+    .handle(in => ToolResult.text(in.message))
+
+  private val capabilityHandler = McpHandler(McpServer[Identity]().addTool(samplingTool))
+
+  private def samplingToolCall(meta: Json): Json =
+    val params = Json.obj("name" -> Json.fromString("needs_sampling"), "arguments" -> Json.obj("message" -> Json.fromString("hi")))
+    val req: JSONRPCMessage =
+      Request(method = "tools/call", params = Some(params.deepMerge(Json.obj("_meta" -> meta))), id = RequestId("cap"))
+    req.asJson
+
+  private def callSamplingTool(meta: Json): McpResponse = capabilityHandler.handleJsonRpc(samplingToolCall(meta), Seq.empty)
+
+  it should "reject a modern call of a tool that needs an undeclared client capability with -32021 and HTTP 400" in:
+    val meta = Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> Json.obj())
+    val response = callSamplingTool(meta)
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    capabilityHandler.validateRequest(samplingToolCall(meta), Seq.empty).map(_.statusCode) shouldBe Some(sttp.model.StatusCode.BadRequest)
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, id, err) =>
+        id shouldBe RequestId("cap")
+        err.code shouldBe MissingRequiredClientCapability.code
+        err.data.flatMap(_.hcursor.downField("requiredCapabilities").focus) shouldBe Some(Json.obj("sampling" -> Json.obj()))
+      case other => fail(s"Expected Error, got $other")
+
+  it should "serve a modern call of a tool whose required client capabilities are declared" in:
+    callSamplingTool(modernToolMeta()).statusCode shouldBe sttp.model.StatusCode.Ok
+
+  it should "serve a legacy call of a tool that needs a client capability" in:
+    callSamplingTool(Json.obj()).statusCode shouldBe sttp.model.StatusCode.Ok
+
+  it should "check nested required client capabilities key by key" in:
+    val formTool = tool("needs_form")
+      .withRequiredClientCapabilities(ClientCapabilities(elicitation = Some(Json.obj("form" -> Json.obj()))))
+      .input[EchoInput]
+      .handle(in => ToolResult.text(in.message))
+    val formHandler = McpHandler(McpServer[Identity]().addTool(formTool))
+    def call(declared: Json): sttp.model.StatusCode =
+      val meta = Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"), ProtocolMeta.ClientCapabilities -> declared)
+      val params =
+        Json.obj("name" -> Json.fromString("needs_form"), "arguments" -> Json.obj("message" -> Json.fromString("hi")), "_meta" -> meta)
+      val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("form"))
+      formHandler.handleJsonRpc(req.asJson, Seq.empty).statusCode
+    call(Json.obj("elicitation" -> Json.obj())) shouldBe sttp.model.StatusCode.BadRequest
+    call(Json.obj("elicitation" -> Json.obj("url" -> Json.obj()))) shouldBe sttp.model.StatusCode.BadRequest
+    call(Json.obj("elicitation" -> Json.obj("form" -> Json.obj(), "url" -> Json.obj()))) shouldBe sttp.model.StatusCode.Ok
+
+  it should "serve a request whose numeric id is beyond the Int range and echo the id" in:
+    val json = parseJson("""{"jsonrpc":"2.0","id":1763561090000,"method":"tools/list"}""")
+    extractJsonFromResponse(handler.handleJsonRpc(json, Seq.empty)).hcursor.downField("id").focus shouldBe Some(
+      Json.fromLong(1763561090000L)
+    )
+
+  private def discoverOverHttp(meta: Option[Json], versionHeader: Option[String], extraHeaders: (String, String)*): McpResponse =
+    val req: JSONRPCMessage = Request(method = "server/discover", params = meta.map(m => Json.obj("_meta" -> m)), id = RequestId("dv"))
+    val headers = (("Host" -> "localhost") +: ("Mcp-Method" -> "server/discover") +: extraHeaders) ++
+      versionHeader.map(ProtocolMeta.ProtocolVersionHeader -> _)
+    handler.handleJsonRpc(req.asJson, headers.map(Header(_, _)))
+
+  private def errorOf(response: McpResponse): JSONRPCErrorObject =
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Error(_, _, err) => err
+      case other            => fail(s"Expected Error, got $other")
+
+  private def discoverMeta(version: String = "2026-07-28"): Json =
+    Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString(version), ProtocolMeta.ClientCapabilities -> Json.obj())
+
+  it should "answer a modern server/discover whose _meta and header are valid" in:
+    val response = discoverOverHttp(Some(discoverMeta()), Some("2026-07-28"))
+    response.statusCode shouldBe sttp.model.StatusCode.Ok
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) match
+      case Response(_, _, result) => result.as[DiscoverResult].isRight shouldBe true
+      case other                  => fail(s"Expected Response, got $other")
+
+  it should "answer a server/discover that declares no protocol version, or a legacy one" in:
+    discoverOverHttp(None, None).statusCode shouldBe sttp.model.StatusCode.Ok
+    discoverOverHttp(None, Some("2025-11-25")).statusCode shouldBe sttp.model.StatusCode.Ok
+
+  it should "reject a modern server/discover with missing _meta keys with -32602 and HTTP 400" in:
+    val missingCapabilities = Json.obj(ProtocolMeta.ProtocolVersionKey -> Json.fromString("2026-07-28"))
+    val missingVersion = Json.obj(ProtocolMeta.ClientCapabilities -> Json.obj())
+    for meta <- List(None, Some(missingCapabilities), Some(missingVersion)) do
+      val response = discoverOverHttp(meta, Some("2026-07-28"))
+      withClue(meta):
+        response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+        errorOf(response).code shouldBe InvalidParams.code
+
+  it should "reject a server/discover with an unsupported protocol version with -32022, the supported and the requested versions" in:
+    val response = discoverOverHttp(Some(discoverMeta("v999.0.0")), Some("v999.0.0"))
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    val err = errorOf(response)
+    err.code shouldBe UnsupportedProtocolVersion.code
+    err.data.flatMap(_.hcursor.get[List[String]]("supported").toOption) shouldBe Some(ProtocolVersion.supported.map(_.name))
+    err.data.flatMap(_.hcursor.get[String]("requested").toOption) shouldBe Some("v999.0.0")
+
+  it should "reject a modern request whose MCP-Protocol-Version header differs from _meta with -32020, even for an unsupported _meta version" in:
+    val response = discoverOverHttp(Some(discoverMeta("v999.0.0")), Some("2026-07-28"))
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    errorOf(response).code shouldBe HeaderMismatch.code
+
+  it should "reject a modern HTTP request without the MCP-Protocol-Version header with -32020 and HTTP 400" in:
+    val response = discoverOverHttp(Some(discoverMeta()), None)
+    response.statusCode shouldBe sttp.model.StatusCode.BadRequest
+    errorOf(response).code shouldBe HeaderMismatch.code
+
+  it should "reject a modern server/discover over HTTP with a mismatched Mcp-Method header with -32020" in:
+    val req: JSONRPCMessage = Request(method = "server/discover", params = Some(Json.obj("_meta" -> discoverMeta())), id = RequestId("dm"))
+    val headers =
+      Seq(Header("Host", "localhost"), Header(ProtocolMeta.ProtocolVersionHeader, "2026-07-28"), Header("Mcp-Method", "tools/list"))
+    errorOf(handler.handleJsonRpc(req.asJson, headers)).code shouldBe HeaderMismatch.code

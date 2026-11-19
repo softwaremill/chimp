@@ -1,8 +1,8 @@
 package chimp.server.pekko
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
+import chimp.protocol.JSONRPCMessage
 import chimp.server.transport.ServerStreamingStdioTransport
-import chimp.server.{McpHandler, OutboundSink, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
+import chimp.server.{McpHandler, OutboundSink, RequestInfo, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
 import chimp.transport.{McpLineTooLongException, StdioFraming}
 import io.circe.syntax.*
 import io.circe.{parser, Json}
@@ -39,8 +39,8 @@ final class PekkoServerStdioTransport(
     val sink = new OutboundSink[Future]:
       def send(message: JSONRPCMessage): Future[Unit] = PekkoOutbound.offer(outbound, message.asJson.deepDropNullValues)
 
-    val makeContext: Option[ProgressToken] => StreamingServerContext[Future] =
-      token => SinkStreamingServerContext(sink, token)
+    val makeContext: RequestInfo => StreamingServerContext[Future] =
+      info => SinkStreamingServerContext(sink, info)
 
     val reading = StreamConverters
       .fromInputStream(() => in)
@@ -57,7 +57,7 @@ final class PekkoServerStdioTransport(
 
   private def handleLine(
       handler: McpHandler[Future, StreamingServerContext[Future]],
-      makeContext: Option[ProgressToken] => StreamingServerContext[Future],
+      makeContext: RequestInfo => StreamingServerContext[Future],
       outbound: SourceQueueWithComplete[Json],
       line: String
   ): Future[Unit] =

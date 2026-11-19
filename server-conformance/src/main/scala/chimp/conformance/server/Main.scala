@@ -132,6 +132,19 @@ object Main:
       ctx.log(LoggingLevel.Info, Json.fromString("Tool execution completed"))
       ToolResult.text("logging complete")
 
+  private val missingCapabilityTool = tool("test_missing_capability")
+    .description("Needs the sampling client capability")
+    .withRequiredClientCapabilities(ClientCapabilities(sampling = Some(Json.obj())))
+    .input[NoInput]
+    .handle(_ => ToolResult.text("sampling capability declared"))
+
+  private val perRequestLoggingTool = tool("test_logging_tool")
+    .description("Emits a log notification at each level; a modern request gets only those at or above its _meta logLevel")
+    .input[NoInput]
+    .streamingServerLogic[Identity]: (_, ctx, _) =>
+      LoggingLevel.values.foreach(level => ctx.log(level, Json.fromString(s"$level message")))
+      ToolResult.text("logging complete")
+
   private val staticText = resource("test://static-text")
     .name("static-text")
     .mimeType("text/plain")
@@ -184,7 +197,17 @@ object Main:
     .handle(_ => GetPromptResult(messages = List(PromptMessage(Role.User, ToolContent.Image(data = pngData, mimeType = "image/png")))))
 
   private val server = McpServer[Identity](name = "chimp-conformance-server", version = "0.1.0")
-    .addTools(addNumbers, simpleText, errorTool, imageTool, audioTool, mixedTool, embeddedResourceTool, jsonSchemaTool)
+    .addTools(
+      addNumbers,
+      simpleText,
+      errorTool,
+      imageTool,
+      audioTool,
+      mixedTool,
+      embeddedResourceTool,
+      jsonSchemaTool,
+      missingCapabilityTool
+    )
     .addResources(staticText, staticBinary)
     .addResourceTemplate(dataTemplate)
     .addPrompts(simplePrompt, argsPrompt, embeddedResourcePrompt, imagePrompt)
@@ -192,7 +215,7 @@ object Main:
     .withLoggingLevel(_ => ())
     .withSubscriptions(ResourceSubscriptions[Identity](_ => (), _ => ()))
 
-  private val streamingServer = server.streaming.addStreamingTools(progressTool, loggingTool)
+  private val streamingServer = server.streaming.addStreamingTools(progressTool, loggingTool, perRequestLoggingTool)
 
   def main(args: Array[String]): Unit =
     val requestedPort = args

@@ -1,8 +1,8 @@
 package chimp.server.ox
 
-import chimp.protocol.{JSONRPCMessage, ProgressToken}
+import chimp.protocol.JSONRPCMessage
 import chimp.server.transport.ServerStreamingStdioTransport
-import chimp.server.{McpHandler, OutboundSink, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
+import chimp.server.{McpHandler, OutboundSink, RequestInfo, SinkStreamingServerContext, StreamingMcpServer, StreamingServerContext}
 import chimp.transport.{StdioFraming, StdioLineReader}
 import io.circe.syntax.*
 import io.circe.{parser, Json}
@@ -39,8 +39,8 @@ final class OxServerStdioTransport(
 
       val sink = new OutboundSink[Identity]:
         def send(message: JSONRPCMessage): Unit = outbound.send(message.asJson.deepDropNullValues)
-      val makeContext: Option[ProgressToken] => StreamingServerContext[Identity] =
-        token => SinkStreamingServerContext(sink, token)
+      val makeContext: RequestInfo => StreamingServerContext[Identity] =
+        info => SinkStreamingServerContext(sink, info)
 
       reader.lines
         .filter(_.nonEmpty)

@@ -1,6 +1,5 @@
 package chimp.server.transport
 
-import chimp.protocol.ProgressToken
 import chimp.server.*
 import io.circe.Json
 import sttp.model.Header
@@ -46,8 +45,8 @@ final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](
         val (headers, json) = input
         given MonadError[F] = me
         respondWithEventStream(server.originCheck, headers, backend, handler.validateRequest(json, headers)) { sink =>
-          val makeContext: Option[ProgressToken] => SecuredStreamingServerContext[F, P] =
-            token => SinkSecuredStreamingServerContext(sink, token, principal)
+          val makeContext: RequestInfo => SecuredStreamingServerContext[F, P] =
+            info => SinkSecuredStreamingServerContext(sink, info, principal)
           handler.handleJsonRpc(json, headers, makeContext).map(_.body)
         }.map(_.left.map(Right(_)))
       }

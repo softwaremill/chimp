@@ -35,7 +35,7 @@ final case class SecuredServerHttpTransport[F[_], S, E, P](path: List[String]):
         val (headers, json) = input
         given MonadError[F] = me
         respondToJsonRpc(server.originCheck, headers) {
-          handler.handleJsonRpc(json, headers, _ => SecuredServerContext[F, P](principal))
+          handler.handleJsonRpc(json, headers, info => SecuredServerContext[F, P](principal, info))
         }.map(Right(_))
       }
     )
