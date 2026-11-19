@@ -4,11 +4,9 @@ import chimp.protocol.*
 import io.circe.*
 import io.circe.syntax.*
 import org.slf4j.LoggerFactory
-import sttp.apispec.circe.*
 import sttp.model.{Header, StatusCode}
 import sttp.monad.MonadError
 import sttp.monad.syntax.*
-import sttp.tapir.docs.apispec.schema.TapirSchemaToJsonSchema
 
 enum McpResponse:
   case JsonResponse(json: Json)
@@ -44,17 +42,13 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   private val hasPrompts = server.prompts.nonEmpty
   private val toolDefinitions = server.tools.map(toolToDefinition)
 
-  private def toJsonSchema(toolSchema: ToolSchema): Json = toolSchema match
-    case ToolSchema.Derived(schema) =>
-      val base = TapirSchemaToJsonSchema(schema, markOptionsAsNullable = false)
-      (if server.showJsonSchemaMetadata then base else base.copy($schema = None)).asJson
-    case ToolSchema.Raw(json) => json
+  private def toJsonSchema(toolSchema: ToolSchema): Json = McpHeaders.render(toolSchema, server.showJsonSchemaMetadata)
 
   private def toolToDefinition(tool: ServerTool[?, ?, F, C]): ToolDefinition =
     ToolDefinition(
       name = tool.name,
       description = tool.description,
-      inputSchema = toJsonSchema(tool.inputSchema),
+      inputSchema = McpHeaders.annotated(toJsonSchema(tool.inputSchema), tool.mcpHeaders).getOrElse(toJsonSchema(tool.inputSchema)),
       outputSchema = tool.outputSchema.map(toJsonSchema),
       annotations = tool.annotations
         .map(annotation =>

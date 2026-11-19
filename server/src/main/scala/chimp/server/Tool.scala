@@ -83,6 +83,7 @@ case class PartialTool(
 
   /** Fixes the input type, deriving its JSON Schema and decoder from the given instances. */
   def input[I: Schema: Decoder]: Tool[I, NoStructuredOutput] =
+    McpHeaders.validate(name, ToolSchema.Derived(summon[Schema[I]]), Nil)
     Tool[I, NoStructuredOutput](
       name,
       description,
@@ -95,6 +96,7 @@ case class PartialTool(
 
   /** Fixes the input as raw JSON, validated against the given JSON Schema. */
   def inputJson(schema: Json): Tool[Json, NoStructuredOutput] =
+    McpHeaders.validate(name, ToolSchema.Raw(schema), Nil)
     Tool[Json, NoStructuredOutput](
       name,
       description,
@@ -115,8 +117,23 @@ case class Tool[I, O](
     inputDecoder: Decoder[I],
     outputSchema: Option[ToolSchema],
     annotations: Option[ToolAnnotations],
-    requiredClientCapabilities: Option[ClientCapabilities] = None
+    requiredClientCapabilities: Option[ClientCapabilities] = None,
+    mcpHeaders: List[McpHeader] = Nil
 ):
+  /** Marks the top-level input property `property` with `x-mcp-header`, so that a client mirrors its value into the `Mcp-Param-{header}`
+    * HTTP header and the server checks that the header matches the argument. Throws [[IllegalArgumentException]] when the annotation breaks
+    * the spec constraints.
+    */
+  def withMcpHeader(property: String, header: String): Tool[I, O] = withMcpHeader(List(property), header)
+
+  /** Marks the input property at `path`, a chain of `properties` keys from the schema root, with `x-mcp-header`, as the single-property
+    * overload does.
+    */
+  def withMcpHeader(path: List[String], header: String): Tool[I, O] =
+    val headers = mcpHeaders :+ McpHeader(path, header)
+    McpHeaders.validate(name, inputSchema, headers)
+    copy(mcpHeaders = headers)
+
   /** Fixes the structured output type, deriving its JSON Schema from the given instance. */
   def output[O2: Schema]: Tool[I, O2] =
     copy(outputSchema = Some(ToolSchema.Derived(summon[Schema[O2]])))
@@ -169,7 +186,7 @@ case class Tool[I, O](
   private def serverTool[F[_], C <: ServerContext[F]](
       logic: (I, C, Seq[Header]) => F[ToolResult[O] | InputRequired]
   ): ServerTool[I, O, F, C] =
-    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic, requiredClientCapabilities)
+    ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic, requiredClientCapabilities, mcpHeaders)
 
 /** A fully-defined tool: its metadata plus the logic handling a call, in effect `F` with context `C`. */
 case class ServerTool[I, O, F[_], -C <: ServerContext[F]](
@@ -180,5 +197,6 @@ case class ServerTool[I, O, F[_], -C <: ServerContext[F]](
     outputSchema: Option[ToolSchema],
     annotations: Option[ToolAnnotations],
     logic: (I, C, Seq[Header]) => F[ToolResult[O] | InputRequired],
-    requiredClientCapabilities: Option[ClientCapabilities] = None
+    requiredClientCapabilities: Option[ClientCapabilities] = None,
+    mcpHeaders: List[McpHeader] = Nil
 )
