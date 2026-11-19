@@ -7,7 +7,9 @@ import sttp.shared.Identity
 /** Starts defining a prompt with the given name. */
 def prompt(name: String): PartialPrompt = PartialPrompt(name)
 
-/** A prompt being defined, before its logic is attached. */
+/** A prompt being defined, before its logic is attached. The logic ends with a [[GetPromptResult]], or with [[InputRequired]] to ask the
+  * client for input first.
+  */
 case class PartialPrompt(
     name: String,
     title: Option[String] = None,
@@ -34,25 +36,25 @@ case class PartialPrompt(
 
   /** Attaches effectful logic, with access to the request headers, producing the prompt's messages. */
   def serverLogic[F[_]](
-      logic: (Map[String, String], Seq[Header]) => F[GetPromptResult]
+      logic: (Map[String, String], Seq[Header]) => F[GetPromptResult | InputRequired]
   ): ServerPrompt[F, ServerContext[F]] =
     ServerPrompt(definition, (args, _, headers) => logic(args, headers))
 
   /** Attaches effectful logic, with access to the [[ServerContext]], which gives the facts of the request. */
   def serverLogicWithContext[F[_]](
-      logic: (Map[String, String], ServerContext[F], Seq[Header]) => F[GetPromptResult]
+      logic: (Map[String, String], ServerContext[F], Seq[Header]) => F[GetPromptResult | InputRequired]
   ): ServerPrompt[F, ServerContext[F]] =
     ServerPrompt(definition, logic)
 
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
   def securedServerLogic[F[_], P](
-      logic: (Map[String, String], P, Seq[Header]) => F[GetPromptResult]
+      logic: (Map[String, String], P, Seq[Header]) => F[GetPromptResult | InputRequired]
   ): ServerPrompt[F, SecuredServerContext[F, P]] =
     ServerPrompt(definition, (args, context, headers) => logic(args, context.principal, headers))
 
   /** Attaches synchronous logic that also receives the request headers. */
   def handleWithHeaders(
-      logic: (Map[String, String], Seq[Header]) => GetPromptResult
+      logic: (Map[String, String], Seq[Header]) => GetPromptResult | InputRequired
   ): ServerPrompt[Identity, ServerContext[Identity]] =
     serverLogic[Identity](logic)
 
@@ -62,7 +64,7 @@ case class PartialPrompt(
 
   /** Attaches synchronous logic over the supplied argument values and the principal; usable only on a [[SecuredMcpServer]]. */
   def handleSecured[P](
-      logic: (Map[String, String], P) => GetPromptResult
+      logic: (Map[String, String], P) => GetPromptResult | InputRequired
   ): ServerPrompt[Identity, SecuredServerContext[Identity, P]] =
     securedServerLogic[Identity, P]((args, principal, _) => logic(args, principal))
 
@@ -74,5 +76,5 @@ end PartialPrompt
 /** A fully-defined prompt: its metadata plus the logic producing its messages. */
 case class ServerPrompt[F[_], -C <: ServerContext[F]](
     definition: Prompt,
-    logic: (Map[String, String], C, Seq[Header]) => F[GetPromptResult]
+    logic: (Map[String, String], C, Seq[Header]) => F[GetPromptResult | InputRequired]
 )

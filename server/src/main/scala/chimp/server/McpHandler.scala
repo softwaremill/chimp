@@ -108,6 +108,8 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case JSONRPCMessage.Response(jsonrpc, rid, result) if isModern =>
         JSONRPCMessage.Response(jsonrpc, rid, modernResult(result, cacheHints))
       case other => other
+    def reply(cacheHints: Option[CacheHints])(reply: Reply): McpResponse =
+      reply.fold(identity, message => jsonResponse(wrap(cacheHints)(message)))
     val cacheHints = Some(CacheHints.Default)
     method match
       case "initialize" =>
@@ -119,7 +121,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case "tools/list" =>
         jsonResponse(wrap(cacheHints)(JSONRPCMessage.Response(id = id, result = ListToolsResponse(toolDefinitions).asJson))).unit
       case "tools/call" =>
-        handleToolsCall(params, id, headers, makeContext).map(wrap(None)).map(jsonResponse)
+        handleToolsCall(params, id, headers, makeContext, isModern).map(reply(None))
       case "resources/list" if hasResources =>
         jsonResponse(
           wrap(cacheHints)(JSONRPCMessage.Response(id = id, result = ListResourcesResult(server.resources.map(_.definition)).asJson))
@@ -131,7 +133,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
           )
         ).unit
       case "resources/read" if hasResources =>
-        handleResourcesRead(params, id, headers, makeContext).map(wrap(cacheHints)).map(jsonResponse)
+        handleResourcesRead(params, id, headers, makeContext, isModern).map(reply(cacheHints))
       case "resources/subscribe" if server.subscriptions.isDefined =>
         handleSubscribe(params, id, subscribe = true).map(jsonResponse)
       case "resources/unsubscribe" if server.subscriptions.isDefined =>
@@ -141,7 +143,7 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
           wrap(cacheHints)(JSONRPCMessage.Response(id = id, result = ListPromptsResult(server.prompts.map(_.definition)).asJson))
         ).unit
       case "prompts/get" if hasPrompts =>
-        handlePromptsGet(params, id, headers, makeContext).map(wrap(None)).map(jsonResponse)
+        handlePromptsGet(params, id, headers, makeContext, isModern).map(reply(None))
       case "completion/complete" if server.completion.isDefined =>
         handleComplete(params, id).map(wrap(None)).map(jsonResponse)
       case "logging/setLevel" if server.loggingLevel.isDefined =>
@@ -151,16 +153,46 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case other =>
         jsonResponse(protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown method: $other")).unit
 
+  /** Adds the modern envelope fields to a result. An input-required result already names its type and is never cached. */
   private def modernResult(result: Json, cacheHints: Option[CacheHints]): Json =
     val meta = result.hcursor.downField("_meta").focus.getOrElse(Json.obj()).deepMerge(serverInfoMeta)
-    val enriched = result.deepMerge(Json.obj("resultType" -> ResultType.Complete.asJson, "_meta" -> meta))
-    cacheHints.fold(enriched)(hints => enriched.deepMerge(hints.asJson))
+    if result.hcursor.get[ResultType]("resultType").contains(ResultType.InputRequired) then result.deepMerge(Json.obj("_meta" -> meta))
+    else
+      val enriched = result.deepMerge(Json.obj("resultType" -> ResultType.Complete.asJson, "_meta" -> meta))
+      cacheHints.fold(enriched)(hints => enriched.deepMerge(hints.asJson))
 
   private def protocolError(id: RequestId, code: Int, message: String, data: Option[Json] = None): JSONRPCMessage.Error =
     logger.debug(s"Protocol error (id=$id, code=$code): $message")
     JSONRPCMessage.Error(id = id, error = JSONRPCErrorObject(code = code, message = message, data = data))
 
   private def jsonResponse(message: JSONRPCMessage): McpResponse = McpResponse.JsonResponse(message.asJson)
+
+  /** The reply of a handler which may end with [[InputRequired]]: a JSON-RPC message, or a response with its own HTTP status. */
+  private type Reply = Either[McpResponse, JSONRPCMessage]
+
+  /** Applies the server-enforced input-required rules: only a modern request can get it, and only for the input requests which the client
+    * declared the capabilities for (otherwise a `-32021` with HTTP 400).
+    */
+  private def inputRequiredReply(id: RequestId, outcome: InputRequired, info: RequestInfo, isModern: Boolean): Reply =
+    if !isModern then
+      Right(
+        protocolError(
+          id,
+          JSONRPCErrorCodes.InternalError.code,
+          s"The handler asked for client input, which needs protocol version ${ProtocolVersion.V2026_07_28.name} or later"
+        )
+      )
+    else
+      val declared = info.clientCapabilities.getOrElse(ClientCapabilities())
+      val undeclared = outcome.requests.values.filterNot(InputRequired.isDeclared(_, declared))
+      if undeclared.nonEmpty then
+        val required = InputRequired.requiredCapabilities(undeclared)
+        logger.debug(s"Input required rejected (id=$id): missing client capabilities ${required.asJson.deepDropNullValues.noSpaces}")
+        val envelope: JSONRPCMessage = JSONRPCMessage.Error(id = id, error = ProtocolMeta.missingClientCapabilityError(required))
+        Left(McpResponse.JsonError(StatusCode.BadRequest, envelope.asJson))
+      else
+        val result = InputRequiredResult(Option.when(outcome.requests.nonEmpty)(outcome.requests), outcome.requestState)
+        Right(JSONRPCMessage.Response(id = id, result = result.asJson))
 
   // request methods a 2026-07-28 client may call
   private val modernMethods: Set[String] =
@@ -204,7 +236,9 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
         clientCapabilities = fromMeta[ClientCapabilities](ProtocolMeta.ClientCapabilities),
         clientInfo = fromMeta[Implementation](ProtocolMeta.ClientInfo),
         logLevel = fromMeta[LoggingLevel](ProtocolMeta.LogLevel),
-        progressToken = progressToken
+        progressToken = progressToken,
+        inputResponses = params.flatMap(_.hcursor.get[Map[String, InputResponse]]("inputResponses").toOption).getOrElse(Map.empty),
+        requestState = params.flatMap(_.hcursor.get[String]("requestState").toOption)
       )
     else RequestInfo(protocolVersion = protocolVersion, progressToken = progressToken)
 
@@ -265,7 +299,21 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
     else
       // SEP-2243 standard request headers only apply over HTTP (identified by the Host header); stdio carries no such headers
       val headerError = Option.when(overHttp)(headerValidationError(method, params, headers, id))
-      headerError.flatten.orElse(missingCapabilityError(method, params, meta, id))
+      headerError.flatten.orElse(missingCapabilityError(method, params, meta, id)).orElse(inputResponsesError(method, params, id))
+
+  // the requests which can end with an input-required result and so carry `inputResponses` and `requestState` on a retry
+  private val inputRequiredMethods: Set[String] = Set("tools/call", "prompts/get", "resources/read")
+
+  /** A `-32602` with HTTP 400 when a retry's `inputResponses` is not an object of input responses, or its `requestState` not a string. */
+  private def inputResponsesError(method: String, params: Option[Json], id: RequestId): Option[McpResponse] =
+    def invalid(message: String) = Some(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.InvalidParams.code, message))
+    val cursor = params.filter(_ => inputRequiredMethods.contains(method)).map(_.hcursor)
+    val responses = cursor.flatMap(_.downField("inputResponses").focus).map(_.as[Map[String, InputResponse]])
+    val state = cursor.flatMap(_.downField("requestState").focus)
+    responses match
+      case Some(Left(failure))                       => invalid(s"Invalid inputResponses: ${failure.getMessage}")
+      case _ if state.exists(json => !json.isString) => invalid("Invalid requestState: expected a string")
+      case _                                         => None
 
   /** A `-32021` with HTTP 400 when `tools/call` names a tool whose required client capabilities the request's `_meta` does not declare. */
   private def missingCapabilityError(method: String, params: Option[Json], meta: Option[Json], id: RequestId): Option[McpResponse] =
@@ -370,9 +418,9 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   private def handleDiscover(id: RequestId): JSONRPCMessage.Response =
     JSONRPCMessage.Response(id = id, result = discoverResult.asJson)
 
-  private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: () => C)(using
+  private def handleToolsCall(params: Option[Json], id: RequestId, headers: Seq[Header], makeContext: () => C, isModern: Boolean)(using
       MonadError[F]
-  ): F[JSONRPCMessage] =
+  ): F[Reply] =
     val name = params.flatMap(_.hcursor.downField("name").as[String].toOption)
     val arguments = params.flatMap(_.hcursor.downField("arguments").focus).getOrElse(Json.obj())
     name match
@@ -384,18 +432,23 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
                 val context = makeContext()
                 tool
                   .logic(input, context, headers)
-                  .map: result =>
-                    toolCallResponse(id, result)
+                  .map:
+                    case outcome: InputRequired => inputRequiredReply(id, outcome, context.request, isModern)
+                    case result: ToolResult[?]  => Right(toolCallResponse(id, result))
               case Left(decodingError) =>
                 val snippet = arguments.noSpaces.take(200)
-                protocolError(
-                  id,
-                  JSONRPCErrorCodes.InvalidParams.code,
-                  s"Invalid arguments: ${decodingError.getMessage}. Input: $snippet"
-                ).unit
-          case None => protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $name").unit
+                failed(
+                  protocolError(
+                    id,
+                    JSONRPCErrorCodes.InvalidParams.code,
+                    s"Invalid arguments: ${decodingError.getMessage}. Input: $snippet"
+                  )
+                )
+          case None => failed(protocolError(id, JSONRPCErrorCodes.MethodNotFound.code, s"Unknown tool: $name"))
       case None =>
-        protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name").unit
+        failed(protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Missing tool name"))
+
+  private def failed(error: JSONRPCMessage)(using MonadError[F]): F[Reply] = (Right(error): Reply).unit
 
   private def toolCallResponse(id: RequestId, result: ToolResult[?]): JSONRPCMessage =
     // for backwards compatibility, structured output is serialized into a text block, unless the tool returned content of its own
@@ -415,24 +468,33 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       params: Option[Json],
       id: RequestId,
       headers: Seq[Header],
-      makeContext: () => C
-  )(using MonadError[F]): F[JSONRPCMessage] =
-    decodeParams[ReadResourceParams](params, id): params =>
+      makeContext: () => C,
+      isModern: Boolean
+  )(using MonadError[F]): F[Reply] =
+    decodeReplyParams[ReadResourceParams](params, id): params =>
       val context = makeContext()
+      val respond = resourceReadReply(id, params.uri, context.request, isModern)
       resourcesByUri.get(params.uri) match
-        case Some(resource) => resource.read(context, headers).map(resourceReadResponse(id, params.uri))
+        case Some(resource) => resource.read(context, headers).map(respond)
         case None           =>
           server.resourceTemplates.iterator
             .map(template => (template, template.matcher.matchUri(params.uri)))
             .collectFirst { case (template, Some(vars)) => template.read(vars, params.uri, context, headers) } match
-            case Some(result) => result.map(resourceReadResponse(id, params.uri))
+            case Some(result) => result.map(respond)
             case None         =>
-              protocolError(
-                id,
-                JSONRPCErrorCodes.ResourceNotFound.code,
-                s"Resource not found: ${params.uri}",
-                Some(Json.obj("uri" -> Json.fromString(params.uri)))
-              ).unit
+              failed(
+                protocolError(
+                  id,
+                  JSONRPCErrorCodes.ResourceNotFound.code,
+                  s"Resource not found: ${params.uri}",
+                  Some(Json.obj("uri" -> Json.fromString(params.uri)))
+                )
+              )
+
+  private def decodeReplyParams[P: Decoder](params: Option[Json], id: RequestId)(f: P => F[Reply])(using MonadError[F]): F[Reply] =
+    params.flatMap(_.as[P].toOption) match
+      case Some(params) => f(params)
+      case None         => failed(protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Invalid or missing params"))
 
   private def decodeParams[P: Decoder](params: Option[Json], id: RequestId)(f: P => F[JSONRPCMessage])(using
       MonadError[F]
@@ -441,15 +503,20 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       case Some(params) => f(params)
       case None         => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, "Invalid or missing params").unit
 
-  private def resourceReadResponse(id: RequestId, uri: String)(result: Either[ResourceError, List[ResourceContents]]): JSONRPCMessage =
-    result match
-      case Right(contents) => JSONRPCMessage.Response(id = id, result = ReadResourceResult(contents).asJson)
-      case Left(error)     =>
-        protocolError(
-          id,
-          JSONRPCErrorCodes.ResourceNotFound.code,
-          error.message,
-          error.uri.orElse(Some(uri)).map(uri => Json.obj("uri" -> Json.fromString(uri)))
+  private def resourceReadReply(id: RequestId, uri: String, info: RequestInfo, isModern: Boolean)(
+      outcome: Either[ResourceError, List[ResourceContents]] | InputRequired
+  ): Reply =
+    outcome match
+      case required: InputRequired => inputRequiredReply(id, required, info, isModern)
+      case Right(contents)         => Right(JSONRPCMessage.Response(id = id, result = ReadResourceResult(contents).asJson))
+      case Left(error)             =>
+        Right(
+          protocolError(
+            id,
+            JSONRPCErrorCodes.ResourceNotFound.code,
+            error.message,
+            error.uri.orElse(Some(uri)).map(uri => Json.obj("uri" -> Json.fromString(uri)))
+          )
         )
 
   private def handleSubscribe(params: Option[Json], id: RequestId, subscribe: Boolean)(using MonadError[F]): F[JSONRPCMessage] =
@@ -463,15 +530,19 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
       params: Option[Json],
       id: RequestId,
       headers: Seq[Header],
-      makeContext: () => C
-  )(using MonadError[F]): F[JSONRPCMessage] =
-    decodeParams[GetPromptParams](params, id): params =>
+      makeContext: () => C,
+      isModern: Boolean
+  )(using MonadError[F]): F[Reply] =
+    decodeReplyParams[GetPromptParams](params, id): params =>
       promptsByName.get(params.name) match
         case Some(prompt) =>
+          val context = makeContext()
           prompt
-            .logic(params.arguments.getOrElse(Map.empty), makeContext(), headers)
-            .map(promptResult => JSONRPCMessage.Response(id = id, result = promptResult.asJson))
-        case None => protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown prompt: ${params.name}").unit
+            .logic(params.arguments.getOrElse(Map.empty), context, headers)
+            .map:
+              case outcome: InputRequired  => inputRequiredReply(id, outcome, context.request, isModern)
+              case result: GetPromptResult => Right(JSONRPCMessage.Response(id = id, result = result.asJson))
+        case None => failed(protocolError(id, JSONRPCErrorCodes.InvalidParams.code, s"Unknown prompt: ${params.name}"))
 
   private def handleComplete(params: Option[Json], id: RequestId)(using MonadError[F]): F[JSONRPCMessage] =
     val handler = server.completion.get

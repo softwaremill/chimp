@@ -5,7 +5,8 @@ import io.circe.Json
 import io.circe.syntax.*
 import sttp.monad.MonadError
 
-/** What a request tells about itself. A modern (2026-07-28+) request carries all of it in `_meta`. A legacy request gives only the protocol
+/** What a request tells about itself. A modern (2026-07-28+) request carries all of it in `_meta`, and a retry of an [[InputRequired]]
+  * outcome also carries the client's answers (`inputResponses`) and the echoed `requestState`. A legacy request gives only the protocol
   * version (from the `MCP-Protocol-Version` header or `_meta`) and the progress token; the server keeps no state from `initialize`.
   */
 final case class RequestInfo(
@@ -13,8 +14,20 @@ final case class RequestInfo(
     clientCapabilities: Option[ClientCapabilities] = None,
     clientInfo: Option[Implementation] = None,
     logLevel: Option[LoggingLevel] = None,
-    progressToken: Option[ProgressToken] = None
+    progressToken: Option[ProgressToken] = None,
+    inputResponses: Map[String, InputResponse] = Map.empty,
+    requestState: Option[String] = None
 ):
+  /** The client's answer to the form or URL elicitation asked under `key`, if the retry carries one. */
+  def elicitResult(key: String): Option[ElicitResult] = inputResponses.get(key).collect { case InputResponse.Elicit(result) => result }
+
+  /** The client's answer to the sampling request asked under `key`, if the retry carries one. */
+  def samplingResult(key: String): Option[CreateMessageResult] =
+    inputResponses.get(key).collect { case InputResponse.Sampling(result) => result }
+
+  /** The client's answer to the roots request asked under `key`, if the retry carries one. */
+  def rootsResult(key: String): Option[ListRootsResult] = inputResponses.get(key).collect { case InputResponse.Roots(result) => result }
+
   /** A modern request gets `notifications/message` only at or above its `logLevel`, and none without one. A legacy request gets all. */
   private[server] def allowsLog(level: LoggingLevel): Boolean =
     if protocolVersion.exists(_.isModern) then logLevel.exists(minimum => level.ordinal >= minimum.ordinal) else true

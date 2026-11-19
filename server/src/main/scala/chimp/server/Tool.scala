@@ -105,7 +105,9 @@ case class PartialTool(
       requiredClientCapabilities
     )
 
-/** A tool with a known input type `I` and structured output type `O`, ready to be given its handling logic. */
+/** A tool with a known input type `I` and structured output type `O`, ready to be given its handling logic. The logic ends with a
+  * [[ToolResult]], or with [[InputRequired]] to ask the client for input first.
+  */
 case class Tool[I, O](
     name: String,
     description: Option[String],
@@ -124,43 +126,49 @@ case class Tool[I, O](
     copy(outputSchema = Some(ToolSchema.Raw(schema)))
 
   /** Attaches effectful logic, with access to the request headers. */
-  def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, ServerContext[F]] =
+  def serverLogic[F[_]](logic: (I, Seq[Header]) => F[ToolResult[O] | InputRequired]): ServerTool[I, O, F, ServerContext[F]] =
     serverTool((input, _, headers) => logic(input, headers))
 
   /** Attaches effectful logic, with access to the [[ServerContext]], which gives the facts of the request. */
-  def serverLogicWithContext[F[_]](logic: (I, ServerContext[F], Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, ServerContext[F]] =
+  def serverLogicWithContext[F[_]](
+      logic: (I, ServerContext[F], Seq[Header]) => F[ToolResult[O] | InputRequired]
+  ): ServerTool[I, O, F, ServerContext[F]] =
     serverTool(logic)
 
   /** Attaches effectful logic, with access to the principal; usable only on a [[SecuredMcpServer]]. */
-  def securedServerLogic[F[_], P](logic: (I, P, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, SecuredServerContext[F, P]] =
+  def securedServerLogic[F[_], P](
+      logic: (I, P, Seq[Header]) => F[ToolResult[O] | InputRequired]
+  ): ServerTool[I, O, F, SecuredServerContext[F, P]] =
     serverTool((input, context, headers) => logic(input, context.principal, headers))
 
   /** Attaches effectful logic with access to the [[StreamingServerContext]]; usable only on a streaming server. */
   def streamingServerLogic[F[_]](
-      logic: (I, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O]]
+      logic: (I, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O] | InputRequired]
   ): ServerTool[I, O, F, StreamingServerContext[F]] =
     serverTool(logic)
 
   /** Attaches effectful logic with access to the principal and the [[StreamingServerContext]]; usable only on a secured streaming server.
     */
   def securedStreamingServerLogic[F[_], P](
-      logic: (I, P, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O]]
+      logic: (I, P, StreamingServerContext[F], Seq[Header]) => F[ToolResult[O] | InputRequired]
   ): ServerTool[I, O, F, SecuredStreamingServerContext[F, P]] =
     serverTool((input, context, headers) => logic(input, context.principal, context, headers))
 
   /** Attaches synchronous logic that also receives the request headers. */
-  def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult[O]): ServerTool[I, O, Identity, ServerContext[Identity]] =
+  def handleWithHeaders(logic: (I, Seq[Header]) => ToolResult[O] | InputRequired): ServerTool[I, O, Identity, ServerContext[Identity]] =
     serverTool((i, _, headers) => logic(i, headers))
 
   /** Attaches synchronous logic over just the decoded input. */
-  def handle(logic: I => ToolResult[O]): ServerTool[I, O, Identity, ServerContext[Identity]] =
+  def handle(logic: I => ToolResult[O] | InputRequired): ServerTool[I, O, Identity, ServerContext[Identity]] =
     handleWithHeaders((i, _) => logic(i))
 
   /** Attaches synchronous logic over the decoded input and the principal; usable only on a [[SecuredMcpServer]]. */
-  def handleSecured[P](logic: (I, P) => ToolResult[O]): ServerTool[I, O, Identity, SecuredServerContext[Identity, P]] =
+  def handleSecured[P](logic: (I, P) => ToolResult[O] | InputRequired): ServerTool[I, O, Identity, SecuredServerContext[Identity, P]] =
     securedServerLogic[Identity, P]((i, principal, _) => logic(i, principal))
 
-  private def serverTool[F[_], C <: ServerContext[F]](logic: (I, C, Seq[Header]) => F[ToolResult[O]]): ServerTool[I, O, F, C] =
+  private def serverTool[F[_], C <: ServerContext[F]](
+      logic: (I, C, Seq[Header]) => F[ToolResult[O] | InputRequired]
+  ): ServerTool[I, O, F, C] =
     ServerTool(name, description, inputSchema, inputDecoder, outputSchema, annotations, logic, requiredClientCapabilities)
 
 /** A fully-defined tool: its metadata plus the logic handling a call, in effect `F` with context `C`. */
@@ -171,6 +179,6 @@ case class ServerTool[I, O, F[_], -C <: ServerContext[F]](
     inputDecoder: Decoder[I],
     outputSchema: Option[ToolSchema],
     annotations: Option[ToolAnnotations],
-    logic: (I, C, Seq[Header]) => F[ToolResult[O]],
+    logic: (I, C, Seq[Header]) => F[ToolResult[O] | InputRequired],
     requiredClientCapabilities: Option[ClientCapabilities] = None
 )
