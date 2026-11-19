@@ -334,19 +334,30 @@ private[server] class McpHandler[F[_], C <: ServerContext[F]](server: McpServerD
   // SEP-2243: the body field that the `Mcp-Name` header must mirror, per method
   private val nameFields: Map[String, String] = Map("tools/call" -> "name", "prompts/get" -> "name", "resources/read" -> "uri")
 
-  /** SEP-2243 standard request headers: `Mcp-Method` must equal the body method, and `Mcp-Name` must equal the method's name-shaped body
-    * field ([[nameFields]]); values are case-sensitive, surrounding whitespace is ignored. A missing or mismatched header is a `-32020`
-    * HeaderMismatch with HTTP 400.
+  private val headerParams: Map[String, List[McpHeader]] =
+    toolDefinitions.map(definition => definition.name -> McpHeaders.params(definition.inputSchema)).toMap
+
+  /** SEP-2243 request headers: `Mcp-Method` must equal the body method, `Mcp-Name` the method's name-shaped body field ([[nameFields]]),
+    * and on `tools/call` each `Mcp-Param-{name}` the argument its tool marks with `x-mcp-header`. Values are case-sensitive, surrounding
+    * whitespace is ignored, and `Mcp-Name` and `Mcp-Param-*` values are compared after decoding the Base64 sentinel form. A missing,
+    * malformed or mismatched header is a `-32020` HeaderMismatch with HTTP 400.
     */
   private def headerValidationError(method: String, params: Option[Json], headers: Seq[Header], id: RequestId): Option[McpResponse] =
     def header(name: String): Option[String] = headers.collectFirst { case h if h.name.equalsIgnoreCase(name) => h.value.trim }
-    def mismatch(message: String) = Some(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.HeaderMismatch.code, message))
     val nameField = nameFields.get(method)
     val bodyName = nameField.flatMap(field => params.flatMap(_.hcursor.get[String](field).toOption))
-    if !header("Mcp-Method").contains(method) then mismatch("Mcp-Method header missing or does not match the request method")
-    else if bodyName.exists(name => !header("Mcp-Name").contains(name)) then
-      mismatch(s"Mcp-Name header missing or does not match params.${nameField.getOrElse("name")}")
-    else None
+    val nameError = bodyName.flatMap: name =>
+      header("Mcp-Name").map(McpHeaders.decode) match
+        case None                                => Some("Mcp-Name header missing")
+        case Some(Left(problem))                 => Some(s"Mcp-Name header $problem")
+        case Some(Right(value)) if value != name => Some(s"Mcp-Name header does not match params.${nameField.getOrElse("name")}")
+        case Some(Right(_))                      => None
+    val toolHeaders = Option.when(method == "tools/call")(bodyName.flatMap(headerParams.get)).flatten.getOrElse(Nil)
+    val arguments = params.flatMap(_.hcursor.downField("arguments").focus)
+    val message =
+      if !header("Mcp-Method").contains(method) then Some("Mcp-Method header missing or does not match the request method")
+      else nameError.orElse(McpHeaders.mismatch(toolHeaders, arguments, header))
+    message.map(jsonError(id, StatusCode.BadRequest, JSONRPCErrorCodes.HeaderMismatch.code, _))
 
   private val serverImplementation: Implementation = Implementation(server.name, server.version)
   private val serverInfoJson: Json = serverImplementation.asJson

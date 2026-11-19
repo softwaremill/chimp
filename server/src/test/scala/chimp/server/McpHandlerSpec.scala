@@ -211,6 +211,63 @@ class McpHandlerSpec extends AnyFlatSpec with Matchers:
         response.statusCode shouldBe sttp.model.StatusCode.Ok
         extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) shouldBe a[Response]
 
+  it should "decode a Base64 sentinel Mcp-Name before comparing it, and reject a malformed one with -32020" in:
+    val params = Json.obj("name" -> Json.fromString("echo"), "arguments" -> Json.obj("message" -> Json.fromString("hi")))
+    val encoded = "=?base64?ZWNobw==?="
+    modernHttpCall("tools/call", params, "Mcp-Method" -> "tools/call", "Mcp-Name" -> encoded).statusCode shouldBe sttp.model.StatusCode.Ok
+    shouldBeHeaderMismatch(modernHttpCall("tools/call", params, "Mcp-Method" -> "tools/call", "Mcp-Name" -> "=?base64?ZWNobw?="))
+    shouldBeHeaderMismatch(modernHttpCall("tools/call", params, "Mcp-Method" -> "tools/call", "Mcp-Name" -> "=?base64?d3Jvbmc=?="))
+
+  case class RegionInput(region: String, limit: Option[Int], dryRun: Option[Boolean]) derives Schema, Codec
+
+  private val regionTool = tool("region")
+    .input[RegionInput]
+    .withMcpHeader("region", "Region")
+    .withMcpHeader("limit", "Limit")
+    .withMcpHeader("dryRun", "Dry-Run")
+    .handle(in => ToolResult.text(in.region))
+  private val customHeadersHandler = McpHandler(McpServer(tools = List(regionTool)))
+
+  private def regionCall(arguments: Json, headers: (String, String)*): McpResponse =
+    val params = Json.obj("name" -> Json.fromString("region"), "arguments" -> arguments).deepMerge(Json.obj(modernMeta))
+    val req: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("c"))
+    val standard = Seq("Host" -> "localhost", ProtocolMeta.ProtocolVersionHeader -> "2026-07-28", "Mcp-Method" -> "tools/call")
+    customHeadersHandler.handleJsonRpc(req.asJson, (standard ++ (("Mcp-Name" -> "region") +: headers)).map(Header(_, _)))
+
+  private def shouldBeServed(response: McpResponse): org.scalatest.Assertion =
+    response.statusCode shouldBe sttp.model.StatusCode.Ok
+    extractJsonFromResponse(response).as[JSONRPCMessage].getOrElse(fail("decode")) shouldBe a[Response]
+
+  it should "serve a tools/call whose Mcp-Param headers match the arguments" in:
+    val arguments = Json.obj("region" -> Json.fromString("us-west1"), "limit" -> Json.fromInt(42), "dryRun" -> Json.True)
+    shouldBeServed(regionCall(arguments, "mcp-param-region" -> " us-west1 ", "Mcp-Param-Limit" -> "42.0", "MCP-PARAM-DRY-RUN" -> "true"))
+    shouldBeServed(
+      regionCall(arguments, "Mcp-Param-Region" -> "=?base64?dXMtd2VzdDE=?=", "Mcp-Param-Limit" -> "42", "Mcp-Param-Dry-Run" -> "true")
+    )
+
+  it should "expect no Mcp-Param header for a null or absent argument, and ignore unknown Mcp-Param headers" in:
+    shouldBeServed(regionCall(Json.obj("region" -> Json.fromString("eu"), "limit" -> Json.Null), "Mcp-Param-Region" -> "eu"))
+    shouldBeServed(regionCall(Json.obj("region" -> Json.fromString("eu")), "Mcp-Param-Region" -> "eu", "Mcp-Param-Other" -> "x"))
+
+  it should "reject a tools/call whose Mcp-Param headers are missing, malformed or do not match the arguments with -32020" in:
+    val arguments = Json.obj("region" -> Json.fromString("Hello"), "limit" -> Json.fromInt(42))
+    val matching = List("Mcp-Param-Region" -> "Hello", "Mcp-Param-Limit" -> "42")
+    shouldBeServed(regionCall(arguments, matching*))
+    shouldBeHeaderMismatch(regionCall(arguments, "Mcp-Param-Limit" -> "42"))
+    shouldBeHeaderMismatch(regionCall(arguments, "Mcp-Param-Region" -> "hello", "Mcp-Param-Limit" -> "42"))
+    shouldBeHeaderMismatch(regionCall(arguments, "Mcp-Param-Region" -> "Hello", "Mcp-Param-Limit" -> "43"))
+    shouldBeHeaderMismatch(regionCall(arguments, "Mcp-Param-Region" -> "=?base64?SGVsbG8?=", "Mcp-Param-Limit" -> "42"))
+    shouldBeHeaderMismatch(regionCall(arguments, "Mcp-Param-Region" -> "=?base64?SGVs!!!bG8=?=", "Mcp-Param-Limit" -> "42"))
+    shouldBeHeaderMismatch(regionCall(arguments, "Mcp-Param-Region" -> "SGVsbG8=", "Mcp-Param-Limit" -> "42"))
+    shouldBeHeaderMismatch(regionCall(arguments, matching :+ ("Mcp-Param-Dry-Run" -> "true")*))
+
+  it should "not check Mcp-Param headers on a legacy request or a modern request without HTTP" in:
+    val params = Json.obj("name" -> Json.fromString("region"), "arguments" -> Json.obj("region" -> Json.fromString("eu")))
+    val legacy: JSONRPCMessage = Request(method = "tools/call", params = Some(params), id = RequestId("l"))
+    shouldBeServed(customHeadersHandler.handleJsonRpc(legacy.asJson, Seq(Header("Host", "localhost"), Header("Mcp-Param-Region", "x"))))
+    val stdio: JSONRPCMessage = Request(method = "tools/call", params = Some(params.deepMerge(Json.obj(modernMeta))), id = RequestId("s"))
+    shouldBeServed(customHeadersHandler.handleJsonRpc(stdio.asJson, Seq.empty))
+
   it should "serve a classic initialize with no modern protocol version rather than rejecting it with -32022" in:
     val req: JSONRPCMessage = Request(method = "initialize", id = RequestId("legacy-init"))
     val respJson = extractJsonFromResponse(handler.handleJsonRpc(req.asJson, Seq.empty))
