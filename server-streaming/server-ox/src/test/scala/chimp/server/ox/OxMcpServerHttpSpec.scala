@@ -8,6 +8,7 @@ import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   tool,
   McpServer,
+  McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
   McpServerSubscriptionHttpTests,
   McpServerTests,
@@ -39,6 +40,7 @@ class OxMcpServerHttpSpec
     extends McpServerTests[Identity]
     with McpServerStreamingTests[Identity]
     with McpServerSubscriptionHttpTests[Identity]
+    with McpServerInputRequiredHttpTests[Identity]
     with SecuredMcpServerTests[Identity]
     with SecuredMcpServerStreamingTests[Identity]
     with SyncToFuture:

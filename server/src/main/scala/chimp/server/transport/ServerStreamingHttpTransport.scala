@@ -3,9 +3,8 @@ package chimp.server.transport
 import chimp.server.*
 import io.circe.Json
 import sttp.capabilities.Streams
-import sttp.model.Header
+import sttp.model.{Header, StatusCode}
 import sttp.monad.MonadError
-import sttp.monad.syntax.*
 import sttp.tapir.*
 import sttp.tapir.json.circe.*
 import sttp.tapir.server.ServerEndpoint
@@ -26,7 +25,12 @@ abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) exte
   type EventStream
   def sseBody: StreamBodyIO[streams.BinaryStream, EventStream, Caps]
   def emptyStream: EventStream
-  def eventStream(handle: OutboundSink[F] => F[Option[Json]]): F[EventStream]
+
+  /** Runs `handle`, which sends its messages to the sink and ends with the response. If it ends with an error which has its own HTTP status
+    * (see [[plainJsonError]]) before it sends any message, that error is returned on the left, to be sent as plain JSON. Otherwise the
+    * messages and then the response's body go on a 200 event stream.
+    */
+  def eventStream(handle: OutboundSink[F] => F[McpResponse]): F[Either[(StatusCode, Json), EventStream]]
 
   /** The stream of an accepted `subscriptions/listen` request. It opens the subscription when the stream starts, and cancels it when the
     * client closes the stream. The server ends it by closing the subscription's output.
@@ -57,7 +61,7 @@ abstract class ServerStreamingHttpTransport[F[_], Caps](path: List[String]) exte
         ) { sink =>
           val makeContext: RequestInfo => StreamingServerContext[F] =
             info => SinkStreamingServerContext(sink, info)
-          handler.handleJsonRpc(json, headers, makeContext).map(_.body)
+          handler.handleJsonRpc(json, headers, makeContext)
         }
       }
     )

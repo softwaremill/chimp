@@ -27,7 +27,8 @@ private[transport] val jsonRejectionOutput: EndpointOutput[JsonRejection] = stat
 
 /** Checks the origin, then validates the request with `rejection` (runs no tool logic). A rejection - for example a modern validation error -
   * is returned on the left, to be sent as a plain JSON error with its own HTTP status. An accepted `subscriptions/listen` request gets a
-  * 200 subscription stream, which stays open until one side ends it; any other request runs `handle` inside a 200 event stream.
+  * 200 subscription stream, which stays open until one side ends it; any other request runs `handle`, see
+  * [[ServerStreamingHttpTransport.eventStream]].
   */
 private[transport] def respondWithEventStream[F[_], Caps](
     originCheck: OriginCheck,
@@ -35,7 +36,7 @@ private[transport] def respondWithEventStream[F[_], Caps](
     backend: ServerStreamingHttpTransport[F, Caps],
     rejection: => Option[McpResponse],
     listen: => Option[ListenRequest]
-)(handle: OutboundSink[F] => F[Option[Json]])(using m: MonadError[F]): F[Either[JsonRejection, (StatusCode, backend.EventStream)]] =
+)(handle: OutboundSink[F] => F[McpResponse])(using m: MonadError[F]): F[Either[JsonRejection, (StatusCode, backend.EventStream)]] =
   if !originAllowed(originCheck, headers) then m.unit(Right((StatusCode.Forbidden, backend.emptyStream)))
   else
     rejection match
@@ -43,4 +44,11 @@ private[transport] def respondWithEventStream[F[_], Caps](
       case None           =>
         listen match
           case Some(request) => m.unit(Right((StatusCode.Ok, backend.subscriptionStream(request))))
-          case None          => backend.eventStream(handle).map(events => Right((StatusCode.Ok, events)))
+          case None          => backend.eventStream(handle).map(_.map(events => (StatusCode.Ok, events)))
+
+/** The plain JSON error to send instead of an event stream, when the handler ends with an error which has its own HTTP status (for example
+  * a `-32021`) before it sends any message.
+  */
+private[server] def plainJsonError(response: McpResponse): Option[(StatusCode, Json)] = response match
+  case McpResponse.JsonError(status, json) => Some((status, json))
+  case _                                   => None

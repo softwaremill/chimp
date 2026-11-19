@@ -53,7 +53,7 @@ final case class SecuredServerStreamingHttpTransport[F[_], Caps, S, E, P](
         ) { sink =>
           val makeContext: RequestInfo => SecuredStreamingServerContext[F, P] =
             info => SinkSecuredStreamingServerContext(sink, info, principal)
-          handler.handleJsonRpc(json, headers, makeContext).map(_.body)
+          handler.handleJsonRpc(json, headers, makeContext)
         }.map(_.left.map(Right(_)))
       }
     )

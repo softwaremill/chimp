@@ -7,6 +7,7 @@ import chimp.protocol.{Implementation, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
+  McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
   McpServerSubscriptionHttpTests,
   McpServerTests,
@@ -34,6 +35,7 @@ class ZioMcpServerHttpSpec
     extends McpServerTests[Task]
     with McpServerStreamingTests[Task]
     with McpServerSubscriptionHttpTests[Task]
+    with McpServerInputRequiredHttpTests[Task]
     with SecuredMcpServerTests[Task]
     with SecuredMcpServerStreamingTests[Task]
     with ZioToFuture:

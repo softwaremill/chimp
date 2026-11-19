@@ -6,6 +6,7 @@ import chimp.protocol.{Implementation, ProtocolVersion}
 import chimp.server.transport.SecuredServerStreamingHttpTransport
 import chimp.server.{
   McpServer,
+  McpServerInputRequiredHttpTests,
   McpServerStreamingTests,
   McpServerSubscriptionHttpTests,
   McpServerTests,
@@ -33,6 +34,7 @@ class PekkoMcpServerHttpSpec
     extends McpServerTests[Future]
     with McpServerStreamingTests[Future]
     with McpServerSubscriptionHttpTests[Future]
+    with McpServerInputRequiredHttpTests[Future]
     with SecuredMcpServerTests[Future]
     with SecuredMcpServerStreamingTests[Future]
     with PekkoToFuture:
