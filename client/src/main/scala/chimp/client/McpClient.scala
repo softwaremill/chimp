@@ -5,7 +5,8 @@ import chimp.client.transport.{ClientBidirectionalTransport, ClientTransport}
 import chimp.protocol.*
 import io.circe.Json
 
-/** A Model Context Protocol (MCP) client that has completed the initialization handshake with a server.
+/** A Model Context Protocol (MCP) client that is connected to a server: at a legacy protocol version it has completed the `initialize`
+  * handshake, at a stateless version (2026-07-28) it has called `server/discover`.
   *
   * Exposes the server's advertised capabilities and identity, and provides methods for sending client-initiated requests and notifications
   * over the underlying [[chimp.client.transport.ClientTransport]].
@@ -14,16 +15,26 @@ import io.circe.Json
   * [[BidirectionalMcpClient]] instead.
   */
 trait McpClient[F[_]]:
-  /** Sends a `ping` request to the server. */
+  /** The protocol version that the client uses: the fixed version, or the detected one. At a stateless version it can change when the
+    * server rejects the version with `-32022` and the client retries with a version from the server's list.
+    */
+  def protocolVersion: ProtocolVersion
+
+  /** Sends `server/discover` and returns the server's versions, capabilities and instructions. Only at a stateless version. */
+  def discover(): F[DiscoverResult]
+
+  /** Sends a `ping` request to the server. Only at a legacy version. */
   def ping(): F[Unit]
 
   /** Closes the underlying transport and releases any resources held by this client. */
   def close(): F[Unit]
 
-  /** Capabilities advertised by the server during the initialization handshake. */
+  /** Capabilities advertised by the server in the `initialize` or `server/discover` result. */
   def serverCapabilities: ServerCapabilities
 
-  /** Server implementation name and version, received during the initialization handshake. */
+  /** Server implementation name and version, from the `initialize` or `server/discover` result. If a stateless server does not send it,
+    * both values are `unknown`.
+    */
   def serverInfo: Implementation
 
   /** Lists tools exposed by the server.
@@ -78,10 +89,12 @@ trait McpClient[F[_]]:
   /** Requests completion suggestions for an argument of a prompt or resource template reference. */
   def complete(ref: CompleteRef, argument: CompleteArgument): F[CompleteResult]
 
-  /** Sets the minimum severity level for log messages the server should forward to this client. */
+  /** Sets the minimum severity level for log messages the server should forward to this client. Only at a legacy version; at a stateless
+    * version use the `logLevel` option of the client.
+    */
   def setLoggingLevel(level: LoggingLevel): F[Unit]
 
-  /** Sends a progress notification for a previously issued request that advertised a progress token.
+  /** Sends a progress notification for a previously issued request that advertised a progress token. Only at a legacy version.
     *
     * @param token
     *   The progress token associated with the in-flight request.
@@ -100,45 +113,51 @@ trait McpClient[F[_]]:
   */
 trait BidirectionalMcpClient[F[_]] extends McpClient[F]:
   /** Subscribes to updates for the resource identified by the given URI. The server will emit `resources/updated` notifications, which can
-    * be observed via [[onServerNotification]].
+    * be observed via [[onServerNotification]]. Only at a legacy version.
     */
   def subscribeResource(uri: String): F[Unit]
 
-  /** Cancels a subscription previously created with [[subscribeResource]]. */
+  /** Cancels a subscription previously created with [[subscribeResource]]. Only at a legacy version. */
   def unsubscribeResource(uri: String): F[Unit]
 
-  /** Notifies the server that the list of roots exposed by this client has changed. */
+  /** Notifies the server that the list of roots exposed by this client has changed. Only at a legacy version. */
   def sendRootsListChanged(): F[Unit]
 
   /** Registers a listener for notifications pushed by the server (e.g. resource updates, tool/prompt list changes, log messages). */
   def onServerNotification(listener: ServerNotificationListener[F]): F[Unit]
 
 object McpClient:
-  /** Creates an unidirectional [[McpClient]] over the given [[chimp.client.transport.ClientTransport]] and performs the initialization
-    * handshake with the server.
+  /** Creates an unidirectional [[McpClient]] over the given [[chimp.client.transport.ClientTransport]] and connects it to the server.
     *
     * @param transport
     *   The transport carrying JSON-RPC messages between client and server.
     * @param clientInfo
-    *   Implementation name and version advertised to the server during initialization.
+    *   Implementation name and version sent to the server.
     * @param protocolVersion
-    *   Protocol version proposed during initialization; defaults to the latest version supported by chimp.
+    *   How the client chooses its protocol version; the client gives the version to the transport. With [[DetectVersion]], the default, the
+    *   client sends `server/discover` first and falls back to `initialize` at the latest legacy version when the server is legacy. A fixed
+    *   [[chimp.protocol.ProtocolVersion]] skips the detection: a legacy version runs the `initialize` handshake, a stateless version
+    *   (2026-07-28) calls `server/discover`.
+    * @param logLevel
+    *   The minimum level of the log messages the server sends. At a stateless version every request carries it in `_meta`; at a legacy
+    *   version the client sends `logging/setLevel` once after `initialize`. Without it the server sends no log messages.
     */
   def apply[F[_]](
       transport: ClientTransport[F],
       clientInfo: Implementation,
-      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
+      protocolVersion: VersionPolicy = DetectVersion,
+      logLevel: Option[LoggingLevel] = None
   ): F[McpClient[F]] =
-    McpClientImpl.create(transport, clientInfo, protocolVersion)
+    McpClientImpl.create(transport, clientInfo, protocolVersion, logLevel)
 
-  /** Creates a [[BidirectionalMcpClient]] over the given [[chimp.client.transport.ClientBidirectionalTransport]] and performs the
-    * initialization handshake. The optional handlers determine which client capabilities (roots, sampling, elicitation) are advertised to
-    * the server; only capabilities backed by a handler are enabled.
+  /** Creates a [[BidirectionalMcpClient]] over the given [[chimp.client.transport.ClientBidirectionalTransport]] and connects it to the
+    * server. The optional handlers determine which client capabilities (roots, sampling, elicitation) are advertised to the server; only
+    * capabilities backed by a handler are enabled.
     *
     * @param transport
     *   The bidirectional transport carrying JSON-RPC messages in both directions.
     * @param clientInfo
-    *   Implementation name and version advertised to the server during initialization.
+    *   Implementation name and version sent to the server.
     * @param rootsHandler
     *   Optional handler invoked when the server requests the client's roots; enables the `roots` capability when provided.
     * @param samplingHandler
@@ -146,7 +165,9 @@ object McpClient:
     * @param elicitationHandler
     *   Optional handler invoked when the server requests user input via elicitation; enables the `elicitation` capability when provided.
     * @param protocolVersion
-    *   Protocol version proposed during initialization; defaults to the latest version supported by chimp.
+    *   The protocol version of the client, see [[apply]].
+    * @param logLevel
+    *   The minimum level of the log messages the server sends, see [[apply]].
     */
   def bidirectional[F[_]](
       transport: ClientBidirectionalTransport[F],
@@ -154,6 +175,7 @@ object McpClient:
       rootsHandler: Option[() => F[ListRootsResult]] = None,
       samplingHandler: Option[CreateMessageRequest => F[CreateMessageResult]] = None,
       elicitationHandler: Option[ElicitRequest => F[ElicitResult]] = None,
-      protocolVersion: ProtocolVersion = ProtocolVersion.LatestLegacy
+      protocolVersion: VersionPolicy = DetectVersion,
+      logLevel: Option[LoggingLevel] = None
   ): F[BidirectionalMcpClient[F]] =
-    McpClientImpl.createBidirectional(transport, clientInfo, protocolVersion, rootsHandler, samplingHandler, elicitationHandler)
+    McpClientImpl.createBidirectional(transport, clientInfo, protocolVersion, logLevel, rootsHandler, samplingHandler, elicitationHandler)

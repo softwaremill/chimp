@@ -5,6 +5,7 @@ import chimp.client.transport.ClientHttpTransport
 import chimp.client.transport.ox.OxClientHttpTransport
 import chimp.protocol.*
 import io.circe.Json
+import io.circe.parser.parse
 import ox.supervised
 import sttp.client4.DefaultSyncBackend
 import sttp.model.Uri
@@ -20,6 +21,15 @@ object Main:
       .as[Map[String, Json]]
       .getOrElse(Map.empty)
       .flatMap((key, prop) => prop.hcursor.downField("default").focus.map(key -> _))
+
+  /** The tool calls that the harness asks for in `MCP_CONFORMANCE_CONTEXT`. */
+  private def contextToolCalls: List[(String, Json)] =
+    sys.env
+      .get("MCP_CONFORMANCE_CONTEXT")
+      .flatMap(context => parse(context).toOption)
+      .flatMap(_.hcursor.downField("toolCalls").as[List[Json]].toOption)
+      .getOrElse(Nil)
+      .flatMap(call => call.hcursor.get[String]("name").toOption.map(_ -> call.hcursor.downField("arguments").focus.getOrElse(Json.obj())))
 
   def main(args: Array[String]): Unit =
     if args.isEmpty then
@@ -37,13 +47,40 @@ object Main:
       .getOrElse(ProtocolVersion.Latest)
 
     val backend = DefaultSyncBackend()
-    val transport = ClientHttpTransport[Identity](backend, serverUrl, protocolVersion)
+    val transport = ClientHttpTransport[Identity](backend, serverUrl)
 
     val rc: Int =
       try
         scenario match
-          case "initialize" =>
+          case "initialize" | "request-metadata" =>
             val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            client.close()
+            0
+
+          case "http-standard-headers" =>
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            client.listTools().tools.foreach(tool => client.callTool(tool.name, Json.obj()))
+            client.listResources().resources.foreach(resource => client.readResource(resource.uri))
+            client.listPrompts().prompts.foreach(prompt => client.getPrompt(prompt.name))
+            client.close()
+            0
+
+          case "http-custom-headers" =>
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            val _ = client.listTools()
+            contextToolCalls.foreach((name, arguments) => client.callTool(name, arguments))
+            client.close()
+            0
+
+          case "http-invalid-tool-headers" =>
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            client.listTools().tools.foreach(tool => client.callTool(tool.name, Json.obj()))
+            client.close()
+            0
+
+          case "json-schema-ref-no-deref" =>
+            val client = McpClient[Identity](transport, clientInfo, protocolVersion)
+            val _ = client.listTools()
             client.close()
             0
 
@@ -66,7 +103,7 @@ object Main:
 
           case "elicitation-sep1034-client-defaults" =>
             supervised:
-              val oxTransport = OxClientHttpTransport(backend, serverUrl, protocolVersion)
+              val oxTransport = OxClientHttpTransport(backend, serverUrl)
               val handler = (req: ElicitRequest) =>
                 val requestedSchema = req.params match
                   case ElicitParams.Form(_, schema, _, _) => schema

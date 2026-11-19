@@ -2,7 +2,6 @@ package chimp.client.transport.pekko
 
 import chimp.client.integration.McpClientStreamingHttpIntegrationSpec
 import chimp.client.transport.ClientBidirectionalTransport
-import chimp.protocol.ProtocolVersion
 import sttp.capabilities.pekko.PekkoStreams
 import sttp.client4.StreamBackend
 import sttp.client4.pekkohttp.PekkoHttpBackend
@@ -22,5 +21,5 @@ class PekkoMcpClientHttpIntegrationSpec
   override def usingBidirectionalTransport[A](b: StreamBackend[Future, PekkoStreams], uri: Uri, timeout: FiniteDuration)(
       use: ClientBidirectionalTransport[Future] => Future[A]
   ): Future[A] =
-    val transport = PekkoClientHttpTransport(b, uri, ProtocolVersion.LatestLegacy, timeout)
+    val transport = PekkoClientHttpTransport(b, uri, timeout)
     monad.ensure2(use(transport), transport.close())
