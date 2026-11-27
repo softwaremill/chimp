@@ -269,3 +269,7 @@ object McpClientImpl:
     override def onServerNotification(listener: ServerNotificationListener[F]): F[Unit] =
       val _ = serverNotificationListeners.updateAndGet(listeners => listeners :+ listener)
       monad.unit(())
+
+    override def removeServerNotification(listener: ServerNotificationListener[F]): F[Unit] =
+      val _ = serverNotificationListeners.updateAndGet(listeners => listeners.filterNot(_ eq listener))
+      monad.unit(())
