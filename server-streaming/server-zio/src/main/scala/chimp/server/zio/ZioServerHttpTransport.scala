@@ -10,11 +10,17 @@ import sttp.model.sse.ServerSentEvent
 import sttp.tapir.*
 import sttp.tapir.ztapir.ZioServerSentEvents
 import zio.stream.{Stream, ZStream}
-import zio.{Queue, Task, ZIO}
+import zio.{Duration, Queue, Schedule, Task, ZIO}
 
 import java.nio.charset.StandardCharsets
+import scala.concurrent.duration.FiniteDuration
 
-final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHttpTransport[Task, ZioStreams](path):
+/** @param keepAlive
+  *   If set, a data-less `ping` Server-Sent Event is emitted on the response stream at this interval, to keep idle connections open through
+  *   proxies. The events carry no data and are ignored by MCP clients.
+  */
+final class ZioServerHttpTransport(path: List[String], keepAlive: Option[FiniteDuration] = None)
+    extends ServerStreamingHttpTransport[Task, ZioStreams](path):
   val streams: ZioStreams = ZioStreams
 
   type EventStream = Stream[Throwable, ServerSentEvent]
@@ -24,6 +30,8 @@ final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHt
       .map(ZioServerSentEvents.parseBytesToSSE)(ZioServerSentEvents.serialiseSSEToBytes)
 
   val emptyStream: EventStream = ZStream.empty
+
+  private val pingEvent = ServerSentEvent(eventType = Some("ping"))
 
   def eventStream(handle: OutboundSink[Task] => Task[Option[Json]]): Task[EventStream] =
     ZIO.succeed {
@@ -38,7 +46,13 @@ final class ZioServerHttpTransport(path: List[String]) extends ServerStreamingHt
             .ensuring(queue.offer(Outbound.Close))
             .catchAllCause(_ => ZIO.unit)
             .forkScoped
-        yield ZStream.fromQueue(queue).collectWhile { case Outbound.Message(json) => ServerSentEvent(data = Some(json.noSpaces)) }
+        yield
+          val messages = ZStream.fromQueue(queue).collectWhile { case Outbound.Message(json) =>
+            ServerSentEvent(data = Some(json.noSpaces))
+          }
+          keepAlive.fold(messages)(interval =>
+            messages.mergeHaltLeft(ZStream.fromSchedule(Schedule.spaced(Duration.fromScala(interval))).as(pingEvent))
+          )
       }
     }
 
